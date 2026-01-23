@@ -1,0 +1,18 @@
+server:
+  host: "0.0.0.0"
+  port: 3000
+
+auth:
+  token: "change-me-in-env"
+
+workspace:
+  path: "/Users/mharajli/Desktop/agent_space"
+  exclude:
+    - "marmy"
+
+tmux:
+  captureLines: 1000
+  shell: "/bin/zsh"
+
+claude:
+  command: "claude"
