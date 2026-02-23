@@ -162,10 +162,11 @@ Tailscale is the clear choice for the networking layer:
 - **Mobile SDK**: First-class iOS and Android support
 
 **Alternative options** (in order of preference):
-1. **Headscale** (self-hosted Tailscale coordination server) — for users who want full control
-2. **Raw WireGuard** — if both devices have stable IPs or a relay VPS
-3. **Cloudflare Tunnel** — alternative for HTTP-based transport
-4. **Self-hosted relay server** — WebSocket relay running on a VPS, as last resort
+1. **Headscale** — self-hosted Tailscale coordination server, open source, gives full control but loses some features (Funnel, some MagicDNS)
+2. **Raw WireGuard** — if both devices have stable IPs or a relay VPS. No NAT traversal; requires port forwarding or a VPS with a public IP
+3. **SSH reverse tunnel + autossh** — laptop opens outbound SSH to a VPS, phone connects to VPS. Reliable (`ServerAliveInterval=60`, `ExitOnForwardFailure=yes`) but VPS sees decrypted traffic unless you nest SSH. ~$3-5/month for a VPS
+4. **Rathole** (Rust) or **FRP** (Go) — self-hosted reverse proxy/tunnel. Rathole is ~500KB binary with TLS + Noise protocol encryption. FRP has more features (dashboard, P2P mode)
+5. **Cloudflare Tunnel** — primarily HTTP-oriented, Cloudflare decrypts at edge (privacy concern for terminal sessions). Not ideal for arbitrary TCP
 
 **Why not SSH?**: SSH works but gives you a raw byte stream. You'd need to layer your own protocol on top anyway. The agent approach with WebSocket gives you structured communication from the start.
 
@@ -216,24 +217,26 @@ For code blocks within markdown, use `react-native-syntax-highlighter` (Prism-ba
 
 ##### Code Viewer (Read-Only IDE)
 
-**Approach: CodeMirror 6 in a WebView**
+**Tiered approach** — a full editor is overkill for read-only viewing. Use the lightest tool that works:
 
-CodeMirror 6 over Monaco because:
-- Monaco officially does not support mobile browsers/WebViews
-- CodeMirror 6 was designed with mobile support in mind
-- Better touch interaction (scrolling, selection)
-- Smaller bundle size
-- Excellent language support via `@codemirror/lang-*` packages
+| File Size | Approach | Rationale |
+|---|---|---|
+| Small/medium (<5K lines) | `react-native-syntax-highlighter` (native RN) | No WebView overhead, fast render, 185+ languages via Prism/highlight.js |
+| Large (>5K lines) | CodeMirror 6 in a WebView (`readOnly: true`) | Virtualized rendering — only draws visible lines, handles million-line files |
+| Pre-highlighted (daemon) | Shiki tokens rendered as styled `<Text>` | Zero client-side parsing cost — daemon tokenizes with VS Code TextMate grammars |
 
-The code viewer WebView loads CodeMirror 6 configured as read-only with:
+**Why NOT Monaco**: Monaco officially does not support mobile browsers/WebViews. Touch interactions (scrolling, selection) are broken. CodeMirror 6 was designed with mobile support — it uses the platform's native selection and editing features on phones.
+
+**CodeMirror 6 configuration** (for the large-file fallback):
 - Syntax highlighting (language auto-detected from file extension)
 - Line numbers
 - Code folding
 - Search (Ctrl+F / Cmd+F)
-- Minimap (optional)
 - Dark/light theme matching the app
 
-File tree navigation uses a native React Native component (`react-native-collapsible-tree` or custom FlatList-based tree) for performance.
+**Server-side pre-highlighting with Shiki** (optional optimization): The marmy-agent can pre-tokenize files using Shiki (which uses VS Code's TextMate grammars and themes). Tokenized output is sent to the client as structured spans with color metadata, eliminating all client-side parsing. This is especially valuable on slower phones.
+
+File tree navigation uses a native React Native component (custom FlatList-based tree with virtualization) for performance. Git status indicators (modified/added/deleted) shown per-file.
 
 ##### Rich View Architecture
 
@@ -280,13 +283,14 @@ The app renders each segment with the appropriate component. Users can tap code 
 | **Terminal Emulator** | xterm.js in WebView | Only production-proven approach for mobile |
 | **Markdown Rendering** | react-native-marked | Active, themeable, custom renderers |
 | **Code Syntax Highlighting** | react-native-syntax-highlighter (Prism) | Native RN component, 200+ languages |
-| **Code Viewer** | CodeMirror 6 in WebView | Mobile-friendly, lighter than Monaco |
+| **Code Viewer (small files)** | react-native-syntax-highlighter | Native RN, no WebView, 185+ languages |
+| **Code Viewer (large files)** | CodeMirror 6 in WebView | Virtualized rendering, mobile-friendly |
 | **State Management** | Zustand | Minimal boilerplate, good DX |
 | **Navigation** | React Navigation | Standard for RN, tab + stack |
 | **Networking** | Tailscale | Zero-config NAT traversal, P2P, mobile SDK |
 | **Agent Daemon** | Rust (tokio + axum) | Single binary, fast, low memory, great WebSocket support |
 | **tmux Interface** | tmux control mode (-CC) | Structured events, real-time, same as iTerm2 uses |
-| **Agent Output Parsing** | tree-sitter + custom parser | Detect markdown fences, code blocks, ANSI patterns |
+| **Agent Output Parsing** | `stream-json` NDJSON (primary) + ANSI heuristic (fallback) | Structured JSON for managed sessions, state-machine parser for attached sessions |
 | **File Watching** | notify (Rust crate) | Cross-platform inotify/FSEvents/kqueue |
 | **Auth** | Ed25519 keypair + token exchange | Simple, no external dependencies |
 | **Data Transport** | WebSocket (structured JSON) | Real-time bidirectional, low overhead |
@@ -322,23 +326,111 @@ tracing = "0.1"                # Structured logging
 
 ### tmux Control Mode Integration
 
+The `-CC` variant (double C) disables canonical mode and sends DCS sequences on entry/exit, designed for application integration. This is the same mechanism iTerm2 uses to render tmux panes as native tabs/splits.
+
+**Protocol overview:**
+
+Every command sent via stdin produces an output block:
 ```
-Agent starts:
-  1. Spawns `tmux -CC attach -t <target>` (or `new-session` if none exists)
-  2. Reads stdout line-by-line
-  3. Lines starting with `%` are parsed as control events:
-     - %begin / %end / %error — command output boundaries
-     - %output %<pane_id> <data> — pane output (real-time)
-     - %session-changed / %window-add / %window-close — topology changes
-     - %pane-mode-changed — pane state changes
-  4. Non-% lines within %begin/%end blocks are command responses
-  5. Agent maintains in-memory model of session/window/pane topology
-  6. On client connect, sends full state snapshot + subscribes to events
+%begin <epoch_seconds> <command_number>
+<output lines...>
+%end <epoch_seconds> <command_number>
+```
+(Failed commands replace `%end` with `%error`)
+
+**Asynchronous notifications** (sent outside output blocks, real-time, no polling):
+
+| Event | Format | Description |
+|---|---|---|
+| `%output` | `%output %<pane_id> <escaped_data>` | Pane produced output. Chars < ASCII 32 and `\` are octal-escaped. |
+| `%window-add` | `%window-add @<window_id>` | Window created |
+| `%window-close` | `%window-close @<window_id>` | Window destroyed |
+| `%window-renamed` | `%window-renamed @<window_id> <name>` | Window renamed |
+| `%session-changed` | `%session-changed $<session_id> <name>` | Client attached to different session |
+| `%sessions-changed` | `%sessions-changed` | Session created or destroyed |
+| `%session-renamed` | `%session-renamed $<session_id> <name>` | Session renamed |
+| `%session-window-changed` | `%session-window-changed $<session_id> @<window_id>` | Active window changed |
+| `%layout-change` | `%layout-change @<window_id> <layout> <visible_layout> <flags>` | Pane layout changed |
+| `%pane-mode-changed` | `%pane-mode-changed %<pane_id>` | Pane entered/exited mode (copy mode, etc.) |
+| `%exit` | `%exit [reason]` | Control client exiting |
+
+IDs use `$session`, `@window`, `%pane` prefixes — unique for server lifetime, never reused.
+
+**Subscriptions** (reactive monitoring without polling): `refresh-client -B name:what:format` subscribes to format expressions. When the expanded value changes, a `%subscription-changed` notification fires (at most once per second). Useful for monitoring things like `pane_current_command` changes.
+
+```
+Agent lifecycle:
+  1. Spawns `tmux -CC attach` (or `new-session`)
+  2. Reads stdout line-by-line, parsing %notifications
+  3. Builds in-memory model: sessions -> windows -> panes
+  4. Subscribes to format expressions for process name changes
+  5. On mobile client connect: sends full topology snapshot
+  6. Streams %output events to subscribed clients via WebSocket
+  7. Relays mobile input via `send-keys -t %<pane_id>`
+  8. Uses `capture-pane -t %<id> -p -e -S -` for scrollback history on demand
 ```
 
-### Claude Code Output Parser
+**Supplementary tmux commands** used by the agent:
+- `list-sessions -F "#{session_id}:#{session_name}:#{session_windows}"` — structured topology
+- `list-panes -a -F "#{pane_id} #{pane_pid} #{pane_current_command} #{pane_current_path} #{pane_width}x#{pane_height}"` — all pane metadata
+- `capture-pane -t %3 -p -e -S -` — full scrollback with ANSI codes
+- `send-keys -t %3 "text" Enter` — relay input
+- `pipe-pane -t %3 -o 'cat >> /tmp/pane.log'` — additional output logging
 
-The parser runs as a streaming state machine on pane output:
+### Claude Code Output Parsing
+
+Claude Code is built with React + Ink (a React renderer for terminals). Its rendering pipeline converts a React component tree through Yoga (Flexbox layout engine) into a grid of terminal cells, then emits minimal ANSI escape sequences at up to 30fps. Trying to reverse-engineer this ANSI output is fragile. Instead, use the structured output modes.
+
+#### Primary: `--output-format stream-json` (NDJSON)
+
+The preferred approach. Claude Code emits newline-delimited JSON with every event:
+
+```bash
+claude -p "your prompt" --output-format stream-json --verbose
+```
+
+Event types in the NDJSON stream:
+
+```jsonc
+// 1. Init — session metadata and available tools
+{"type":"system","subtype":"init","session_id":"...","tools":["Read","Edit","Bash",...]}
+
+// 2. Assistant message — text content and tool calls
+{"type":"assistant","message":{"content":[
+  {"type":"text","text":"I'll fix that null check in auth.ts..."},
+  {"type":"tool_use","id":"toolu_abc","name":"Edit","input":{"file_path":"src/auth.ts",...}}
+]}}
+
+// 3. Tool results
+{"type":"user","message":{"content":[
+  {"type":"tool_result","tool_use_id":"toolu_abc","content":"File edited successfully"}
+]}}
+
+// 4. Streaming deltas (with --verbose)
+{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"I'll "}}}
+
+// 5. Final result — cost, duration, session ID for --resume
+{"type":"result","subtype":"success","duration_ms":108221,"num_turns":12,
+ "result":"...","session_id":"...","total_cost_usd":0.57}
+```
+
+This gives you **semantic content** — tool calls with names/inputs/results, raw markdown text (not ANSI-rendered), cost tracking, session IDs — without any heuristic parsing.
+
+**Content type routing from stream-json:**
+
+| Content Type | Detection | Mobile Rendering |
+|---|---|---|
+| Markdown text | `content[].type == "text"` | react-native-marked |
+| Code blocks | Parse markdown fences from text | react-native-syntax-highlighter |
+| File edits/diffs | `tool_use` with `name == "Edit"` | Custom diff viewer |
+| Bash commands | `tool_use` with `name == "Bash"` | Command + output card |
+| File reads | `tool_use` with `name == "Read"` | Code viewer link |
+| Search results | `tool_use` with `name == "Grep"/"Glob"` | Search results list |
+| Cost/usage | `result.total_cost_usd` | Status bar |
+
+#### Fallback: ANSI Heuristic Parser (for pre-existing sessions)
+
+For tmux panes where Claude Code was started manually (not by the agent), fall back to a streaming state machine on the ANSI output:
 
 ```
 States:
@@ -356,7 +448,15 @@ Transitions:
   Spinner/loading      -> IN_THINKING
 ```
 
-For maximum fidelity, the preferred approach is to have the agent launch Claude Code with `--output-format stream-json`, which emits structured JSON events that can be parsed without heuristics. The heuristic parser serves as a fallback for sessions the user started manually before connecting Marmy.
+ANSI stripping uses `strip-ansi-escapes` (Rust crate) or `strip-ansi` (npm, 10K+ dependents). For full VT100 state machine parsing, use `node-ansiparser` or `ansi_up` (converts ANSI directly to HTML for WebView rendering).
+
+#### Hybrid Architecture (Recommended)
+
+The agent should support **both modes simultaneously**:
+
+1. **Managed sessions**: Agent launches Claude Code with `--output-format stream-json`. Full structured parsing, maximum fidelity. App gets semantic events.
+2. **Attached sessions**: For panes Claude Code is already running in, agent uses tmux control mode `%output` notifications + the heuristic parser. App gets best-effort rich rendering.
+3. **Raw passthrough**: Always available. The raw `%output` data feeds an xterm.js WebView for full-fidelity terminal rendering regardless of parsing quality.
 
 ---
 
@@ -539,3 +639,38 @@ Marmy's unique position: the only mobile client that combines terminal access wi
 - **Input sent from phone**: Number of Claude Code interactions initiated from the phone (validates the couch-coding use case)
 - **Reconnection reliability**: % of sessions that survive network transitions (Wi-Fi -> cellular)
 - **Render fidelity**: % of Claude Code output correctly parsed into rich segments (goal: >95%)
+
+---
+
+## References
+
+### tmux
+- [tmux Control Mode Wiki](https://github.com/tmux/tmux/wiki/Control-Mode)
+- [tmux Formats Wiki](https://github.com/tmux/tmux/wiki/Formats)
+- [iTerm2 tmux Integration](https://iterm2.com/documentation-tmux-integration.html)
+- [libtmux — Python API for tmux](https://github.com/tmux-python/libtmux)
+- [tmuxwatch — topology JSON dumper](https://github.com/steipete/tmuxwatch)
+
+### Terminal Rendering
+- [xterm.js](https://xtermjs.org/) — web terminal emulator
+- [@fressh/react-native-xtermjs-webview](https://www.npmjs.com/package/@fressh/react-native-xtermjs-webview)
+- [Blink Shell (hterm in WKWebView)](https://github.com/blinksh/blink)
+
+### Markdown & Code
+- [react-native-marked](https://www.npmjs.com/package/react-native-marked)
+- [react-native-syntax-highlighter](https://www.npmjs.com/package/react-native-syntax-highlighter)
+- [CodeMirror 6](https://codemirror.net/)
+- [Shiki — VS Code TextMate syntax highlighter](https://shiki.style/)
+
+### Networking
+- [Tailscale vs WireGuard](https://tailscale.com/compare/wireguard)
+- [Headscale — self-hosted Tailscale](https://github.com/juanfont/headscale)
+- [Rathole — Rust NAT traversal](https://github.com/rathole-org/rathole)
+- [awesome-tunneling](https://github.com/anderspitman/awesome-tunneling)
+
+### Claude Code
+- [Claude Code CLI Reference](https://code.claude.com/docs/en/cli-reference)
+- [Claude Code Headless Mode](https://code.claude.com/docs/en/headless)
+- [Claude Code Internals: Terminal UI](https://kotrotsos.medium.com/claude-code-internals-part-11-terminal-ui-542fe17db016)
+- [strip-ansi (npm)](https://www.npmjs.com/package/strip-ansi)
+- [ansi_up — ANSI to HTML](https://github.com/drudru/ansi_up)
