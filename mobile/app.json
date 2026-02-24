@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Marmy",
+    "slug": "marmy",
+    "version": "0.1.0",
+    "orientation": "default",
+    "scheme": "marmy",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.marmy.app",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Marmy needs local network access to connect to your development machines."
+      }
+    },
+    "android": {
+      "package": "com.marmy.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#1a1a2e"
+      }
+    },
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}
