@@ -1,7 +1,15 @@
+import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useConnectionStore } from "../src/stores/connectionStore";
 
 export default function RootLayout() {
+  const hydrate = useConnectionStore((s) => s.hydrate);
+
+  useEffect(() => {
+    hydrate();
+  }, []);
+
   return (
     <>
       <StatusBar style="light" />

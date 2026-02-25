@@ -117,6 +117,18 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         match serde_json::from_str::<ClientMessage>(&text) {
                             Ok(ClientMessage::SubscribePane { pane_id }) => {
                                 debug!(pane_id = %pane_id, "client subscribed to pane");
+                                // Look up the pane's session from cached topology and switch
+                                // the control client there so %output events flow.
+                                if let Ok(topo) = state.get_topology().await {
+                                    if let Some(pane) = topo.panes.iter().find(|p| p.id == pane_id) {
+                                        let sid = pane.session_id.clone();
+                                        if let Err(e) = state.tmux.switch_client_to_session(&sid).await {
+                                            warn!(error = %e, session = %sid, "failed to switch session");
+                                        } else {
+                                            info!(pane = %pane_id, session = %sid, "switched control client to session");
+                                        }
+                                    }
+                                }
                                 subscribed_panes.insert(pane_id);
                             }
                             Ok(ClientMessage::UnsubscribePane { pane_id }) => {
@@ -124,18 +136,12 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 subscribed_panes.remove(&pane_id);
                             }
                             Ok(ClientMessage::Input { pane_id, keys }) => {
-                                // Split into text and trailing special key
-                                // Convention: text ending with \n means send text + Enter
-                                if keys.ends_with('\n') {
-                                    let text = &keys[..keys.len() - 1];
-                                    if !text.is_empty() {
-                                        let _ = state.tmux.send_keys(&pane_id, text).await;
-                                    }
-                                    let _ = state.tmux.send_special_key(&pane_id, "Enter").await;
-                                } else if keys == "C-c" || keys == "C-d" || keys == "C-z" {
-                                    let _ = state.tmux.send_special_key(&pane_id, &keys).await;
+                                if keys.ends_with('\n') || keys.ends_with('\r') {
+                                    let text = keys.trim_end_matches(|c| c == '\n' || c == '\r');
+                                    let _ = state.tmux.send_text_enter(&pane_id, text).await;
                                 } else {
-                                    let _ = state.tmux.send_keys(&pane_id, &keys).await;
+                                    let bytes: Vec<u8> = keys.bytes().collect();
+                                    let _ = state.tmux.send_bytes(&pane_id, &bytes).await;
                                 }
                             }
                             Ok(ClientMessage::Resize { pane_id, cols, rows }) => {

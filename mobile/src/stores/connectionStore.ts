@@ -1,7 +1,24 @@
 import { create } from "zustand";
+import * as SecureStore from "expo-secure-store";
 import type { Machine, TmuxTopology } from "../types";
 import { MarmyApi } from "../services/api";
 import { MarmySocket } from "../services/websocket";
+
+const MACHINES_KEY = "marmy_machines";
+
+async function loadMachines(): Promise<Machine[]> {
+  try {
+    const raw = await SecureStore.getItemAsync(MACHINES_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
+async function saveMachines(machines: Machine[]): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(MACHINES_KEY, JSON.stringify(machines));
+  } catch {}
+}
 
 interface ConnectionState {
   machines: Machine[];
@@ -10,7 +27,9 @@ interface ConnectionState {
   api: MarmyApi | null;
   socket: MarmySocket | null;
   connected: boolean;
+  hydrated: boolean;
 
+  hydrate: () => Promise<void>;
   addMachine: (machine: Omit<Machine, "id" | "online">) => void;
   removeMachine: (id: string) => void;
   connectToMachine: (machine: Machine) => Promise<void>;
@@ -26,6 +45,12 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   api: null,
   socket: null,
   connected: false,
+  hydrated: false,
+
+  hydrate: async () => {
+    const machines = await loadMachines();
+    set({ machines, hydrated: true });
+  },
 
   addMachine: (machine) => {
     const newMachine: Machine = {
@@ -33,13 +58,15 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       online: false,
     };
-    set((state) => ({ machines: [...state.machines, newMachine] }));
+    const machines = [...get().machines, newMachine];
+    set({ machines });
+    saveMachines(machines);
   },
 
   removeMachine: (id) => {
-    set((state) => ({
-      machines: state.machines.filter((m) => m.id !== id),
-    }));
+    const machines = get().machines.filter((m) => m.id !== id);
+    set({ machines });
+    saveMachines(machines);
   },
 
   connectToMachine: async (machine) => {

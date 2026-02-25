@@ -22,10 +22,10 @@ pub fn build_router(state: AppState) -> Router {
     // Authenticated API routes
     let api_routes = Router::new()
         .route("/api/sessions", get(sessions::list_sessions))
-        .route("/api/panes/{id}/input", post(panes::send_input))
-        .route("/api/panes/{id}/resize", post(panes::resize_pane))
-        .route("/api/panes/{id}/content", get(panes::get_content))
-        .route("/api/panes/{id}/history", get(panes::get_history))
+        .route("/api/panes/:id/input", post(panes::send_input))
+        .route("/api/panes/:id/resize", post(panes::resize_pane))
+        .route("/api/panes/:id/content", get(panes::get_content))
+        .route("/api/panes/:id/history", get(panes::get_history))
         .route("/api/files/tree", get(files::list_dir))
         .route("/api/files/content", get(files::read_file));
 

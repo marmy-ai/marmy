@@ -8,6 +8,7 @@ use super::types::{CommandResult, TmuxEvent};
 /// - `%end <timestamp> <cmd_number>` ends a successful response block.
 /// - `%error <timestamp> <cmd_number>` ends a failed response block.
 /// - Lines inside a response block are command output.
+/// - Notifications CAN be interleaved inside response blocks.
 pub struct ControlParser {
     state: ParserState,
     response_lines: Vec<String>,
@@ -26,6 +27,21 @@ pub enum ParsedLine {
     Partial,
 }
 
+/// Strip PTY noise (e.g. `\x04P1000p`) from the beginning of a line.
+/// tmux control mode lines always start with `%`, so we find the first `%`.
+/// Only used for protocol-level line detection, NOT for content inside
+/// response blocks (which could legitimately contain `%`).
+fn sanitize_line(line: &str) -> &str {
+    if line.starts_with('%') {
+        return line;
+    }
+    if let Some(idx) = line.find('%') {
+        &line[idx..]
+    } else {
+        line
+    }
+}
+
 impl ControlParser {
     pub fn new() -> Self {
         Self {
@@ -35,10 +51,16 @@ impl ControlParser {
         }
     }
 
-    /// Feed a single line from tmux control mode stdout.
-    pub fn parse_line(&mut self, line: &str) -> ParsedLine {
+    /// Feed a single raw line from tmux control mode stdout.
+    /// The line should NOT be pre-sanitized — this parser handles sanitization
+    /// contextually based on its current state.
+    pub fn parse_line(&mut self, raw_line: &str) -> ParsedLine {
         match &self.state {
             ParserState::Ready => {
+                // In Ready state, sanitize to strip PTY noise before checking
+                // for protocol markers.
+                let line = sanitize_line(raw_line);
+
                 if let Some(rest) = line.strip_prefix("%begin ") {
                     if let Some(cmd_num) = parse_block_header(rest) {
                         self.state = ParserState::InResponse;
@@ -55,7 +77,10 @@ impl ControlParser {
                 }
             }
             ParserState::InResponse => {
-                if let Some(rest) = line.strip_prefix("%end ") {
+                // For %end/%error detection, sanitize to handle PTY noise.
+                let sanitized = sanitize_line(raw_line);
+
+                if let Some(rest) = sanitized.strip_prefix("%end ") {
                     if let Some(cmd_num) = parse_block_header(rest) {
                         if cmd_num == self.response_cmd_num {
                             self.state = ParserState::Ready;
@@ -69,7 +94,7 @@ impl ControlParser {
                             };
                         }
                     }
-                } else if let Some(rest) = line.strip_prefix("%error ") {
+                } else if let Some(rest) = sanitized.strip_prefix("%error ") {
                     if let Some(cmd_num) = parse_block_header(rest) {
                         if cmd_num == self.response_cmd_num {
                             self.state = ParserState::Ready;
@@ -83,8 +108,19 @@ impl ControlParser {
                             };
                         }
                     }
+                } else if sanitized.starts_with('%') {
+                    // Interleaved notification inside a response block.
+                    // tmux docs: "Response blocks may be interleaved with
+                    // notifications." Parse as an event.
+                    if let Some(event) = parse_notification(sanitized) {
+                        return ParsedLine::Event(event);
+                    }
+                    // Unknown %-prefixed line — store raw as content
+                    self.response_lines.push(raw_line.to_string());
                 } else {
-                    self.response_lines.push(line.to_string());
+                    // Content line — use the RAW (unsanitized) line to avoid
+                    // corrupting content that happens to contain '%'.
+                    self.response_lines.push(raw_line.to_string());
                 }
                 ParsedLine::Partial
             }
@@ -187,8 +223,13 @@ fn parse_notification(line: &str) -> Option<TmuxEvent> {
 
 /// Unescape tmux control mode octal-escaped output.
 /// Characters < ASCII 32 and backslash are escaped as \NNN (3-digit octal).
-/// e.g. \012 = newline, \134 = backslash.
-fn unescape_tmux_output(s: &str) -> Vec<u8> {
+/// e.g. \012 = newline, \033 = ESC, \134 = backslash.
+///
+/// This is safe to call on content that may or may not be octal-escaped:
+/// - If the content IS escaped, \NNN patterns are correctly decoded.
+/// - If the content is NOT escaped (literal bytes), it passes through unchanged
+///   (since raw ESC bytes etc. are not \NNN text patterns).
+pub(crate) fn unescape_tmux_output(s: &str) -> Vec<u8> {
     let mut result = Vec::with_capacity(s.len());
     let bytes = s.as_bytes();
     let mut i = 0;
@@ -214,6 +255,12 @@ fn unescape_tmux_output(s: &str) -> Vec<u8> {
     result
 }
 
+/// Unescape tmux octal encoding and return as a String.
+pub(crate) fn unescape_tmux_string(s: &str) -> String {
+    let bytes = unescape_tmux_output(s);
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
 /// Split a string at the first space.
 fn split_first_space(s: &str) -> Option<(&str, &str)> {
     let s = s.trim();
@@ -233,10 +280,32 @@ mod tests {
     }
 
     #[test]
+    fn test_unescape_esc() {
+        let input = "\\033[31mhello\\033[0m";
+        let result = unescape_tmux_output(input);
+        assert_eq!(result, b"\x1b[31mhello\x1b[0m");
+    }
+
+    #[test]
     fn test_unescape_backslash() {
         let input = "path\\134file";
         let result = unescape_tmux_output(input);
         assert_eq!(result, b"path\\file");
+    }
+
+    #[test]
+    fn test_unescape_string() {
+        let input = "\\033[31mred\\033[0m";
+        let result = unescape_tmux_string(input);
+        assert_eq!(result, "\x1b[31mred\x1b[0m");
+    }
+
+    #[test]
+    fn test_unescape_passthrough() {
+        // If content is NOT escaped (literal bytes), it passes through
+        let input = "hello world";
+        let result = unescape_tmux_output(input);
+        assert_eq!(result, b"hello world");
     }
 
     #[test]
@@ -281,6 +350,43 @@ mod tests {
                 assert_eq!(cmd_num, 1);
                 assert!(result.success);
                 assert_eq!(result.lines, vec!["session_name: dev"]);
+            }
+            _ => panic!("expected CommandResponse"),
+        }
+    }
+
+    #[test]
+    fn test_parser_preserves_percent_in_content() {
+        let mut parser = ControlParser::new();
+
+        parser.parse_line("%begin 1700000000 1");
+        // Content line with % — should NOT be corrupted by sanitize_line
+        parser.parse_line("Loading: 50% complete");
+        match parser.parse_line("%end 1700000000 1") {
+            ParsedLine::CommandResponse { result, .. } => {
+                assert_eq!(result.lines, vec!["Loading: 50% complete"]);
+            }
+            _ => panic!("expected CommandResponse"),
+        }
+    }
+
+    #[test]
+    fn test_parser_interleaved_notification() {
+        let mut parser = ControlParser::new();
+
+        parser.parse_line("%begin 1700000000 1");
+        parser.parse_line("line 1");
+        // Interleaved notification during response
+        match parser.parse_line("%output %3 hello") {
+            ParsedLine::Event(TmuxEvent::Output { pane_id, .. }) => {
+                assert_eq!(pane_id, "%3");
+            }
+            _ => panic!("expected interleaved Event"),
+        }
+        parser.parse_line("line 2");
+        match parser.parse_line("%end 1700000000 1") {
+            ParsedLine::CommandResponse { result, .. } => {
+                assert_eq!(result.lines, vec!["line 1", "line 2"]);
             }
             _ => panic!("expected CommandResponse"),
         }

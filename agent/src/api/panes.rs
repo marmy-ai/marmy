@@ -35,17 +35,24 @@ pub async fn send_input(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let pane_id = normalize_pane_id(&pane_id);
 
-    if req.literal {
+    // If input ends with \n or \r, split into text + Enter (separate tmux commands).
+    // This is critical for TUI apps like Claude Code that process keystrokes
+    // individually — Enter must arrive as a distinct event, not in the same
+    // byte chunk as the text.
+    let input = &req.keys;
+    if input.ends_with('\n') || input.ends_with('\r') {
+        let text = input.trim_end_matches(|c| c == '\n' || c == '\r');
         state
             .tmux
-            .send_keys(&pane_id, &req.keys)
+            .send_text_enter(&pane_id, text)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     } else {
-        // Interpret as tmux key names (e.g. "Enter", "C-c")
+        // Raw control characters / escape sequences (Ctrl-C, Tab, arrows)
+        let bytes: Vec<u8> = input.bytes().collect();
         state
             .tmux
-            .send_special_key(&pane_id, &req.keys)
+            .send_bytes(&pane_id, &bytes)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }

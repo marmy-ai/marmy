@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -11,80 +11,61 @@ import {
 } from "react-native";
 import { useConnectionStore } from "../../src/stores/connectionStore";
 import { useSessionStore } from "../../src/stores/sessionStore";
-import TerminalView, {
-  TerminalHandle,
-} from "../../src/components/TerminalView";
-import RichView from "../../src/components/RichView";
 
 const SHORTCUT_KEYS = [
-  { label: "Tab", value: "\t" },
-  { label: "Esc", value: "\x1b" },
   { label: "Ctrl-C", value: "\x03" },
-  { label: "Ctrl-D", value: "\x04" },
+  { label: "Tab", value: "\t" },
   { label: "Up", value: "\x1b[A" },
   { label: "Down", value: "\x1b[B" },
   { label: "y", value: "y\n" },
+  { label: "n", value: "n\n" },
 ];
 
 export default function TerminalScreen() {
-  const { socket, api, connected } = useConnectionStore();
-  const { activePaneId, viewMode, setViewMode } = useSessionStore();
-  const terminalRef = useRef<TerminalHandle | null>(null);
+  const { api, connected } = useConnectionStore();
+  const { activePaneId } = useSessionStore();
+  const [content, setContent] = useState("");
   const [inputText, setInputText] = useState("");
-  const [rawContent, setRawContent] = useState("");
+  const scrollRef = useRef<ScrollView>(null);
 
-  // Subscribe to active pane's output
+  // Poll pane content every 500ms
   useEffect(() => {
-    if (!socket || !activePaneId) return;
+    if (!api || !activePaneId) return;
 
-    socket.subscribePane(activePaneId);
-
-    const unsub = socket.onMessage((msg) => {
-      if (msg.type === "pane_output" && msg.pane_id === activePaneId) {
-        // Feed data to xterm.js
-        terminalRef.current?.write(msg.data);
-        // Accumulate for rich view
-        setRawContent((prev) => prev + msg.data);
-      }
-    });
-
-    // Fetch existing content
-    if (api) {
-      api.getPaneContent(activePaneId).then((content) => {
-        terminalRef.current?.write(content.content);
-        setRawContent(content.content);
-      }).catch(() => {});
-    }
-
-    return () => {
-      unsub();
-      socket.unsubscribePane(activePaneId);
+    let active = true;
+    const poll = async () => {
+      try {
+        const result = await api.getPaneContent(activePaneId);
+        if (active) setContent(result.content);
+      } catch {}
     };
-  }, [socket, activePaneId, api]);
 
-  const handleInput = useCallback(
-    (data: string) => {
-      if (socket && activePaneId) {
-        socket.sendInput(activePaneId, data);
-      }
-    },
-    [socket, activePaneId]
-  );
+    poll();
+    const interval = setInterval(poll, 500);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [api, activePaneId]);
 
-  const handleResize = useCallback(
-    (cols: number, rows: number) => {
-      if (socket && activePaneId) {
-        socket.resizePane(activePaneId, cols, rows);
-      }
-    },
-    [socket, activePaneId]
-  );
+  // Auto-scroll to bottom on new content
+  useEffect(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
+  }, [content]);
 
-  const handleSend = () => {
-    if (inputText.trim() && socket && activePaneId) {
-      socket.sendInput(activePaneId, inputText + "\n");
+  const handleSend = async () => {
+    if (!inputText.trim() || !api || !activePaneId) return;
+    try {
+      await api.sendInput(activePaneId, inputText + "\n");
       setInputText("");
-    }
+    } catch {}
+  };
+
+  const handleShortcut = async (value: string) => {
+    if (!api || !activePaneId) return;
+    try {
+      await api.sendInput(activePaneId, value);
+    } catch {}
   };
 
   if (!connected) {
@@ -112,48 +93,16 @@ export default function TerminalScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={100}
     >
-      {/* Mode toggle */}
-      <View style={styles.modeBar}>
-        <TouchableOpacity
-          style={[styles.modeBtn, viewMode === "raw" && styles.modeBtnActive]}
-          onPress={() => setViewMode("raw")}
-        >
-          <Text
-            style={[
-              styles.modeBtnText,
-              viewMode === "raw" && styles.modeBtnTextActive,
-            ]}
-          >
-            Raw
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeBtn, viewMode === "rich" && styles.modeBtnActive]}
-          onPress={() => setViewMode("rich")}
-        >
-          <Text
-            style={[
-              styles.modeBtnText,
-              viewMode === "rich" && styles.modeBtnTextActive,
-            ]}
-          >
-            Rich
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Terminal / Rich content */}
-      <View style={styles.content}>
-        {viewMode === "raw" ? (
-          <TerminalView
-            terminalRef={terminalRef}
-            onInput={handleInput}
-            onResize={handleResize}
-          />
-        ) : (
-          <RichView content={rawContent} />
-        )}
-      </View>
+      {/* Terminal content — plain text, polled */}
+      <ScrollView
+        ref={scrollRef}
+        style={styles.terminalScroll}
+        contentContainerStyle={styles.terminalContent}
+      >
+        <Text style={styles.terminalText} selectable>
+          {content}
+        </Text>
+      </ScrollView>
 
       {/* Shortcut bar */}
       <ScrollView
@@ -166,7 +115,7 @@ export default function TerminalScreen() {
           <TouchableOpacity
             key={key.label}
             style={styles.shortcutBtn}
-            onPress={() => handleInput(key.value)}
+            onPress={() => handleShortcut(key.value)}
           >
             <Text style={styles.shortcutBtnText}>{key.label}</Text>
           </TouchableOpacity>
@@ -204,23 +153,19 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: "#888", fontSize: 18, marginBottom: 8 },
   emptySubtext: { color: "#555", fontSize: 14 },
-  modeBar: {
-    flexDirection: "row",
+  terminalScroll: {
+    flex: 1,
+    backgroundColor: "#0f0f1a",
+  },
+  terminalContent: {
     padding: 8,
-    gap: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2a2a3e",
   },
-  modeBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: "#1a1a2e",
+  terminalText: {
+    color: "#e0e0e0",
+    fontSize: 11,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 15,
   },
-  modeBtnActive: { backgroundColor: "#7c3aed" },
-  modeBtnText: { color: "#888", fontSize: 14, fontWeight: "500" },
-  modeBtnTextActive: { color: "#fff" },
-  content: { flex: 1 },
   shortcutBar: {
     maxHeight: 40,
     borderTopWidth: 1,

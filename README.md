@@ -2,7 +2,7 @@
 
 Remote tmux + Claude Code mobile client. Run Claude Code on your laptop, continue the conversation from your phone.
 
-Marmy is a React Native mobile app paired with a lightweight Rust daemon that bridges tmux sessions to your phone over a secure network. It provides a raw terminal view (xterm.js), a rich view that understands markdown and code blocks, and a read-only file browser — all connected to your remote tmux sessions in real time.
+Marmy is a React Native mobile app paired with a lightweight Rust daemon that bridges tmux sessions to your phone over a secure network. It provides a plain-text terminal view with input, shortcut keys, and a read-only file browser — all connected to your remote tmux sessions via polling and REST API.
 
 ## Architecture
 
@@ -10,16 +10,16 @@ Marmy is a React Native mobile app paired with a lightweight Rust daemon that br
   Phone (React Native)                    Laptop / Server
   ┌──────────────────┐                   ┌─────────────────────┐
   │  Machines Tab    │                   │  marmy-agent (Rust) │
-  │  Sessions Tab    │◄── WebSocket ───► │    │                │
-  │  Terminal Tab    │    + REST API      │    ├─ tmux -CC      │
-  │  Files Tab       │                   │    │  (control mode) │
+  │  Sessions Tab    │◄── REST API ────► │    │                │
+  │  Terminal Tab    │    + WebSocket     │    ├─ tmux -CC      │
+  │  Files Tab       │    (topology)      │    │  (control mode) │
   └──────────────────┘                   │    ├─ REST API       │
          │                               │    └─ File server    │
          │                               └─────────────────────┘
          └── Tailscale / LAN / VPN ──────────────┘
 ```
 
-**marmy-agent** runs on each development machine. It connects to the local tmux server via [control mode](https://github.com/tmux/tmux/wiki/Control-Mode) (`tmux -CC`) and exposes a WebSocket + REST API. The mobile app connects to the agent and gets real-time terminal output, session topology, and file access.
+**marmy-agent** runs on each development machine. It connects to the local tmux server via [control mode](https://github.com/tmux/tmux/wiki/Control-Mode) (`tmux -CC`) and exposes a REST API (with an optional WebSocket for topology updates). The mobile app polls pane content via REST and sends input via REST POST — simple, reliable, and easy to debug.
 
 ## Prerequisites
 
@@ -163,16 +163,11 @@ The agent will only serve files within these directories. Files are read-only (n
 - Tap any pane to open in the terminal view
 
 ### Terminal Tab
-- **Raw mode**: Full terminal emulation via xterm.js in a WebView
-  - Proper ANSI rendering, colors, cursor positioning
-  - Touch-friendly with scrollback
-  - Shortcut bar: Tab, Esc, Ctrl-C, Ctrl-D, arrow keys, quick "y" approve
-  - Text input bar for typing commands
-- **Rich mode**: Parsed view of terminal output
-  - Detects markdown headings and fenced code blocks
-  - Renders code blocks with monospace styling
-  - Scrollable, formatted text
-- Toggle between Raw and Rich with a single tap
+- Plain-text terminal view — polls pane content via REST every 500ms
+- Monospace font, auto-scroll to bottom on new output
+- Text input bar for typing commands (sent via REST POST)
+- Shortcut bar: Ctrl-C, Tab, Up, Down, y, n
+- Selectable text for copy/paste
 
 ### Files Tab
 - Browse remote file trees
@@ -192,36 +187,25 @@ The agent connects to tmux using [control mode](https://github.com/tmux/tmux/wik
 - `%sessions-changed` — sessions were created/destroyed
 - `%begin` / `%end` — command response boundaries
 
-The agent parses these notifications, maintains an in-memory topology model, and broadcasts events to connected mobile clients via WebSocket.
+The agent parses these notifications and maintains an in-memory topology model.
 
-### WebSocket Protocol
+### REST API (primary)
 
-A single WebSocket connection (`/ws`) handles all real-time communication:
-
-**Client → Server:**
-```json
-{"type": "subscribe_pane", "pane_id": "%3"}
-{"type": "input", "pane_id": "%3", "keys": "ls -la\n"}
-{"type": "resize", "pane_id": "%3", "cols": 80, "rows": 24}
-```
-
-**Server → Client:**
-```json
-{"type": "pane_output", "pane_id": "%3", "data": "..."}
-{"type": "topology", "sessions": [...], "windows": [...], "panes": [...]}
-```
-
-### REST API
+The mobile app uses REST for all core operations — polling pane content, sending input, browsing files. This is simple, stateless, and easy to debug with `curl`.
 
 ```
 GET  /api/sessions              List all sessions/windows/panes
-GET  /api/panes/:id/content     Capture current pane screen
+GET  /api/panes/:id/content     Capture current pane screen (plain text)
 GET  /api/panes/:id/history     Capture full scrollback
-POST /api/panes/:id/input       Send keys to a pane
+POST /api/panes/:id/input       Send keys to a pane (hex-encoded via send-keys -H)
 POST /api/panes/:id/resize      Resize a pane
 GET  /api/files/tree?path=...   List directory contents
 GET  /api/files/content?path=.. Read file contents
 ```
+
+### WebSocket (optional)
+
+A WebSocket endpoint (`/ws`) is available for real-time topology updates (session/window/pane changes) and streaming pane output. The mobile app currently uses REST polling for terminal content, but the WebSocket can be used for lower-latency use cases.
 
 ## Running as a Service
 
@@ -442,15 +426,13 @@ marmy/
 │   │       ├── _layout.tsx    # Tab bar config
 │   │       ├── index.tsx      # Machines screen
 │   │       ├── sessions.tsx   # Sessions/panes browser
-│   │       ├── terminal.tsx   # Terminal + rich view
+│   │       ├── terminal.tsx   # Plain-text terminal (polling)
 │   │       └── files.tsx      # File browser
 │   └── src/
 │       ├── types/             # TypeScript types (API contract)
 │       ├── services/          # API client, WebSocket manager
 │       ├── stores/            # Zustand state stores
 │       └── components/        # Reusable UI components
-│           ├── TerminalView   # xterm.js in WebView
-│           ├── RichView       # Markdown/code block renderer
 │           ├── FileTree       # Directory listing
 │           └── CodeViewer     # Line-numbered code display
 ├── product_prd.md             # Product requirements document

@@ -131,23 +131,39 @@ async fn cmd_serve(bind_override: Option<String>, port_override: Option<u16>) ->
 
 fn cmd_pair() -> Result<()> {
     let config = Config::load()?;
-    let hostname = hostname::get()
-        .map(|h| h.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+    let local_ips = get_local_ips();
 
     println!("=== Marmy Pairing Info ===\n");
-    println!("Hostname:  {}", hostname);
     println!("Port:      {}", config.server.port);
     println!("Token:     {}", config.auth.token);
     println!();
-    println!("In the Marmy app, add this machine with:");
-    println!("  Address:  {}:{}", hostname, config.server.port);
+    if local_ips.is_empty() {
+        println!("No network interfaces found. Check your connection.");
+    } else {
+        println!("In the Marmy app, add this machine with one of:");
+        for ip in &local_ips {
+            println!("  Address:  {}:{}", ip, config.server.port);
+        }
+    }
     println!("  Token:    {}", config.auth.token);
     println!();
-    println!("If using Tailscale, use your Tailscale IP or MagicDNS hostname.");
     println!("Config file: {}", config::config_path().display());
 
     Ok(())
+}
+
+fn get_local_ips() -> Vec<String> {
+    let mut ips = Vec::new();
+    let Ok(interfaces) = std::net::UdpSocket::bind("0.0.0.0:0") else {
+        return ips;
+    };
+    // Connect to a public address to determine the default route IP
+    if interfaces.connect("8.8.8.8:80").is_ok() {
+        if let Ok(addr) = interfaces.local_addr() {
+            ips.push(addr.ip().to_string());
+        }
+    }
+    ips
 }
 
 fn cmd_config() -> Result<()> {
