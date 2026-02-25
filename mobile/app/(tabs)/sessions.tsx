@@ -1,10 +1,13 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   SectionList,
   TouchableOpacity,
+  TextInput,
+  Modal,
   StyleSheet,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useConnectionStore } from "../../src/stores/connectionStore";
@@ -12,9 +15,40 @@ import { useSessionStore } from "../../src/stores/sessionStore";
 import type { TmuxPane, TmuxWindow, TmuxSession } from "../../src/types";
 
 export default function SessionsScreen() {
-  const { topology, activeMachine, connected } = useConnectionStore();
+  const { api, topology, activeMachine, connected } = useConnectionStore();
   const { setActivePane, setActiveSession } = useSessionStore();
   const router = useRouter();
+  const [showNewSession, setShowNewSession] = useState(false);
+  const [newSessionName, setNewSessionName] = useState("");
+
+  const handleCreateSession = async () => {
+    const name = newSessionName.trim();
+    if (!name || !api) return;
+    try {
+      await api.createSession(name);
+      setNewSessionName("");
+      setShowNewSession(false);
+    } catch (e: any) {
+      Alert.alert("Error", e.message);
+    }
+  };
+
+  const handleDeleteSession = (name: string) => {
+    Alert.alert("Delete Session", `Kill session "${name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api?.deleteSession(name);
+          } catch (e: any) {
+            Alert.alert("Error", e.message);
+          }
+        },
+      },
+    ]);
+  };
 
   if (!connected || !activeMachine) {
     return (
@@ -70,20 +104,68 @@ export default function SessionsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={[styles.statusDot, { backgroundColor: "#22c55e" }]} />
-        <Text style={styles.headerText}>{activeMachine.name}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+          <View style={[styles.statusDot, { backgroundColor: "#22c55e" }]} />
+          <Text style={styles.headerText}>{activeMachine.name}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => setShowNewSession(true)}
+        >
+          <Text style={styles.addBtnText}>+</Text>
+        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showNewSession}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNewSession(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>New Session</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={newSessionName}
+              onChangeText={setNewSessionName}
+              placeholder="Session name"
+              placeholderTextColor="#555"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => { setShowNewSession(false); setNewSessionName(""); }}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalCreateBtn}
+                onPress={handleCreateSession}
+              >
+                <Text style={styles.modalCreateText}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
         renderSectionHeader={({ section }) => (
-          <View style={styles.sectionHeader}>
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onLongPress={() => handleDeleteSession(section.title)}
+          >
             <Text style={styles.sectionTitle}>{section.title}</Text>
             <Text style={styles.sectionBadge}>
               {section.session.attached ? "attached" : "detached"}
             </Text>
-          </View>
+          </TouchableOpacity>
         )}
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -162,4 +244,48 @@ const styles = StyleSheet.create({
   paneCommand: { color: "#7c3aed", fontSize: 14, marginBottom: 2 },
   panePath: { color: "#666", fontSize: 12, marginBottom: 2 },
   paneDimensions: { color: "#555", fontSize: 11 },
+  addBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#7c3aed",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addBtnText: { color: "#fff", fontSize: 20, fontWeight: "600", marginTop: -1 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalCard: {
+    backgroundColor: "#1a1a2e",
+    borderRadius: 12,
+    padding: 20,
+    width: "85%",
+    borderWidth: 1,
+    borderColor: "#2a2a3e",
+  },
+  modalTitle: { color: "#e0e0e0", fontSize: 18, fontWeight: "600", marginBottom: 16 },
+  modalInput: {
+    backgroundColor: "#0f0f1a",
+    borderWidth: 1,
+    borderColor: "#2a2a3e",
+    borderRadius: 8,
+    padding: 12,
+    color: "#e0e0e0",
+    fontSize: 15,
+    marginBottom: 16,
+  },
+  modalButtons: { flexDirection: "row", justifyContent: "flex-end", gap: 12 },
+  modalCancelBtn: { paddingHorizontal: 16, paddingVertical: 10 },
+  modalCancelText: { color: "#888", fontSize: 15 },
+  modalCreateBtn: {
+    backgroundColor: "#7c3aed",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  modalCreateText: { color: "#fff", fontSize: 15, fontWeight: "600" },
 });

@@ -55,9 +55,10 @@ export default function TerminalScreen() {
 
   const handleSend = async () => {
     if (!inputText.trim() || !api || !activePaneId) return;
+    const text = inputText;
+    setInputText("");
     try {
-      await api.sendInput(activePaneId, inputText + "\n");
-      setInputText("");
+      await api.sendInput(activePaneId, text + "\n");
     } catch {}
   };
 

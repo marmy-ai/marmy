@@ -4,7 +4,7 @@ pub mod sessions;
 pub mod ws;
 
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use tower_http::cors::{Any, CorsLayer};
@@ -21,7 +21,8 @@ pub fn build_router(state: AppState) -> Router {
 
     // Authenticated API routes
     let api_routes = Router::new()
-        .route("/api/sessions", get(sessions::list_sessions))
+        .route("/api/sessions", get(sessions::list_sessions).post(sessions::create_session))
+        .route("/api/sessions/:name", delete(sessions::delete_session))
         .route("/api/panes/:id/input", post(panes::send_input))
         .route("/api/panes/:id/resize", post(panes::resize_pane))
         .route("/api/panes/:id/content", get(panes::get_content))

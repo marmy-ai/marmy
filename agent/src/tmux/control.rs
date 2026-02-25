@@ -349,6 +349,36 @@ impl TmuxController {
         Ok(())
     }
 
+    /// Create a new tmux session.
+    pub async fn new_session(&self, name: &str) -> Result<()> {
+        let mut cmd = Command::new("tmux");
+        if let Some(ref socket) = self.socket_name {
+            cmd.arg("-L").arg(socket);
+        }
+        cmd.arg("new-session").arg("-d").arg("-s").arg(name);
+        let output = cmd.output().await.context("failed to spawn tmux new-session")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux new-session failed: {}", stderr.trim());
+        }
+        Ok(())
+    }
+
+    /// Kill (delete) a tmux session.
+    pub async fn kill_session(&self, name: &str) -> Result<()> {
+        let mut cmd = Command::new("tmux");
+        if let Some(ref socket) = self.socket_name {
+            cmd.arg("-L").arg(socket);
+        }
+        cmd.arg("kill-session").arg("-t").arg(name);
+        let output = cmd.output().await.context("failed to spawn tmux kill-session")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("tmux kill-session failed: {}", stderr.trim());
+        }
+        Ok(())
+    }
+
     /// Switch the control client to a target session so that %output
     /// notifications flow for that session's panes.
     pub async fn switch_client_to_session(&self, session_id: &str) -> Result<()> {

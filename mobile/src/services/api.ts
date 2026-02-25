@@ -31,7 +31,9 @@ export class MarmyApi {
       throw new Error(`API error ${res.status}: ${text}`);
     }
 
-    return res.json();
+    const text = await res.text();
+    if (!text) return undefined as T;
+    return JSON.parse(text);
   }
 
   /** Check if the agent is reachable. */
@@ -47,6 +49,21 @@ export class MarmyApi {
   /** Get full tmux topology. */
   async getSessions(): Promise<TmuxTopology> {
     return this.fetch<TmuxTopology>("/api/sessions");
+  }
+
+  /** Create a new tmux session. */
+  async createSession(name: string): Promise<void> {
+    await this.fetch("/api/sessions", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  /** Delete (kill) a tmux session. */
+  async deleteSession(name: string): Promise<void> {
+    await this.fetch(`/api/sessions/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
   }
 
   /** Get current pane content (visible screen). */
