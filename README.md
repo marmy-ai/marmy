@@ -278,13 +278,154 @@ launchctl list | grep marmy
 
 ### Tailscale (recommended)
 
-1. Install Tailscale on your laptop: https://tailscale.com/download
-2. Install Tailscale on your phone: App Store / Play Store
-3. Sign in to the same account on both
-4. Your laptop gets a Tailscale IP (e.g., `100.64.0.2`)
-5. In Marmy, add your machine with address `100.64.0.2:9876`
+Tailscale is the easiest way to connect your phone to your development machine from anywhere. It creates a WireGuard-encrypted mesh VPN that works through NAT, firewalls, and cellular networks — no port forwarding, no public IPs, no configuration headaches. Traffic between your devices is end-to-end encrypted, so even though Marmy uses plain HTTP, the transport layer is fully secured.
 
-With MagicDNS enabled, you can use your machine's name instead: `my-laptop:9876`.
+**The short version:** install Tailscale on both devices, sign in, use your Tailscale IP in the Marmy app. That's it — everything else below is optional hardening.
+
+#### Step 1: Install Tailscale on your development machine
+
+**macOS:**
+```bash
+# Homebrew
+brew install --cask tailscale
+
+# Or download from https://tailscale.com/download/mac
+# The Mac app lives in the menu bar
+```
+
+**Linux (Debian/Ubuntu):**
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+**Linux (Fedora/RHEL):**
+```bash
+sudo dnf install -y tailscale
+sudo systemctl enable --now tailscaled
+sudo tailscale up
+```
+
+After installation, authenticate when prompted. Your machine joins your tailnet and gets a stable IP in the `100.x.y.z` range.
+
+#### Step 2: Install Tailscale on your phone
+
+- **iOS**: [Tailscale on the App Store](https://apps.apple.com/app/tailscale/id1470499037)
+- **Android**: [Tailscale on Google Play](https://play.google.com/store/apps/details?id=com.tailscale.ipn)
+
+Open the app, sign in with the same account (or accept an invite to the same tailnet). Your phone now has its own Tailscale IP and can reach your development machine directly.
+
+#### Step 3: Find your Tailscale IP
+
+```bash
+# On your development machine
+tailscale ip -4
+# Example output: 100.89.137.42
+```
+
+Or check the Tailscale admin console at https://login.tailscale.com/admin/machines.
+
+#### Step 4: Connect from Marmy
+
+In the Marmy app, add your machine with:
+- **Address**: `100.89.137.42:9876` (your Tailscale IP)
+- **Token**: from `marmy-agent pair`
+
+That's all you need. Your phone can now reach the agent from anywhere — home Wi-Fi, coffee shop, cellular, wherever.
+
+#### MagicDNS (friendly hostnames)
+
+Tailscale includes [MagicDNS](https://tailscale.com/kb/1081/magicdns), which is enabled by default on new tailnets. It lets you use your machine's hostname instead of an IP:
+
+```
+my-macbook:9876
+dev-server:9876
+```
+
+Check your tailnet name in the admin console under DNS. The full MagicDNS name is `<hostname>.<tailnet-name>.ts.net`, but the short name works within your tailnet.
+
+To verify MagicDNS is working:
+```bash
+# From your phone's Tailscale app, or from another machine on your tailnet
+ping my-macbook    # Should resolve to 100.x.y.z
+```
+
+#### Hardening: bind only to Tailscale
+
+By default, `marmy-agent` listens on `0.0.0.0` (all interfaces), meaning anything that can reach port 9876 on any interface can attempt to connect (they'd still need the token). If you want to lock it down so the agent *only* accepts connections over Tailscale:
+
+```toml
+# ~/.config/marmy/config.toml
+[server]
+bind = "100.89.137.42"   # Your Tailscale IP — only accepts connections via tailnet
+port = 9876
+```
+
+Or use the CLI override:
+```bash
+marmy-agent serve -b 100.89.137.42
+```
+
+This means the agent won't respond on your LAN IP, localhost, or any other interface — only Tailscale. Useful if you're on a shared or untrusted network.
+
+> **Tip:** Your Tailscale IP is stable across reboots and network changes, so this config is set-and-forget.
+
+#### Tailscale ACLs (multi-user tailnets)
+
+If you share your tailnet with others (family, team), you can use [Tailscale ACLs](https://tailscale.com/kb/1018/acls) to restrict who can reach the agent. In the admin console under Access Controls:
+
+```jsonc
+{
+  "acls": [
+    {
+      // Only your devices can reach the marmy-agent port
+      "action": "accept",
+      "src": ["your-email@example.com"],
+      "dst": ["your-macbook:9876"]
+    }
+  ]
+}
+```
+
+This ensures that even other authenticated devices on your tailnet can't connect to the agent.
+
+#### Tailscale HTTPS (optional)
+
+Tailscale can provision TLS certificates for your machines via `tailscale cert`. Marmy doesn't natively serve HTTPS, but you can put a reverse proxy in front if you want TLS termination:
+
+```bash
+# Get a cert for your machine
+tailscale cert my-macbook.tailnet-name.ts.net
+
+# Use with caddy, nginx, etc. to proxy to localhost:9876
+# This is optional — Tailscale's WireGuard tunnel is already encrypted
+```
+
+For most users this is unnecessary since WireGuard already encrypts all traffic between your devices. TLS on top would be double encryption.
+
+#### Troubleshooting Tailscale
+
+**Devices not seeing each other:**
+```bash
+tailscale status                    # Both devices should be listed
+tailscale ping <other-device>      # Test direct connectivity
+```
+
+**Connection refused:**
+```bash
+# Verify agent is running and listening
+curl http://100.89.137.42:9876/api/sessions -H "Authorization: Bearer <token>"
+```
+
+**Tailscale on but no connection:**
+- Check that Tailscale is active on your phone (VPN icon should be visible)
+- On iOS, Tailscale can be killed by the OS in the background — open the app to re-activate
+- On Linux, ensure `tailscaled` is running: `sudo systemctl status tailscaled`
+
+**MagicDNS not resolving:**
+- Verify MagicDNS is enabled in admin console → DNS settings
+- Try the full name: `my-macbook.tailnet-name.ts.net:9876`
+- Fall back to the IP: `tailscale ip -4`
 
 ### Same LAN
 
