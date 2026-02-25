@@ -55,7 +55,12 @@ export default function TerminalScreen() {
 
   const handleSend = async () => {
     if (!inputText.trim() || !api || !activePaneId) return;
-    const text = inputText;
+    // Undo iOS smart punctuation: em/en dashes back to --, smart quotes back to plain
+    const text = inputText
+      .replace(/\u2014/g, "--")  // em dash → --
+      .replace(/\u2013/g, "-")   // en dash → -
+      .replace(/[\u201C\u201D]/g, '"')  // smart double quotes
+      .replace(/[\u2018\u2019]/g, "'"); // smart single quotes
     setInputText("");
     try {
       await api.sendInput(activePaneId, text + "\n");
@@ -133,6 +138,9 @@ export default function TerminalScreen() {
           placeholderTextColor="#555"
           autoCapitalize="none"
           autoCorrect={false}
+          autoComplete="off"
+          spellCheck={false}
+          textContentType="none"
           returnKeyType="send"
           onSubmitEditing={handleSend}
         />

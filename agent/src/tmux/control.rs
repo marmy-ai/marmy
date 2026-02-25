@@ -42,6 +42,14 @@ impl TmuxController {
         }
         let _ = kill_cmd.args(["kill-session", "-t", "_marmy_ctrl"]).output();
 
+        // Remove CLAUDECODE from tmux's global environment so new sessions
+        // created via the agent don't trigger Claude Code's nesting check.
+        let mut env_cmd = std::process::Command::new("tmux");
+        if let Some(socket) = socket_name {
+            env_cmd.arg("-L").arg(socket);
+        }
+        let _ = env_cmd.args(["set-environment", "-g", "-u", "CLAUDECODE"]).output();
+
         // tmux -CC (control mode) requires a PTY even when using piped stdio.
         // Wrap with `script` to allocate a pseudo-TTY.
         let mut tmux_args = vec!["tmux".to_string()];
