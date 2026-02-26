@@ -27,15 +27,16 @@ export default function TerminalScreen() {
   const [content, setContent] = useState("");
   const [inputText, setInputText] = useState("");
   const scrollRef = useRef<ScrollView>(null);
+  const isScrolledUp = useRef(false);
 
-  // Poll pane content every 500ms
+  // Poll pane history (full scrollback) every 500ms
   useEffect(() => {
     if (!api || !activePaneId) return;
 
     let active = true;
     const poll = async () => {
       try {
-        const result = await api.getPaneContent(activePaneId);
+        const result = await api.getPaneHistory(activePaneId);
         if (active) setContent(result.content);
       } catch {}
     };
@@ -48,9 +49,11 @@ export default function TerminalScreen() {
     };
   }, [api, activePaneId]);
 
-  // Auto-scroll to bottom on new content
+  // Auto-scroll to bottom on new content, but only if user hasn't scrolled up
   useEffect(() => {
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
+    if (!isScrolledUp.current) {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
+    }
   }, [content]);
 
   const handleSend = async () => {
@@ -104,6 +107,12 @@ export default function TerminalScreen() {
         ref={scrollRef}
         style={styles.terminalScroll}
         contentContainerStyle={styles.terminalContent}
+        onScroll={(e) => {
+          const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+          const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+          isScrolledUp.current = distanceFromBottom > 50;
+        }}
+        scrollEventThrottle={100}
       >
         <Text style={styles.terminalText} selectable>
           {content}
