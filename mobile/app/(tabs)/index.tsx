@@ -5,6 +5,7 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
+  Modal,
   StyleSheet,
   Alert,
   KeyboardAvoidingView,
@@ -12,9 +13,10 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useConnectionStore } from "../../src/stores/connectionStore";
+import type { Machine } from "../../src/types";
 
 export default function MachinesScreen() {
-  const { machines, addMachine, removeMachine, connectToMachine } =
+  const { machines, addMachine, updateMachine, removeMachine, connectToMachine } =
     useConnectionStore();
   const router = useRouter();
 
@@ -22,6 +24,11 @@ export default function MachinesScreen() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [token, setToken] = useState("");
+
+  const [editMachine, setEditMachine] = useState<Machine | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  const [editToken, setEditToken] = useState("");
 
   const handleAdd = () => {
     if (!name.trim() || !address.trim() || !token.trim()) {
@@ -33,6 +40,23 @@ export default function MachinesScreen() {
     setAddress("");
     setToken("");
     setShowAdd(false);
+  };
+
+  const handleEdit = (machine: Machine) => {
+    setEditMachine(machine);
+    setEditName(machine.name);
+    setEditAddress(machine.address);
+    setEditToken(machine.token);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editMachine) return;
+    updateMachine(editMachine.id, {
+      name: editName.trim() || editMachine.name,
+      address: editAddress.trim() || editMachine.address,
+      token: editToken.trim() || editMachine.token,
+    });
+    setEditMachine(null);
   };
 
   const handleConnect = async (machine: (typeof machines)[0]) => {
@@ -67,8 +91,9 @@ export default function MachinesScreen() {
             style={styles.card}
             onPress={() => handleConnect(item)}
             onLongPress={() =>
-              Alert.alert("Remove machine?", item.name, [
-                { text: "Cancel" },
+              Alert.alert(item.name, undefined, [
+                { text: "Cancel", style: "cancel" },
+                { text: "Edit", onPress: () => handleEdit(item) },
                 {
                   text: "Remove",
                   style: "destructive",
@@ -138,6 +163,53 @@ export default function MachinesScreen() {
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       )}
+      <Modal
+        visible={!!editMachine}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditMachine(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Edit Machine</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Machine name"
+              placeholderTextColor="#666"
+              value={editName}
+              onChangeText={setEditName}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Address (host:port)"
+              placeholderTextColor="#666"
+              value={editAddress}
+              onChangeText={setEditAddress}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Auth token"
+              placeholderTextColor="#666"
+              value={editToken}
+              onChangeText={setEditToken}
+              autoCapitalize="none"
+            />
+            <View style={styles.addButtons}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setEditMachine(null)}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.addBtn} onPress={handleSaveEdit}>
+                <Text style={styles.addBtnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -198,4 +270,19 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   fabText: { color: "#fff", fontSize: 28, lineHeight: 30 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalCard: {
+    backgroundColor: "#1a1a2e",
+    borderRadius: 12,
+    padding: 20,
+    width: "85%",
+    borderWidth: 1,
+    borderColor: "#2a2a3e",
+  },
+  modalTitle: { color: "#e0e0e0", fontSize: 18, fontWeight: "600", marginBottom: 16 },
 });

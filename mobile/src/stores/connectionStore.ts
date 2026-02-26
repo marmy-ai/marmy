@@ -31,6 +31,7 @@ interface ConnectionState {
 
   hydrate: () => Promise<void>;
   addMachine: (machine: Omit<Machine, "id" | "online">) => void;
+  updateMachine: (id: string, updates: Partial<Pick<Machine, "name" | "address" | "token">>) => void;
   removeMachine: (id: string) => void;
   connectToMachine: (machine: Machine) => Promise<void>;
   disconnect: () => void;
@@ -59,6 +60,14 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       online: false,
     };
     const machines = [...get().machines, newMachine];
+    set({ machines });
+    saveMachines(machines);
+  },
+
+  updateMachine: (id, updates) => {
+    const machines = get().machines.map((m) =>
+      m.id === id ? { ...m, ...updates } : m
+    );
     set({ machines });
     saveMachines(machines);
   },
