@@ -537,6 +537,46 @@ npx expo start          # Start dev server
 npx expo start --clear  # Clear cache and start
 ```
 
+### Building for iOS (run on your iPhone via Xcode)
+
+#### Prerequisites
+
+- An [Apple Developer account](https://developer.apple.com/) ($99/year)
+- Xcode installed with a valid signing team configured
+
+#### Steps
+
+```bash
+cd mobile
+
+# Install JS dependencies
+npm install
+
+# Generate the native ios/ project
+npx expo prebuild --platform ios
+
+# Install CocoaPods
+cd ios && pod install && cd ..
+
+# Open the Xcode workspace
+open ios/marmy.xcworkspace
+```
+
+In Xcode:
+
+1. Select your **signing team** under **Signing & Capabilities** for the `marmy` target.
+2. Connect your iPhone via USB and select it as the build destination.
+3. Press **Cmd+R** (or **Product > Run**) to build and install directly on your device.
+
+To create an archive for App Store / TestFlight distribution:
+
+1. Set the device to **Any iOS Device (arm64)**.
+2. **Product > Archive**.
+3. When the archive finishes, the Organizer opens. Click **Distribute App > App Store Connect > Upload**.
+4. Go to [App Store Connect](https://appstoreconnect.apple.com/), fill in listing metadata, and submit for review.
+
+The `ios/` directory retains your signing team and provisioning profile across builds. If you ever need to regenerate the native project (`npx expo prebuild --platform ios --clean`), you'll need to re-select your signing team in **Signing & Capabilities** afterward.
+
 ## Project Structure
 
 ```
