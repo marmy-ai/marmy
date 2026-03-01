@@ -12,7 +12,7 @@ import {
 import { useConnectionStore } from "../../src/stores/connectionStore";
 import { useSessionStore } from "../../src/stores/sessionStore";
 
-const SHORTCUT_KEYS = [
+const CHAT_SHORTCUT_KEYS = [
   { label: "Ctrl-C", value: "\x03" },
   { label: "Tab", value: "\t" },
   { label: "Up", value: "\x1b[A" },
@@ -21,13 +21,29 @@ const SHORTCUT_KEYS = [
   { label: "n", value: "n\n" },
 ];
 
+const KEYBOARD_SHORTCUT_KEYS = [
+  { label: "Esc", value: "\x1b" },
+  { label: "Ctrl-C", value: "\x03" },
+  { label: "Ctrl-D", value: "\x04" },
+  { label: "Ctrl-Z", value: "\x1a" },
+  { label: "Ctrl-A", value: "\x01" },
+  { label: "Ctrl-E", value: "\x05" },
+  { label: "Tab", value: "\t" },
+  { label: "\u2190", value: "\x1b[D" },
+  { label: "\u2192", value: "\x1b[C" },
+  { label: "\u2191", value: "\x1b[A" },
+  { label: "\u2193", value: "\x1b[B" },
+];
+
 export default function TerminalScreen() {
   const { api, connected } = useConnectionStore();
   const { activePaneId } = useSessionStore();
   const [content, setContent] = useState("");
   const [inputText, setInputText] = useState("");
+  const [isKeyboardMode, setIsKeyboardMode] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const isScrolledUp = useRef(false);
+  const prevTextRef = useRef("");
 
   // Poll pane history (full scrollback) every 500ms
   useEffect(() => {
@@ -56,6 +72,14 @@ export default function TerminalScreen() {
     }
   }, [content]);
 
+  // Reset TextInput when switching to keyboard mode
+  useEffect(() => {
+    if (isKeyboardMode) {
+      setInputText("");
+      prevTextRef.current = "";
+    }
+  }, [isKeyboardMode]);
+
   const handleSend = async () => {
     if (!inputText.trim() || !api || !activePaneId) return;
     // Undo iOS smart punctuation: em/en dashes back to --, smart quotes back to plain
@@ -77,6 +101,47 @@ export default function TerminalScreen() {
     } catch {}
   };
 
+  const handleChangeText = (newText: string) => {
+    if (!isKeyboardMode) {
+      setInputText(newText);
+      return;
+    }
+
+    if (!api || !activePaneId) return;
+
+    const prev = prevTextRef.current;
+
+    if (newText.length > prev.length) {
+      // Characters added — send the new characters
+      const added = newText.slice(prev.length);
+      // Undo iOS smart punctuation
+      const cleaned = added
+        .replace(/\u2014/g, "--")
+        .replace(/\u2013/g, "-")
+        .replace(/[\u201C\u201D]/g, '"')
+        .replace(/[\u2018\u2019]/g, "'");
+      api.sendInput(activePaneId, cleaned).catch(() => {});
+    } else if (newText.length < prev.length) {
+      // Characters deleted — send DEL for each removed character
+      const deletedCount = prev.length - newText.length;
+      const delSequence = "\x7f".repeat(deletedCount);
+      api.sendInput(activePaneId, delSequence).catch(() => {});
+    }
+
+    // Clear the input after each keystroke so it stays empty
+    prevTextRef.current = "";
+    setInputText("");
+  };
+
+  const handleSubmitEditing = () => {
+    if (isKeyboardMode) {
+      if (!api || !activePaneId) return;
+      api.sendInput(activePaneId, "\n").catch(() => {});
+    } else {
+      handleSend();
+    }
+  };
+
   if (!connected) {
     return (
       <View style={styles.center}>
@@ -95,6 +160,8 @@ export default function TerminalScreen() {
       </View>
     );
   }
+
+  const shortcuts = isKeyboardMode ? KEYBOARD_SHORTCUT_KEYS : CHAT_SHORTCUT_KEYS;
 
   return (
     <KeyboardAvoidingView
@@ -126,7 +193,7 @@ export default function TerminalScreen() {
         contentContainerStyle={styles.shortcutContent}
         showsHorizontalScrollIndicator={false}
       >
-        {SHORTCUT_KEYS.map((key) => (
+        {shortcuts.map((key) => (
           <TouchableOpacity
             key={key.label}
             style={styles.shortcutBtn}
@@ -139,23 +206,34 @@ export default function TerminalScreen() {
 
       {/* Input bar */}
       <View style={styles.inputBar}>
+        <TouchableOpacity
+          style={[styles.modeToggle, isKeyboardMode && styles.modeToggleActive]}
+          onPress={() => setIsKeyboardMode((prev) => !prev)}
+        >
+          <Text style={[styles.modeToggleText, isKeyboardMode && styles.modeToggleTextActive]}>
+            {isKeyboardMode ? "KB" : "MSG"}
+          </Text>
+        </TouchableOpacity>
         <TextInput
           style={styles.textInput}
           value={inputText}
-          onChangeText={setInputText}
-          placeholder="Type command..."
+          onChangeText={handleChangeText}
+          placeholder={isKeyboardMode ? "Keys sent live..." : "Type command..."}
           placeholderTextColor="#555"
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="off"
           spellCheck={false}
           textContentType="none"
-          returnKeyType="send"
-          onSubmitEditing={handleSend}
+          returnKeyType={isKeyboardMode ? "default" : "send"}
+          onSubmitEditing={handleSubmitEditing}
+          blurOnSubmit={!isKeyboardMode}
         />
-        <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-          <Text style={styles.sendBtnText}>Send</Text>
-        </TouchableOpacity>
+        {!isKeyboardMode && (
+          <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
+            <Text style={styles.sendBtnText}>Send</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -228,4 +306,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  modeToggle: {
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    justifyContent: "center",
+    backgroundColor: "#2a2a3e",
+  },
+  modeToggleActive: {
+    backgroundColor: "#7c3aed",
+  },
+  modeToggleText: {
+    color: "#888",
+    fontSize: 13,
+    fontWeight: "700",
+    fontFamily: "monospace",
+  },
+  modeToggleTextActive: {
+    color: "#fff",
+  },
 });
