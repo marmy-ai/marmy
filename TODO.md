@@ -20,6 +20,8 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 - [ ] **Ralph loops (agent cron)** — Set up scheduled autonomous runs for high-level agents. Define cron-like rules so trusted sessions can execute tasks on a cadence without manual triggering.
 
+- [ ] **Voice comms** — Voice input to send messages to sessions (speech-to-text) and voice output to hear responses read back (text-to-speech). Enables hands-free interaction with agents.
+
 ## P2 — Quality of Life
 
 - [ ] **Session-aware file browsing** — Instead of a fixed `allowed_paths` list, derive file roots from sessions. Each tmux session's working directory becomes a browsable root, so file access automatically matches what you're working on without manual config.
@@ -29,6 +31,12 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 - [ ] **App polish** — General cleanup pass on the mobile app. Tighten UI consistency, fix rough edges, improve navigation flow, and handle error/empty states gracefully.
 
 - [ ] **Clearer MSG/KB mode toggle UX** — The current MSG/KB toggle button is cryptic for new users. Add better affordances — e.g. a brief tooltip on first use, more descriptive labels, or a small onboarding hint explaining the two input modes.
+
+- [ ] **Image viewing in file browser** — Render images inline when browsing files in the mobile app, instead of showing raw binary or nothing.
+
+- [ ] **Markdown rendering in file browser** — Render markdown files with proper formatting (headers, lists, code blocks, etc.) when viewing them in the mobile app.
+
+- [ ] **Quick-launch shortcuts without permissions** — Add shortcuts/widgets to launch Claude sessions directly without requiring permission prompts each time. Could include iOS shortcuts, home screen widgets, or app intents.
 
 
 ## P3 — Polish and Expansion
