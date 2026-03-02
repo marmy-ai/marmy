@@ -64,18 +64,17 @@ async fn cmd_serve(bind_override: Option<String>, port_override: Option<u16>) ->
 
     info!("starting marmy-agent on {}:{}", bind, port);
 
-    // Connect to tmux via control mode
     let socket = if config.tmux.socket_name.is_empty() {
         None
     } else {
         Some(config.tmux.socket_name.as_str())
     };
 
-    let (tmux, mut event_rx) = TmuxController::start(socket)
+    let tmux = TmuxController::start(socket)
         .await
-        .context("failed to start tmux control mode")?;
+        .context("failed to start tmux controller")?;
 
-    info!("connected to tmux control mode");
+    info!("tmux controller ready");
 
     let state = AppState::new(tmux, config.clone());
 
@@ -84,25 +83,13 @@ async fn cmd_serve(bind_override: Option<String>, port_override: Option<u16>) ->
         error!(error = %e, "failed initial topology refresh");
     }
 
-    // Spawn topology refresh task: re-query on topology change events
+    // Spawn polling loop: re-query topology every 2 seconds
     let refresh_state = state.clone();
     tokio::spawn(async move {
         loop {
-            match event_rx.recv().await {
-                Ok(tmux::TmuxEvent::SessionsChanged)
-                | Ok(tmux::TmuxEvent::WindowAdd { .. })
-                | Ok(tmux::TmuxEvent::WindowClose { .. }) => {
-                    // Small delay to let tmux settle
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    if let Err(e) = refresh_state.refresh_topology().await {
-                        error!(error = %e, "topology refresh failed");
-                    }
-                }
-                Ok(_) => {}
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!(count = n, "topology listener lagged");
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if let Err(e) = refresh_state.refresh_topology().await {
+                error!(error = %e, "topology refresh failed");
             }
         }
     });

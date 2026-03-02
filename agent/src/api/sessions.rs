@@ -1,5 +1,6 @@
 use axum::{extract::{Path, State}, http::StatusCode, Json};
 use serde::Deserialize;
+use tracing::info;
 
 use crate::state::AppState;
 use crate::tmux::TmuxTopology;
@@ -22,6 +23,8 @@ pub async fn list_sessions(
         .get_topology()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    info!(sessions = topology.sessions.len(), windows = topology.windows.len(), panes = topology.panes.len(), "GET /api/sessions");
 
     Ok(Json(topology))
 }

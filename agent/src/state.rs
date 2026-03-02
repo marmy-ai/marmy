@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use tokio::sync::{watch, RwLock};
 
 use crate::config::Config;
 use crate::tmux::{TmuxController, TmuxTopology};
@@ -11,26 +11,40 @@ pub struct AppState {
     pub inner: Arc<RwLock<AppStateInner>>,
     pub tmux: TmuxController,
     pub config: Config,
+    /// Notifies WebSocket clients when topology changes.
+    pub topology_tx: watch::Sender<Option<TmuxTopology>>,
+    pub topology_rx: watch::Receiver<Option<TmuxTopology>>,
 }
 
 pub struct AppStateInner {
-    /// Cached topology, refreshed periodically and on topology events.
+    /// Cached topology, refreshed periodically.
     pub topology: Option<TmuxTopology>,
 }
 
 impl AppState {
     pub fn new(tmux: TmuxController, config: Config) -> Self {
+        let (topology_tx, topology_rx) = watch::channel(None);
         Self {
             inner: Arc::new(RwLock::new(AppStateInner { topology: None })),
             tmux,
             config,
+            topology_tx,
+            topology_rx,
         }
     }
 
     /// Refresh the cached topology from tmux.
+    /// Sends on the watch channel only if the topology actually changed.
     pub async fn refresh_topology(&self) -> anyhow::Result<()> {
-        let topology = self.tmux.get_topology().await?;
-        self.inner.write().await.topology = Some(topology);
+        let new_topology = self.tmux.get_topology().await?;
+        let mut inner = self.inner.write().await;
+        let changed = inner.topology.as_ref() != Some(&new_topology);
+        inner.topology = Some(new_topology.clone());
+        drop(inner);
+
+        if changed {
+            let _ = self.topology_tx.send(Some(new_topology));
+        }
         Ok(())
     }
 

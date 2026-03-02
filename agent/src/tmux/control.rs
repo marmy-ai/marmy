@@ -1,207 +1,76 @@
-use std::collections::VecDeque;
-use std::sync::Arc;
-
 use anyhow::{Context, Result};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::process::{Child, ChildStdout, Command};
-use tokio::sync::{broadcast, oneshot, Mutex};
-use tracing::{debug, error, info, warn};
+use tokio::process::Command;
+use tracing::{info, warn};
 
-use super::parser::{self, ControlParser, ParsedLine};
-use super::types::{CommandResult, TmuxEvent, TmuxPane, TmuxSession, TmuxTopology, TmuxWindow};
+use super::types::{TmuxPane, TmuxSession, TmuxTopology, TmuxWindow};
 
-/// Internal state shared between command senders: the pending response queue
-/// AND the stdin writer. Holding a single lock across both ensures the queue
-/// order always matches the order commands arrive at tmux.
-struct ControlInner {
-    pending: VecDeque<Option<oneshot::Sender<CommandResult>>>,
-    stdin: tokio::process::ChildStdin,
-}
-
-/// Handle for sending commands to the tmux control mode connection.
+/// Handle for interacting with tmux via plain subprocess calls.
+///
+/// Each method spawns a short-lived `tmux` process, captures its output,
+/// and parses the result. No persistent pipe, no control mode, no PTY.
 #[derive(Clone)]
 pub struct TmuxController {
-    inner: Arc<Mutex<ControlInner>>,
-    event_tx: broadcast::Sender<TmuxEvent>,
-    /// tmux socket name for direct command spawning. None = default server.
     socket_name: Option<String>,
 }
 
 impl TmuxController {
-    /// Spawn a tmux control mode client and return a controller handle.
+    /// Initialize the tmux controller and ensure the heartbeat session exists.
     ///
-    /// Uses `tmux -CC new-session -A -s _marmy_ctrl` which attaches to the
-    /// `_marmy_ctrl` session if it exists, or creates it. This session acts
-    /// as the control channel — the agent sees events from ALL sessions.
-    pub async fn start(socket_name: Option<&str>) -> Result<(Self, broadcast::Receiver<TmuxEvent>)>
-    {
-        // Kill any stale _marmy_ctrl session from a previous run
-        let mut kill_cmd = std::process::Command::new("tmux");
-        if let Some(socket) = socket_name {
-            kill_cmd.arg("-L").arg(socket);
-        }
-        let _ = kill_cmd.args(["kill-session", "-t", "_marmy_ctrl"]).output();
-
-        // Remove CLAUDECODE from tmux's global environment so new sessions
-        // created via the agent don't trigger Claude Code's nesting check.
-        let mut env_cmd = std::process::Command::new("tmux");
-        if let Some(socket) = socket_name {
-            env_cmd.arg("-L").arg(socket);
-        }
-        let _ = env_cmd.args(["set-environment", "-g", "-u", "CLAUDECODE"]).output();
-
-        // tmux -CC (control mode) requires a PTY even when using piped stdio.
-        // Wrap with `script` to allocate a pseudo-TTY.
-        let mut tmux_args = vec!["tmux".to_string()];
-        if let Some(socket) = socket_name {
-            tmux_args.push("-L".into());
-            tmux_args.push(socket.to_string());
-        }
-        tmux_args.extend(
-            ["-CC", "new-session", "-A", "-s", "_marmy_ctrl", "-x", "200", "-y", "50"]
-                .iter()
-                .map(|s| s.to_string()),
-        );
-
-        let mut cmd = Command::new("script");
-        if cfg!(target_os = "macos") {
-            // macOS: script -q /dev/null command [args...]
-            cmd.arg("-q").arg("/dev/null").args(&tmux_args);
-        } else {
-            // Linux: script -qc "command args..." /dev/null
-            cmd.arg("-qc").arg(tmux_args.join(" ")).arg("/dev/null");
-        }
-
-        cmd.stdin(std::process::Stdio::piped());
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::null());
-
-        let mut child = cmd.spawn().context("failed to spawn tmux -CC")?;
-
-        let stdin = child.stdin.take().context("no stdin on tmux process")?;
-        let stdout = child.stdout.take().context("no stdout on tmux process")?;
-
-        let mut reader = BufReader::new(stdout).lines();
-
-        // Consume the initial welcome %begin/%end block from tmux control mode.
-        Self::consume_welcome(&mut reader).await?;
-
-        let (event_tx, event_rx) = broadcast::channel(4096);
-
-        let inner = Arc::new(Mutex::new(ControlInner {
-            pending: VecDeque::new(),
-            stdin,
-        }));
-
+    /// The `_marmy_ctrl` session keeps the tmux server alive even when the
+    /// user has no sessions of their own. It is hidden from topology queries.
+    pub async fn start(socket_name: Option<&str>) -> Result<Self> {
         let controller = Self {
-            inner: inner.clone(),
-            event_tx: event_tx.clone(),
             socket_name: socket_name.map(|s| s.to_string()),
         };
 
-        // Spawn reader task: reads stdout, parses control mode protocol
-        let reader_inner = inner.clone();
-        let reader_event_tx = event_tx.clone();
-        tokio::spawn(async move {
-            Self::reader_loop(reader, reader_inner, reader_event_tx).await;
-            info!("tmux reader loop exited");
-        });
+        // Kill any stale _marmy_ctrl session from a previous run
+        let _ = controller.run_tmux(&["kill-session", "-t", "_marmy_ctrl"]).await;
 
-        // Keep child process handle alive
-        tokio::spawn(async move {
-            Self::child_waiter(child).await;
-        });
+        // Remove CLAUDECODE from tmux's global environment so new sessions
+        // created via the agent don't trigger Claude Code's nesting check.
+        let _ = controller
+            .run_tmux(&["set-environment", "-g", "-u", "CLAUDECODE"])
+            .await;
 
-        Ok((controller, event_rx))
+        // Create the heartbeat session
+        controller
+            .run_tmux(&[
+                "new-session", "-d", "-s", "_marmy_ctrl", "-x", "200", "-y", "50",
+            ])
+            .await
+            .context("failed to create _marmy_ctrl heartbeat session")?;
+
+        info!("tmux heartbeat session _marmy_ctrl created");
+        Ok(controller)
     }
 
-    /// Consume the initial welcome block (%begin/%end) from tmux control mode.
-    async fn consume_welcome(reader: &mut Lines<BufReader<ChildStdout>>) -> Result<()> {
-        let mut in_block = false;
-
-        loop {
-            let raw = reader
-                .next_line()
-                .await
-                .context("reading tmux welcome")?
-                .context("tmux stdout closed during welcome")?;
-
-            // During welcome, only protocol lines matter — strip PTY noise.
-            let line = if raw.starts_with('%') {
-                raw.as_str()
-            } else if let Some(idx) = raw.find('%') {
-                &raw[idx..]
-            } else {
-                raw.as_str()
-            };
-            debug!(line = %line, "tmux welcome");
-
-            if !in_block {
-                if line.starts_with("%begin ") {
-                    in_block = true;
-                }
-            } else if line.starts_with("%end ") || line.starts_with("%error ") {
-                info!("consumed tmux welcome block");
-                return Ok(());
-            }
+    /// Run a tmux command as a subprocess and return its stdout.
+    async fn run_tmux(&self, args: &[&str]) -> Result<String> {
+        let mut cmd = Command::new("tmux");
+        if let Some(ref socket) = self.socket_name {
+            cmd.arg("-L").arg(socket);
         }
-    }
+        cmd.args(args);
 
-    /// Send a command to tmux and wait for the response.
-    ///
-    /// The pending queue push and stdin write are done under a single lock
-    /// so that the queue order always matches the command arrival order at tmux.
-    pub async fn command(&self, command: &str) -> Result<CommandResult> {
-        let (response_tx, response_rx) = oneshot::channel();
+        let output = cmd
+            .output()
+            .await
+            .with_context(|| format!("failed to spawn tmux {:?}", args))?;
 
-        {
-            let mut inner = self.inner.lock().await;
-            inner.pending.push_back(Some(response_tx));
-            let line = format!("{}\n", command);
-            inner
-                .stdin
-                .write_all(line.as_bytes())
-                .await
-                .context("failed to write command to tmux")?;
-            inner
-                .stdin
-                .flush()
-                .await
-                .context("failed to flush tmux stdin")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!(
+                "tmux {:?} failed (exit {}): {}",
+                args,
+                output.status,
+                stderr.trim()
+            );
         }
 
-        debug!(cmd = %command, "sent to tmux (awaiting response)");
-
-        let result = response_rx
-            .await
-            .context("tmux command response channel closed")?;
-        Ok(result)
-    }
-
-    /// Send a command without waiting for a response (fire-and-forget).
-    pub async fn command_fire(&self, command: &str) -> Result<()> {
-        let mut inner = self.inner.lock().await;
-        inner.pending.push_back(None);
-        let line = format!("{}\n", command);
-        inner
-            .stdin
-            .write_all(line.as_bytes())
-            .await
-            .context("failed to write command to tmux")?;
-        inner
-            .stdin
-            .flush()
-            .await
-            .context("failed to flush tmux stdin")?;
-        drop(inner);
-
-        debug!(cmd = %command, "sent to tmux (fire-and-forget)");
-        Ok(())
-    }
-
-    /// Subscribe to tmux events.
-    pub fn subscribe(&self) -> broadcast::Receiver<TmuxEvent> {
-        self.event_tx.subscribe()
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr_str = String::from_utf8_lossy(&output.stderr).to_string();
+        info!(args = ?args, stdout_len = stdout.len(), stdout = %stdout.trim(), stderr = %stderr_str.trim(), "run_tmux");
+        Ok(stdout)
     }
 
     /// Query full topology: all sessions, windows, panes.
@@ -217,26 +86,18 @@ impl TmuxController {
     }
 
     pub async fn list_sessions(&self) -> Result<Vec<TmuxSession>> {
-        let result = self
-            .command("list-sessions -F '#{session_id}\t#{session_name}\t#{session_windows}\t#{session_attached}'")
+        let output = self
+            .run_tmux(&[
+                "list-sessions",
+                "-F",
+                "#{session_id}|||#{session_name}|||#{session_windows}|||#{session_attached}",
+            ])
             .await?;
 
-        let mut sessions = Vec::new();
-        for line in &result.lines {
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 4 {
-                // Skip our control session
-                if parts[1] == "_marmy_ctrl" {
-                    continue;
-                }
-                sessions.push(TmuxSession {
-                    id: parts[0].to_string(),
-                    name: parts[1].to_string(),
-                    windows: Vec::new(), // filled below
-                    attached: parts[3] != "0",
-                });
-            }
-        }
+        let mut sessions: Vec<TmuxSession> = output
+            .lines()
+            .filter_map(parse_session_line)
+            .collect();
 
         // Fill window IDs per session
         let windows = self.list_windows().await?;
@@ -252,198 +113,230 @@ impl TmuxController {
     }
 
     pub async fn list_windows(&self) -> Result<Vec<TmuxWindow>> {
-        let result = self
-            .command("list-windows -a -F '#{window_id}\t#{session_id}\t#{window_index}\t#{window_name}\t#{window_active}'")
+        let output = self
+            .run_tmux(&[
+                "list-windows",
+                "-a",
+                "-F",
+                "#{window_id}|||#{session_id}|||#{window_index}|||#{window_name}|||#{window_active}",
+            ])
             .await?;
 
-        let mut windows = Vec::new();
-        for line in &result.lines {
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 5 {
-                windows.push(TmuxWindow {
-                    id: parts[0].to_string(),
-                    session_id: parts[1].to_string(),
-                    index: parts[2].parse().unwrap_or(0),
-                    name: parts[3].to_string(),
-                    panes: Vec::new(), // filled by list_panes
-                    active: parts[4] != "0",
-                });
-            }
-        }
-
+        let windows = output.lines().filter_map(parse_window_line).collect();
         Ok(windows)
     }
 
     pub async fn list_panes(&self) -> Result<Vec<TmuxPane>> {
-        let result = self
-            .command("list-panes -a -F '#{pane_id}\t#{window_id}\t#{session_id}\t#{pane_index}\t#{pane_width}\t#{pane_height}\t#{pane_active}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_pid}'")
+        let output = self
+            .run_tmux(&[
+                "list-panes",
+                "-a",
+                "-F",
+                "#{pane_id}|||#{window_id}|||#{session_id}|||#{pane_index}|||#{pane_width}|||#{pane_height}|||#{pane_active}|||#{pane_current_command}|||#{pane_current_path}|||#{pane_pid}",
+            ])
             .await?;
 
-        let mut panes = Vec::new();
-        for line in &result.lines {
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 10 {
-                panes.push(TmuxPane {
-                    id: parts[0].to_string(),
-                    window_id: parts[1].to_string(),
-                    session_id: parts[2].to_string(),
-                    index: parts[3].parse().unwrap_or(0),
-                    width: parts[4].parse().unwrap_or(80),
-                    height: parts[5].parse().unwrap_or(24),
-                    active: parts[6] != "0",
-                    current_command: parts[7].to_string(),
-                    current_path: parts[8].to_string(),
-                    pid: parts[9].parse().unwrap_or(0),
-                });
-            }
-        }
-
+        let panes = output.lines().filter_map(parse_pane_line).collect();
         Ok(panes)
     }
 
-    /// Capture the current visible content of a pane (plain text, no ANSI).
+    /// Capture the current visible content of a pane.
     pub async fn capture_pane(&self, pane_id: &str, scrollback: bool) -> Result<String> {
-        let flag = if scrollback { " -S -" } else { "" };
-        let cmd = format!("capture-pane -t {} -p{}", pane_id, flag);
-        let result = self.command(&cmd).await?;
-        Ok(result.lines.join("\n"))
+        let mut args = vec!["capture-pane", "-t", pane_id, "-p"];
+        if scrollback {
+            args.push("-S");
+            args.push("-");
+        }
+        self.run_tmux(&args).await
     }
 
     /// Send raw bytes to a pane using hex encoding.
-    /// Use this for control characters and escape sequences (Ctrl-C, Tab,
-    /// arrow keys, etc.) that DON'T involve Enter/submit.
     pub async fn send_bytes(&self, pane_id: &str, data: &[u8]) -> Result<()> {
         if data.is_empty() {
             return Ok(());
         }
-        let hex: String = data.iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
-        let cmd = format!("send-keys -t {} -H {}", pane_id, hex);
-        self.command_fire(&cmd).await
+        let hex_args: Vec<String> = data.iter().map(|b| format!("{:02X}", b)).collect();
+        let mut args: Vec<&str> = vec!["send-keys", "-t", pane_id, "-H"];
+        args.extend(hex_args.iter().map(|s| s.as_str()));
+        let _ = self.run_tmux(&args).await;
+        Ok(())
     }
 
-    /// Send text + Enter to a pane by spawning a real `tmux send-keys` process.
-    /// This bypasses control mode entirely and matches the exact command format
-    /// proven to work: `tmux send-keys -t <pane> "text" Enter`
+    /// Send text + Enter to a pane.
     ///
-    /// Direct process spawn is needed because TUI apps (like Claude Code)
-    /// don't process Enter correctly when text + CR arrive in the same PTY
-    /// write (which happens with control mode's send-keys -H).
+    /// Uses two separate tmux invocations: one for the literal text (-l),
+    /// one for the Enter key. This is needed because TUI apps don't process
+    /// Enter correctly when text + CR arrive in the same PTY write.
     pub async fn send_text_enter(&self, pane_id: &str, text: &str) -> Result<()> {
-        let mut cmd = Command::new("tmux");
-        if let Some(ref socket) = self.socket_name {
-            cmd.arg("-L").arg(socket);
-        }
-        cmd.arg("send-keys").arg("-t").arg(pane_id);
         if !text.is_empty() {
-            // -l ensures text is treated as literal characters, not key names
-            cmd.arg("-l").arg(text);
-        }
-        // Spawn a SEPARATE send-keys for Enter (can't mix -l with key names)
-        let output = cmd.output().await.context("failed to spawn tmux send-keys")?;
-        if !output.status.success() {
-            warn!(stderr = %String::from_utf8_lossy(&output.stderr), "tmux send-keys (text) failed");
+            let result = self.run_tmux(&["send-keys", "-t", pane_id, "-l", text]).await;
+            if let Err(e) = &result {
+                warn!(error = %e, "tmux send-keys (text) failed");
+            }
         }
 
-        // Now send Enter as a separate tmux invocation
-        let mut enter_cmd = Command::new("tmux");
-        if let Some(ref socket) = self.socket_name {
-            enter_cmd.arg("-L").arg(socket);
-        }
-        enter_cmd.arg("send-keys").arg("-t").arg(pane_id).arg("Enter");
-        let output = enter_cmd.output().await.context("failed to spawn tmux send-keys Enter")?;
-        if !output.status.success() {
-            warn!(stderr = %String::from_utf8_lossy(&output.stderr), "tmux send-keys (Enter) failed");
+        let result = self
+            .run_tmux(&["send-keys", "-t", pane_id, "Enter"])
+            .await;
+        if let Err(e) = &result {
+            warn!(error = %e, "tmux send-keys (Enter) failed");
         }
         Ok(())
     }
 
     /// Create a new tmux session.
     pub async fn new_session(&self, name: &str) -> Result<()> {
-        let mut cmd = Command::new("tmux");
-        if let Some(ref socket) = self.socket_name {
-            cmd.arg("-L").arg(socket);
-        }
-        cmd.arg("new-session").arg("-d").arg("-s").arg(name);
-        let output = cmd.output().await.context("failed to spawn tmux new-session")?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("tmux new-session failed: {}", stderr.trim());
-        }
+        self.run_tmux(&["new-session", "-d", "-s", name]).await?;
         Ok(())
     }
 
     /// Kill (delete) a tmux session.
     pub async fn kill_session(&self, name: &str) -> Result<()> {
-        let mut cmd = Command::new("tmux");
-        if let Some(ref socket) = self.socket_name {
-            cmd.arg("-L").arg(socket);
-        }
-        cmd.arg("kill-session").arg("-t").arg(name);
-        let output = cmd.output().await.context("failed to spawn tmux kill-session")?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("tmux kill-session failed: {}", stderr.trim());
-        }
+        self.run_tmux(&["kill-session", "-t", name]).await?;
         Ok(())
-    }
-
-    /// Switch the control client to a target session so that %output
-    /// notifications flow for that session's panes.
-    pub async fn switch_client_to_session(&self, session_id: &str) -> Result<()> {
-        let cmd = format!("switch-client -t {}", session_id);
-        self.command_fire(&cmd).await
     }
 
     /// Resize a pane.
     pub async fn resize_pane(&self, pane_id: &str, cols: u32, rows: u32) -> Result<()> {
-        let cmd = format!("resize-pane -t {} -x {} -y {}", pane_id, cols, rows);
-        self.command_fire(&cmd).await
+        let cols_str = cols.to_string();
+        let rows_str = rows.to_string();
+        self.run_tmux(&["resize-pane", "-t", pane_id, "-x", &cols_str, "-y", &rows_str])
+            .await?;
+        Ok(())
+    }
+}
+
+// --- Pure parsing functions (testable without tmux) ---
+
+const DELIM: &str = "|||";
+
+fn parse_session_line(line: &str) -> Option<TmuxSession> {
+    let parts: Vec<&str> = line.split(DELIM).collect();
+    if parts.len() < 4 {
+        return None;
+    }
+    // Skip the heartbeat session
+    if parts[1] == "_marmy_ctrl" {
+        return None;
+    }
+    Some(TmuxSession {
+        id: parts[0].to_string(),
+        name: parts[1].to_string(),
+        windows: Vec::new(), // filled later by list_sessions
+        attached: parts[3] != "0",
+    })
+}
+
+fn parse_window_line(line: &str) -> Option<TmuxWindow> {
+    let parts: Vec<&str> = line.split(DELIM).collect();
+    if parts.len() < 5 {
+        return None;
+    }
+    Some(TmuxWindow {
+        id: parts[0].to_string(),
+        session_id: parts[1].to_string(),
+        index: parts[2].parse().unwrap_or(0),
+        name: parts[3].to_string(),
+        panes: Vec::new(),
+        active: parts[4] != "0",
+    })
+}
+
+fn parse_pane_line(line: &str) -> Option<TmuxPane> {
+    let parts: Vec<&str> = line.split(DELIM).collect();
+    if parts.len() < 10 {
+        return None;
+    }
+    Some(TmuxPane {
+        id: parts[0].to_string(),
+        window_id: parts[1].to_string(),
+        session_id: parts[2].to_string(),
+        index: parts[3].parse().unwrap_or(0),
+        width: parts[4].parse().unwrap_or(80),
+        height: parts[5].parse().unwrap_or(24),
+        active: parts[6] != "0",
+        current_command: parts[7].to_string(),
+        current_path: parts[8].to_string(),
+        pid: parts[9].parse().unwrap_or(0),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_sessions() {
+        let line = "$0|||dev|||3|||1";
+        let session = parse_session_line(line).unwrap();
+        assert_eq!(session.id, "$0");
+        assert_eq!(session.name, "dev");
+        assert!(session.attached);
+        assert!(session.windows.is_empty()); // filled later
     }
 
-    // --- Internal tasks ---
-
-    async fn reader_loop(
-        mut reader: Lines<BufReader<ChildStdout>>,
-        inner: Arc<Mutex<ControlInner>>,
-        event_tx: broadcast::Sender<TmuxEvent>,
-    ) {
-        let mut parser = ControlParser::new();
-
-        while let Ok(Some(raw_line)) = reader.next_line().await {
-            debug!(line = %raw_line, "tmux output");
-
-            // Pass raw line to parser — it handles sanitization contextually
-            // (strips PTY noise for protocol lines, preserves raw content)
-            match parser.parse_line(&raw_line) {
-                ParsedLine::Event(event) => {
-                    if event_tx.send(event).is_err() {
-                        debug!("no event subscribers");
-                    }
-                }
-                ParsedLine::CommandResponse { cmd_num: _, result } => {
-                    let mut guard = inner.lock().await;
-                    if let Some(entry) = guard.pending.pop_front() {
-                        drop(guard); // Release lock before sending on oneshot
-                        if let Some(tx) = entry {
-                            let _ = tx.send(result);
-                        }
-                        // None = fire-and-forget, response discarded
-                    } else {
-                        drop(guard);
-                        debug!("command response with no pending handler");
-                    }
-                }
-                ParsedLine::Partial => {}
-            }
-        }
-
-        warn!("tmux stdout stream ended");
+    #[test]
+    fn test_parse_sessions_filters_marmy_ctrl() {
+        let line = "$5|||_marmy_ctrl|||1|||0";
+        assert!(parse_session_line(line).is_none());
     }
 
-    async fn child_waiter(mut child: Child) {
-        match child.wait().await {
-            Ok(status) => info!(status = %status, "tmux process exited"),
-            Err(e) => error!(error = %e, "error waiting for tmux process"),
-        }
+    #[test]
+    fn test_parse_sessions_empty() {
+        assert!(parse_session_line("").is_none());
+    }
+
+    #[test]
+    fn test_parse_sessions_not_attached() {
+        let line = "$1|||work|||2|||0";
+        let session = parse_session_line(line).unwrap();
+        assert_eq!(session.name, "work");
+        assert!(!session.attached);
+    }
+
+    #[test]
+    fn test_parse_windows() {
+        let line = "@0|||$0|||0|||bash|||1";
+        let window = parse_window_line(line).unwrap();
+        assert_eq!(window.id, "@0");
+        assert_eq!(window.session_id, "$0");
+        assert_eq!(window.index, 0);
+        assert_eq!(window.name, "bash");
+        assert!(window.active);
+    }
+
+    #[test]
+    fn test_parse_windows_inactive() {
+        let line = "@3|||$1|||2|||vim|||0";
+        let window = parse_window_line(line).unwrap();
+        assert_eq!(window.name, "vim");
+        assert!(!window.active);
+    }
+
+    #[test]
+    fn test_parse_panes() {
+        let line = "%0|||@0|||$0|||0|||120|||40|||1|||bash|||/home/user|||12345";
+        let pane = parse_pane_line(line).unwrap();
+        assert_eq!(pane.id, "%0");
+        assert_eq!(pane.window_id, "@0");
+        assert_eq!(pane.session_id, "$0");
+        assert_eq!(pane.index, 0);
+        assert_eq!(pane.width, 120);
+        assert_eq!(pane.height, 40);
+        assert!(pane.active);
+        assert_eq!(pane.current_command, "bash");
+        assert_eq!(pane.current_path, "/home/user");
+        assert_eq!(pane.pid, 12345);
+    }
+
+    #[test]
+    fn test_parse_malformed_lines() {
+        // Too few fields — should return None, not panic
+        assert!(parse_session_line("$0|||dev").is_none());
+        assert!(parse_window_line("@0|||$0").is_none());
+        assert!(parse_pane_line("%0|||@0|||$0|||0").is_none());
+        assert!(parse_session_line("").is_none());
+        assert!(parse_window_line("").is_none());
+        assert!(parse_pane_line("").is_none());
     }
 }
