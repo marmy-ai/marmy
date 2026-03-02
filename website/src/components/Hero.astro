@@ -1,0 +1,97 @@
+<section class="py-20 sm:py-28 px-4 sm:px-6">
+  <div class="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
+    <!-- Copy -->
+    <div class="flex-1 text-center lg:text-left">
+      <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
+        Manage your coding agents
+        <span class="text-accent">the simple way.</span>
+      </h1>
+      <p class="text-lg sm:text-xl text-text-muted max-w-xl mx-auto lg:mx-0 mb-8">
+        A native app to orchestrate Claude Code sessions across all your machines. No Telegram bots. No WhatsApp alerts. No janky workarounds. Just open the app.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
+        <a
+          href="#get-started"
+          class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium transition-colors"
+        >
+          Get Started
+        </a>
+        <a
+          href="https://github.com/marmy-ai/marmy"
+          target="_blank"
+          rel="noopener"
+          class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-border text-text-primary hover:bg-bg-card transition-colors"
+        >
+          View on GitHub
+        </a>
+      </div>
+    </div>
+
+    <!-- Phone mockup -->
+    <div class="flex-shrink-0" style="perspective: 800px;">
+      <div class="phone-mockup" style="transform: rotateY(-5deg) rotateX(2deg);">
+        <!-- Phone frame -->
+        <div class="w-[280px] sm:w-[300px] rounded-[2rem] border-2 border-border bg-bg-card p-2 shadow-2xl shadow-accent/10">
+          <!-- Status bar -->
+          <div class="flex items-center justify-between px-5 py-2">
+            <span class="text-[10px] text-text-muted font-mono">9:41</span>
+            <div class="w-20 h-5 rounded-full bg-bg-deep"></div>
+            <div class="flex gap-1">
+              <div class="w-1 h-1 rounded-full bg-green"></div>
+              <span class="text-[10px] text-text-muted">●●●</span>
+            </div>
+          </div>
+
+          <!-- Screen content -->
+          <div class="rounded-2xl bg-bg-deep overflow-hidden">
+            <!-- App header -->
+            <div class="px-3 py-2 border-b border-border flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-green"></div>
+                <span class="text-xs font-mono text-text-muted">dev-server</span>
+              </div>
+              <span class="text-[10px] font-mono text-text-muted">2 agents active</span>
+            </div>
+
+            <!-- Terminal content -->
+            <div class="p-3 font-mono text-[11px] leading-5 space-y-1.5">
+              <div>
+                <span class="text-accent">❯</span>
+                <span class="text-text-muted"> claude "fix the auth bug"</span>
+              </div>
+              <div class="text-text-primary">
+                <span class="text-green">●</span> Reading src/auth.ts...
+              </div>
+              <div class="text-text-primary">
+                <span class="text-green">●</span> Found issue in token validation
+              </div>
+              <div class="text-text-primary">
+                <span class="text-green">●</span> Patching 3 files...
+              </div>
+              <div class="pt-1 border-t border-border mt-2">
+                <div class="flex gap-2 pt-1">
+                  <span class="px-2 py-0.5 rounded text-[10px] bg-green/20 text-green border border-green/30">Approve</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400 border border-red-500/30">Reject</span>
+                  <span class="px-2 py-0.5 rounded text-[10px] bg-bg-card text-text-muted border border-border">Edit</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom nav -->
+            <div class="flex justify-around py-2 border-t border-border">
+              <div class="text-center">
+                <div class="text-[10px] text-accent">Sessions</div>
+              </div>
+              <div class="text-center">
+                <div class="text-[10px] text-text-muted">Files</div>
+              </div>
+              <div class="text-center">
+                <div class="text-[10px] text-text-muted">Machines</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

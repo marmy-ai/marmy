@@ -1,0 +1,82 @@
+---
+import TerminalWindow from './TerminalWindow.astro';
+---
+
+<section class="py-20 px-4 sm:px-6 border-t border-border">
+  <div class="max-w-4xl mx-auto">
+    <h2 class="text-3xl sm:text-4xl font-bold text-center mb-4">
+      See it in action
+    </h2>
+    <p class="text-text-muted text-center max-w-2xl mx-auto mb-12">
+      A Claude Code session managed through marmy. The agent works, you approve from your phone when it needs you.
+    </p>
+
+    <TerminalWindow title="claude — ~/projects/api">
+      <div class="space-y-2 text-xs sm:text-sm">
+        <div>
+          <span class="text-accent">❯</span>
+          <span class="text-text-primary"> claude "add rate limiting to the /api/chat endpoint"</span>
+        </div>
+        <div class="text-text-muted">
+          ╭───────────────────────────────────────────────────────╮
+        </div>
+        <div class="text-text-muted">
+          │ <span class="text-text-primary">Claude Code</span> v1.0.26                                  │
+        </div>
+        <div class="text-text-muted">
+          ╰───────────────────────────────────────────────────────╯
+        </div>
+        <div class="pt-1">
+          <span class="text-green">●</span>
+          <span class="text-text-primary"> Reading src/routes/chat.ts...</span>
+        </div>
+        <div>
+          <span class="text-green">●</span>
+          <span class="text-text-primary"> Reading src/middleware/auth.ts...</span>
+        </div>
+        <div>
+          <span class="text-green">●</span>
+          <span class="text-text-primary"> Found existing Express middleware chain</span>
+        </div>
+        <div class="pt-2">
+          <span class="text-accent">⟡</span>
+          <span class="text-text-primary"> I'll add a sliding-window rate limiter using Redis. Here's my plan:</span>
+        </div>
+        <div class="pl-4 text-text-muted">
+          1. Add <span class="text-accent">express-rate-limit</span> + <span class="text-accent">rate-limit-redis</span> deps
+        </div>
+        <div class="pl-4 text-text-muted">
+          2. Create src/middleware/rateLimit.ts
+        </div>
+        <div class="pl-4 text-text-muted">
+          3. Apply to /api/chat with 60 req/min window
+        </div>
+        <div class="pl-4 text-text-muted">
+          4. Add tests in __tests__/rateLimit.test.ts
+        </div>
+        <div class="pt-3 border-t border-border mt-2">
+          <span class="text-text-muted">marmy →</span>
+          <span class="text-green"> ✓ Approved from iPhone</span>
+          <span class="text-text-muted"> (2s response time)</span>
+        </div>
+        <div class="pt-1">
+          <span class="text-green">●</span>
+          <span class="text-text-primary"> Writing src/middleware/rateLimit.ts...</span>
+        </div>
+        <div>
+          <span class="text-green">●</span>
+          <span class="text-text-primary"> Modifying src/routes/chat.ts...</span>
+        </div>
+        <div>
+          <span class="text-green">●</span>
+          <span class="text-text-primary"> Running npm test... </span>
+          <span class="text-green">14 passed</span>
+        </div>
+        <div class="pt-2">
+          <span class="text-green">✓</span>
+          <span class="text-text-primary"> Done. 3 files changed, 127 lines added.</span>
+        </div>
+      </div>
+    </TerminalWindow>
+  </div>
+</section>

@@ -1,0 +1,53 @@
+---
+import TerminalWindow from './TerminalWindow.astro';
+---
+
+<section class="py-20 px-4 sm:px-6 border-t border-border">
+  <div class="max-w-6xl mx-auto">
+    <h2 class="text-3xl sm:text-4xl font-bold text-center mb-4">
+      How it works
+    </h2>
+    <p class="text-text-muted text-center max-w-2xl mx-auto mb-16">
+      Install. Pair. Done. No cloud accounts, no YAML, no infrastructure to manage.
+    </p>
+
+    <!-- Steps -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+      <div class="text-center">
+        <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-accent/20 text-accent font-mono font-bold text-sm mb-4">1</div>
+        <h3 class="text-lg font-semibold mb-2">Install on your machine</h3>
+        <p class="text-text-muted text-sm">
+          <code class="text-xs bg-bg-card px-1.5 py-0.5 rounded border border-border">pip install marmy</code> on any machine running Claude Code. A lightweight daemon starts in the background.
+        </p>
+      </div>
+
+      <div class="text-center">
+        <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-accent/20 text-accent font-mono font-bold text-sm mb-4">2</div>
+        <h3 class="text-lg font-semibold mb-2">Open the app, pair</h3>
+        <p class="text-text-muted text-sm">
+          Scan the QR code or enter the pairing key. Your phone connects directly over your local network or Tailscale. No cloud relay.
+        </p>
+      </div>
+
+      <div class="text-center">
+        <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-accent/20 text-accent font-mono font-bold text-sm mb-4">3</div>
+        <h3 class="text-lg font-semibold mb-2">Manage everything</h3>
+        <p class="text-text-muted text-sm">
+          See all your agents, across all your machines, in one place. Approve actions, read output, browse files, start new sessions — all from a native app built for it.
+        </p>
+      </div>
+    </div>
+
+    <!-- Architecture diagram -->
+    <TerminalWindow title="architecture" class="max-w-3xl mx-auto">
+      <pre class="text-xs sm:text-sm"><span class="text-text-muted">┌──────────────┐</span>         <span class="text-text-muted">┌───────────────────┐</span>         <span class="text-text-muted">┌──────────────┐</span>
+<span class="text-text-muted">│</span>  <span class="text-accent">Your Phone</span>  <span class="text-text-muted">│</span>  <span class="text-text-muted">ws://</span>  <span class="text-text-muted">│</span>  <span class="text-green">marmy agent</span>      <span class="text-text-muted">│</span>  <span class="text-text-muted">stdin/</span>  <span class="text-text-muted">│</span>  <span class="text-text-primary">Claude Code</span> <span class="text-text-muted">│</span>
+<span class="text-text-muted">│</span>  React Native <span class="text-text-muted">│ ◄──────► │</span>  Python daemon    <span class="text-text-muted">│ ◄──────► │</span>  (subprocess) <span class="text-text-muted">│</span>
+<span class="text-text-muted">│</span>              <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>                   <span class="text-text-muted">│</span>  <span class="text-text-muted">stdout</span>  <span class="text-text-muted">│</span>              <span class="text-text-muted">│</span>
+<span class="text-text-muted">└──────────────┘</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">WebSocket on</span>     <span class="text-text-muted">│</span>         <span class="text-text-muted">└──────────────┘</span>
+                         <span class="text-text-muted">│</span>  <span class="text-text-muted">:8765 (LAN)</span>      <span class="text-text-muted">│</span>
+                         <span class="text-text-muted">│</span>  <span class="text-text-muted">or via Tailscale</span>  <span class="text-text-muted">│</span>
+                         <span class="text-text-muted">└───────────────────┘</span></pre>
+    </TerminalWindow>
+  </div>
+</section>

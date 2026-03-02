@@ -32,6 +32,8 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 - [ ] **App polish** — General cleanup pass on the mobile app. Tighten UI consistency, fix rough edges, improve navigation flow, and handle error/empty states gracefully.
 
+- [ ] **Backspace in live keyboard mode** — Backspace key doesn't work when in live keyboard (KB) mode. Need to send the correct escape sequence or control character so backspace behaves as expected during real-time key-by-key input.
+
 - [ ] **Clearer MSG/KB mode toggle UX** — The current MSG/KB toggle button is cryptic for new users. Add better affordances — e.g. a brief tooltip on first use, more descriptive labels, or a small onboarding hint explaining the two input modes.
 
 - [ ] **Image viewing in file browser** — Render images inline when browsing files in the mobile app, instead of showing raw binary or nothing.
