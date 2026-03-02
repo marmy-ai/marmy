@@ -244,6 +244,36 @@ The agent binary is bundled inside the app at `Contents/MacOS/marmy-agent`. The 
 
 ### systemd (Linux)
 
+#### User service (recommended — no sudo needed)
+
+Create `~/.config/systemd/user/marmy-agent.service`:
+
+```ini
+[Unit]
+Description=Marmy Agent - bridges tmux to mobile
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/path/to/marmy-agent serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now marmy-agent
+systemctl --user status marmy-agent
+
+# Enable lingering so the service runs even when you're not logged in
+loginctl enable-linger $USER
+```
+
+#### System service (alternative — requires sudo)
+
 Create `/etc/systemd/system/marmy-agent.service`:
 
 ```ini
