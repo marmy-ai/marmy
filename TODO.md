@@ -14,7 +14,7 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 ## P1 — High-Value Enhancements
 
-- [ ] **Seamless Tailscale integration** — Detect Tailscale automatically, use Tailscale IPs for pairing, and streamline the connection flow so users don't need to manually find IPs or configure networking.
+- [ ] **Seamless Tailscale integration** — Detect Tailscale automatically, use Tailscale IPs for pairing, and streamline the connection flow so users don't need to manually find IPs or configure networking. Include showing the Tailscale IP in `marmy-agent pair` output when Tailscale is detected.
 
 - [ ] **Team topology** — Treat tmux sessions as team members. Define team structures and hierarchies (leads, sub-agents), assign roles, and get recommended org layouts based on project needs.
 
