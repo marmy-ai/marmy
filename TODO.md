@@ -12,6 +12,8 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 ## P1 — High-Value Enhancements
 
+- [ ] **Seamless Tailscale integration** — Detect Tailscale automatically, use Tailscale IPs for pairing, and streamline the connection flow so users don't need to manually find IPs or configure networking.
+
 - [ ] **Team topology** — Treat tmux sessions as team members. Define team structures and hierarchies (leads, sub-agents), assign roles, and get recommended org layouts based on project needs.
 
 - [ ] **Ralph loops (agent cron)** — Set up scheduled autonomous runs for high-level agents. Define cron-like rules so trusted sessions can execute tasks on a cadence without manual triggering.
