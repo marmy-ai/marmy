@@ -71,10 +71,12 @@ marmy-agent serve
 ```
 
 On first run, this:
-1. Creates a config file at `~/.config/marmy/config.toml`
+1. Creates a config file (`~/Library/Application Support/marmy/config.toml` on macOS, `~/.config/marmy/config.toml` on Linux)
 2. Generates a random auth token
 3. Connects to tmux via control mode (creates a `_marmy_ctrl` session)
 4. Starts listening on `0.0.0.0:9876`
+
+> **macOS users:** You can skip the CLI setup entirely — see [macOS Menu Bar App](#macos-menu-bar-app) below.
 
 ### 3. Get pairing info
 
@@ -118,7 +120,7 @@ Scan the QR code with Expo Go on your phone, or press `i` for iOS simulator / `a
 
 ## Configuration
 
-The agent config lives at `~/.config/marmy/config.toml`:
+The agent config lives at `~/Library/Application Support/marmy/config.toml` on macOS or `~/.config/marmy/config.toml` on Linux:
 
 ```toml
 [server]
@@ -209,6 +211,37 @@ A WebSocket endpoint (`/ws`) is available for real-time topology updates (sessio
 
 ## Running as a Service
 
+### macOS Menu Bar App
+
+The easiest way to run the agent on macOS. A native menu bar app that auto-starts the agent, shows status, and displays pairing info — no terminal needed.
+
+#### Build from source
+
+```bash
+cd macos/MarmyMenuBar
+
+# Build (compiles both the Swift app and the Rust agent)
+xcodebuild -scheme MarmyMenuBar -configuration Release build CODE_SIGNING_ALLOWED=NO
+
+# Launch
+open ~/Library/Developer/Xcode/DerivedData/MarmyMenuBar-*/Build/Products/Release/MarmyMenuBar.app
+
+# Or open the Xcode project and hit Cmd+B to build, then launch from Finder
+open MarmyMenuBar.xcodeproj
+```
+
+#### What it does
+
+- Shows a terminal icon in the menu bar (no dock icon)
+- Auto-starts `marmy-agent serve` on launch
+- Displays connection status (green = running, yellow = starting, red = error)
+- Shows your address and token with copy buttons for easy pairing
+- Start/Stop agent controls
+- Launch at Login toggle (via macOS login items)
+- Quit cleanly stops the agent
+
+The agent binary is bundled inside the app at `Contents/MacOS/marmy-agent`. The build script (`Scripts/build-agent.sh`) runs `cargo build` automatically as an Xcode build phase.
+
 ### systemd (Linux)
 
 Create `/etc/systemd/system/marmy-agent.service`:
@@ -236,9 +269,9 @@ sudo systemctl enable --now marmy-agent
 sudo systemctl status marmy-agent
 ```
 
-### launchd (macOS)
+### launchd (macOS — alternative to menu bar app)
 
-Create `~/Library/LaunchAgents/com.marmy.agent.plist`:
+If you prefer a background service over the menu bar app, create `~/Library/LaunchAgents/com.marmy.agent.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -509,7 +542,7 @@ The agent creates a hidden `_marmy_ctrl` session for its control connection. You
 
 ### File browser shows "path not in allowed directories"
 
-File browsing is disabled by default. Edit `~/.config/marmy/config.toml`:
+File browsing is disabled by default. Edit your config file (see [Configuration](#configuration) for the path):
 ```toml
 [files]
 allowed_paths = ["~/projects"]
@@ -607,6 +640,18 @@ marmy/
 │           ├── panes.rs       # Pane input/content/resize endpoints
 │           ├── files.rs       # File tree and content endpoints
 │           └── ws.rs          # WebSocket handler
+├── macos/                     # macOS menu bar app (Swift)
+│   └── MarmyMenuBar/
+│       ├── MarmyMenuBar.xcodeproj
+│       ├── MarmyMenuBar/
+│       │   ├── MarmyMenuBarApp.swift   # @main, MenuBarExtra scene
+│       │   ├── AgentManager.swift      # Process lifecycle (start/stop/health)
+│       │   ├── ConfigReader.swift      # Parse config.toml
+│       │   ├── PairingInfo.swift       # Pairing data model
+│       │   ├── MenuBarView.swift       # Menu content UI
+│       │   └── Info.plist              # LSUIElement (no dock icon)
+│       └── Scripts/
+│           └── build-agent.sh          # Compiles Rust binary into app bundle
 ├── mobile/                    # React Native (Expo) app
 │   ├── package.json
 │   ├── app.json
