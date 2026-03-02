@@ -35,6 +35,20 @@ pub struct FileContent {
     pub size: u64,
 }
 
+/// GET /api/files/roots — return configured allowed_paths.
+pub async fn list_roots(
+    State(state): State<AppState>,
+) -> Json<Vec<String>> {
+    let roots: Vec<String> = state
+        .config
+        .files
+        .allowed_paths
+        .iter()
+        .map(|p| resolve_path(p).to_string_lossy().to_string())
+        .collect();
+    Json(roots)
+}
+
 /// GET /api/files/tree?path=... — list directory contents.
 pub async fn list_dir(
     State(state): State<AppState>,

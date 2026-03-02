@@ -11,7 +11,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.marmy.app",
       "infoPlist": {
-        "NSLocalNetworkUsageDescription": "Marmy needs local network access to connect to your development machines."
+        "NSLocalNetworkUsageDescription": "Marmy needs local network access to connect to your development machines.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {

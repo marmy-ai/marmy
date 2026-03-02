@@ -14,7 +14,8 @@ import type { DirEntry } from "../../src/types";
 
 export default function FilesScreen() {
   const { api, connected, activeMachine } = useConnectionStore();
-  const [currentPath, setCurrentPath] = useState("~");
+  const [roots, setRoots] = useState<string[]>([]);
+  const [currentPath, setCurrentPath] = useState("");
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<{
@@ -56,10 +57,15 @@ export default function FilesScreen() {
     [api]
   );
 
-  // Load initial directory
+  // Fetch allowed roots, then load the first one
   useEffect(() => {
     if (connected && api) {
-      loadDirectory("~");
+      api.getFileRoots().then((r) => {
+        setRoots(r);
+        if (r.length > 0) {
+          loadDirectory(r[0]);
+        }
+      }).catch((e: any) => Alert.alert("Error", e.message));
     }
   }, [connected, api, loadDirectory]);
 

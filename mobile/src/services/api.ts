@@ -104,6 +104,11 @@ export class MarmyApi {
     });
   }
 
+  /** Get configured allowed root paths. */
+  async getFileRoots(): Promise<string[]> {
+    return this.fetch<string[]>("/api/files/roots");
+  }
+
   /** List directory contents. */
   async listDir(path: string): Promise<DirListing> {
     return this.fetch<DirListing>(
