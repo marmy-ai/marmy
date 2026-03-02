@@ -20,6 +20,8 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 ## P2 — Quality of Life
 
+- [ ] **Session-aware file browsing** — Instead of a fixed `allowed_paths` list, derive file roots from sessions. Each tmux session's working directory becomes a browsable root, so file access automatically matches what you're working on without manual config.
+
 - [ ] **App polish** — General cleanup pass on the mobile app. Tighten UI consistency, fix rough edges, improve navigation flow, and handle error/empty states gracefully.
 
 - [ ] **Clearer MSG/KB mode toggle UX** — The current MSG/KB toggle button is cryptic for new users. Add better affordances — e.g. a brief tooltip on first use, more descriptive labels, or a small onboarding hint explaining the two input modes.
