@@ -24,6 +24,8 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 ## P2 — Quality of Life
 
+- [ ] **Session folder scope from menu bar** — Add a setting in the macOS menu bar app to configure which folders sessions can start from. Let users define allowed root directories so new sessions are scoped to specific project folders instead of defaulting to a single path.
+
 - [ ] **Session-aware file browsing** — Instead of a fixed `allowed_paths` list, derive file roots from sessions. Each tmux session's working directory becomes a browsable root, so file access automatically matches what you're working on without manual config.
 
 - [ ] **QR code pairing** — Generate a QR code in the menu bar app or CLI (`marmy-agent pair --qr`) containing the address and token. Scan from the mobile app to add a machine instantly — no manual typing.
