@@ -44,6 +44,7 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 - [ ] **Quick-launch shortcuts without permissions** — Add shortcuts/widgets to launch Claude sessions directly without requiring permission prompts each time. Could include iOS shortcuts, home screen widgets, or app intents.
 
+- [ ] **Document upload from mobile** — Upload documents (PDFs, text files, etc.) from the mobile app and push them into a session's working directory. Lets users feed reference material or specs to agents directly from their phone.
 
 ## P3 — Polish and Expansion
 
