@@ -28,8 +28,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/panes/:id/content", get(panes::get_content))
         .route("/api/panes/:id/history", get(panes::get_history))
         .route("/api/files/roots", get(files::list_roots))
+        .route("/api/files/session-roots", get(files::session_roots))
         .route("/api/files/tree", get(files::list_dir))
-        .route("/api/files/content", get(files::read_file));
+        .route("/api/files/content", get(files::read_file))
+        .route("/api/files/raw", get(files::raw_file));
 
     Router::new()
         .merge(ws_routes)

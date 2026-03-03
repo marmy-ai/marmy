@@ -43,6 +43,13 @@ export interface TmuxTopology {
   panes: TmuxPane[];
 }
 
+export interface SessionRoot {
+  path: string;
+  pane_id: string;
+  window_name: string;
+  current_command: string;
+}
+
 export interface DirEntry {
   name: string;
   path: string;
