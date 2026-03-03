@@ -30,6 +30,8 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 - [ ] **QR code pairing** — Generate a QR code in the menu bar app or CLI (`marmy-agent pair --qr`) containing the address and token. Scan from the mobile app to add a machine instantly — no manual typing.
 
+- [ ] **Session clone** — Start a new session in the same working directory as an existing one. Quick way to spin up a parallel agent in the same project context without manually picking the folder again.
+
 - [ ] **App polish** — General cleanup pass on the mobile app. Tighten UI consistency, fix rough edges, improve navigation flow, and handle error/empty states gracefully.
 
 - [ ] **Backspace in live keyboard mode** — Backspace key doesn't work when in live keyboard (KB) mode. Need to send the correct escape sequence or control character so backspace behaves as expected during real-time key-by-key input.
