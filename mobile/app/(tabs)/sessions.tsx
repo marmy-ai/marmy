@@ -63,11 +63,63 @@ export default function SessionsScreen() {
 
   if (!topology || topology.sessions.length === 0) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.emptyText}>No tmux sessions found.</Text>
-        <Text style={styles.emptySubtext}>
-          Start a tmux session on {activeMachine.name} first.
-        </Text>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+            <View style={[styles.statusDot, { backgroundColor: "#22c55e" }]} />
+            <Text style={styles.headerText}>{activeMachine.name}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => setShowNewSession(true)}
+          >
+            <Text style={styles.addBtnText}>+</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Modal
+          visible={showNewSession}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowNewSession(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>New Session</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={newSessionName}
+                onChangeText={setNewSessionName}
+                placeholder="Session name"
+                placeholderTextColor="#555"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => { setShowNewSession(false); setNewSessionName(""); }}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalCreateBtn}
+                  onPress={handleCreateSession}
+                >
+                  <Text style={styles.modalCreateText}>Create</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <View style={styles.emptyBody}>
+          <Text style={styles.emptyText}>No tmux sessions yet.</Text>
+          <Text style={styles.emptySubtext}>
+            Tap + to create one.
+          </Text>
+        </View>
       </View>
     );
   }
@@ -196,6 +248,7 @@ export default function SessionsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0f0f1a" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0f0f1a" },
+  emptyBody: { flex: 1, alignItems: "center", justifyContent: "center" },
   emptyText: { color: "#888", fontSize: 18, marginBottom: 8 },
   emptySubtext: { color: "#555", fontSize: 14 },
   header: {
