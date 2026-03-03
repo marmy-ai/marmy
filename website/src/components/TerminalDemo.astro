@@ -5,76 +5,69 @@ import TerminalWindow from './TerminalWindow.astro';
 <section class="py-20 px-4 sm:px-6 border-t border-border">
   <div class="max-w-4xl mx-auto">
     <h2 class="text-3xl sm:text-4xl font-bold text-center mb-4">
-      See it in action
+      See the team in action
     </h2>
     <p class="text-text-muted text-center max-w-2xl mx-auto mb-12">
-      A Claude Code session managed through marmy. The agent works, you approve from your phone when it needs you.
+      A lead agent delegates work to sub-agents across machines. You approve when needed.
     </p>
 
-    <TerminalWindow title="claude — ~/projects/api">
+    <TerminalWindow title="marmy — team overview">
       <div class="space-y-2 text-xs sm:text-sm">
+        <div class="text-text-muted">
+          <span class="text-accent font-bold">team:</span> api-redesign &nbsp; <span class="text-text-muted">·</span> &nbsp; 4 agents &nbsp; <span class="text-text-muted">·</span> &nbsp; 3 machines
+        </div>
+
+        <div class="pt-2 border-t border-border mt-2"></div>
+
         <div>
-          <span class="text-accent">❯</span>
-          <span class="text-text-primary"> claude "add rate limiting to the /api/chat endpoint"</span>
+          <span class="text-accent">lead</span>
+          <span class="text-text-muted"> @ work-mbp</span>
+          <span class="text-text-muted"> ·</span>
+          <span class="text-green"> running</span>
         </div>
-        <div class="text-text-muted">
-          ╭───────────────────────────────────────────────────────╮
+        <div class="pl-4 text-text-muted">
+          Planning v2 API schema. Delegated 3 tasks to sub-agents.
         </div>
-        <div class="text-text-muted">
-          │ <span class="text-text-primary">Claude Code</span> v1.0.26                                  │
-        </div>
-        <div class="text-text-muted">
-          ╰───────────────────────────────────────────────────────╯
-        </div>
+
         <div class="pt-1">
-          <span class="text-green">●</span>
-          <span class="text-text-primary"> Reading src/routes/chat.ts...</span>
-        </div>
-        <div>
-          <span class="text-green">●</span>
-          <span class="text-text-primary"> Reading src/middleware/auth.ts...</span>
-        </div>
-        <div>
-          <span class="text-green">●</span>
-          <span class="text-text-primary"> Found existing Express middleware chain</span>
-        </div>
-        <div class="pt-2">
-          <span class="text-accent">⟡</span>
-          <span class="text-text-primary"> I'll add a sliding-window rate limiter using Redis. Here's my plan:</span>
+          <span class="text-green">  backend</span>
+          <span class="text-text-muted"> @ home-server</span>
+          <span class="text-text-muted"> ·</span>
+          <span class="text-green"> running</span>
         </div>
         <div class="pl-4 text-text-muted">
-          1. Add <span class="text-accent">express-rate-limit</span> + <span class="text-accent">rate-limit-redis</span> deps
+          Writing src/middleware/rateLimit.ts... <span class="text-text-primary">47 lines</span>
+        </div>
+
+        <div class="pt-1">
+          <span class="text-green">  tests</span>
+          <span class="text-text-muted"> @ home-server</span>
+          <span class="text-text-muted"> ·</span>
+          <span class="text-[#eab308]"> awaiting approval</span>
         </div>
         <div class="pl-4 text-text-muted">
-          2. Create src/middleware/rateLimit.ts
+          Wants to delete __tests__/legacy/ (14 files)
         </div>
-        <div class="pl-4 text-text-muted">
-          3. Apply to /api/chat with 60 req/min window
-        </div>
-        <div class="pl-4 text-text-muted">
-          4. Add tests in __tests__/rateLimit.test.ts
-        </div>
-        <div class="pt-3 border-t border-border mt-2">
+        <div class="pl-4 pt-1">
           <span class="text-text-muted">marmy →</span>
-          <span class="text-green"> ✓ Approved from iPhone</span>
-          <span class="text-text-muted"> (2s response time)</span>
+          <span class="text-green"> ✓ Approved</span>
+          <span class="text-text-muted"> (from iPhone, 3s)</span>
         </div>
+
         <div class="pt-1">
-          <span class="text-green">●</span>
-          <span class="text-text-primary"> Writing src/middleware/rateLimit.ts...</span>
+          <span class="text-green">  frontend</span>
+          <span class="text-text-muted"> @ cloud-vm</span>
+          <span class="text-text-muted"> ·</span>
+          <span class="text-green"> running</span>
         </div>
-        <div>
-          <span class="text-green">●</span>
-          <span class="text-text-primary"> Modifying src/routes/chat.ts...</span>
+        <div class="pl-4 text-text-muted">
+          Updating dashboard components to match new API schema
         </div>
-        <div>
-          <span class="text-green">●</span>
-          <span class="text-text-primary"> Running npm test... </span>
-          <span class="text-green">14 passed</span>
-        </div>
-        <div class="pt-2">
+
+        <div class="pt-3 border-t border-border mt-2">
           <span class="text-green">✓</span>
-          <span class="text-text-primary"> Done. 3 files changed, 127 lines added.</span>
+          <span class="text-text-primary"> lead:</span>
+          <span class="text-text-muted"> All sub-agents complete. Merging changes and running integration tests.</span>
         </div>
       </div>
     </TerminalWindow>

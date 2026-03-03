@@ -3,11 +3,11 @@
     <!-- Copy -->
     <div class="flex-1 text-center lg:text-left">
       <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
-        Manage your coding agents
-        <span class="text-accent">the simple way.</span>
+        Run your coding agents
+        <span class="text-accent">like a team.</span>
       </h1>
       <p class="text-lg sm:text-xl text-text-muted max-w-xl mx-auto lg:mx-0 mb-8">
-        A native app to orchestrate Claude Code sessions across all your machines. No Telegram bots. No WhatsApp alerts. No janky workarounds. Just open the app.
+        You're not running one agent anymore. You're running five, across three machines, on different tasks. Marmy is a native app to orchestrate all of them — structure teams, schedule autonomous runs, and stay in the loop without the chaos.
       </p>
       <div class="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
         <a
@@ -46,44 +46,72 @@
           <div class="rounded-2xl bg-bg-deep overflow-hidden">
             <!-- App header -->
             <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <div class="w-2 h-2 rounded-full bg-green"></div>
-                <span class="text-xs font-mono text-text-muted">dev-server</span>
-              </div>
-              <span class="text-[10px] font-mono text-text-muted">2 agents active</span>
+              <span class="text-xs font-mono font-semibold text-text-primary">Team</span>
+              <span class="text-[10px] font-mono text-text-muted">3 machines</span>
             </div>
 
-            <!-- Terminal content -->
-            <div class="p-3 font-mono text-[11px] leading-5 space-y-1.5">
-              <div>
-                <span class="text-accent">❯</span>
-                <span class="text-text-muted"> claude "fix the auth bug"</span>
-              </div>
-              <div class="text-text-primary">
-                <span class="text-green">●</span> Reading src/auth.ts...
-              </div>
-              <div class="text-text-primary">
-                <span class="text-green">●</span> Found issue in token validation
-              </div>
-              <div class="text-text-primary">
-                <span class="text-green">●</span> Patching 3 files...
-              </div>
-              <div class="pt-1 border-t border-border mt-2">
-                <div class="flex gap-2 pt-1">
-                  <span class="px-2 py-0.5 rounded text-[10px] bg-green/20 text-green border border-green/30">Approve</span>
-                  <span class="px-2 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400 border border-red-500/30">Reject</span>
-                  <span class="px-2 py-0.5 rounded text-[10px] bg-bg-card text-text-muted border border-border">Edit</span>
+            <!-- Agent list -->
+            <div class="p-2 space-y-1.5 font-mono text-[11px]">
+              <!-- Lead agent -->
+              <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-accent">lead</span>
+                    <span class="text-text-muted">·</span>
+                    <span class="text-text-muted">work-mbp</span>
+                  </div>
+                  <div class="w-1.5 h-1.5 rounded-full bg-green"></div>
                 </div>
+                <div class="text-text-muted text-[10px] mt-0.5">Planning API redesign...</div>
+              </div>
+
+              <!-- Sub-agent 1 -->
+              <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-green">backend</span>
+                    <span class="text-text-muted">·</span>
+                    <span class="text-text-muted">home-server</span>
+                  </div>
+                  <div class="w-1.5 h-1.5 rounded-full bg-green"></div>
+                </div>
+                <div class="text-text-muted text-[10px] mt-0.5">Writing rate limiter middleware</div>
+              </div>
+
+              <!-- Sub-agent 2 -->
+              <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-green">tests</span>
+                    <span class="text-text-muted">·</span>
+                    <span class="text-text-muted">home-server</span>
+                  </div>
+                  <div class="w-1.5 h-1.5 rounded-full bg-[#eab308]"></div>
+                </div>
+                <div class="text-text-muted text-[10px] mt-0.5">Waiting for approval</div>
+              </div>
+
+              <!-- Sub-agent 3 -->
+              <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-green">frontend</span>
+                    <span class="text-text-muted">·</span>
+                    <span class="text-text-muted">cloud-vm</span>
+                  </div>
+                  <div class="w-1.5 h-1.5 rounded-full bg-green"></div>
+                </div>
+                <div class="text-text-muted text-[10px] mt-0.5">Updating dashboard components</div>
               </div>
             </div>
 
             <!-- Bottom nav -->
             <div class="flex justify-around py-2 border-t border-border">
               <div class="text-center">
-                <div class="text-[10px] text-accent">Sessions</div>
+                <div class="text-[10px] text-accent">Team</div>
               </div>
               <div class="text-center">
-                <div class="text-[10px] text-text-muted">Files</div>
+                <div class="text-[10px] text-text-muted">Sessions</div>
               </div>
               <div class="text-center">
                 <div class="text-[10px] text-text-muted">Machines</div>
