@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,11 @@ use crate::state::AppState;
 #[derive(Deserialize)]
 pub struct PathQuery {
     pub path: String,
+}
+
+#[derive(Deserialize)]
+pub struct SessionRootsQuery {
+    pub session_id: String,
 }
 
 #[derive(Serialize)]
@@ -35,6 +41,14 @@ pub struct FileContent {
     pub size: u64,
 }
 
+#[derive(Serialize)]
+pub struct SessionRoot {
+    pub path: String,
+    pub pane_id: String,
+    pub window_name: String,
+    pub current_command: String,
+}
+
 /// GET /api/files/roots — return configured allowed_paths.
 pub async fn list_roots(
     State(state): State<AppState>,
@@ -49,6 +63,54 @@ pub async fn list_roots(
     Json(roots)
 }
 
+/// GET /api/files/session-roots?session_id=... — return working directories for a session's panes.
+pub async fn session_roots(
+    State(state): State<AppState>,
+    Query(query): Query<SessionRootsQuery>,
+) -> Result<Json<Vec<SessionRoot>>, (StatusCode, String)> {
+    let topology = state
+        .get_topology()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Find windows belonging to this session
+    let session_window_ids: Vec<&str> = topology
+        .windows
+        .iter()
+        .filter(|w| w.session_id == query.session_id)
+        .map(|w| w.id.as_str())
+        .collect();
+
+    // Build a window_id -> window_name lookup
+    let window_name = |wid: &str| -> String {
+        topology
+            .windows
+            .iter()
+            .find(|w| w.id == wid)
+            .map(|w| w.name.clone())
+            .unwrap_or_default()
+    };
+
+    // Collect pane roots, deduplicated by path (keep first occurrence)
+    let mut seen = std::collections::HashSet::new();
+    let mut roots = Vec::new();
+
+    for pane in &topology.panes {
+        if session_window_ids.contains(&pane.window_id.as_str()) {
+            if seen.insert(pane.current_path.clone()) {
+                roots.push(SessionRoot {
+                    path: pane.current_path.clone(),
+                    pane_id: pane.id.clone(),
+                    window_name: window_name(&pane.window_id),
+                    current_command: pane.current_command.clone(),
+                });
+            }
+        }
+    }
+
+    Ok(Json(roots))
+}
+
 /// GET /api/files/tree?path=... — list directory contents.
 pub async fn list_dir(
     State(state): State<AppState>,
@@ -56,7 +118,7 @@ pub async fn list_dir(
 ) -> Result<Json<DirListing>, (StatusCode, String)> {
     let path = resolve_path(&query.path);
 
-    if !is_path_allowed(&path, &state.config.files.allowed_paths) {
+    if !is_path_allowed_dynamic(&path, &state).await {
         return Err((StatusCode::FORBIDDEN, "path not in allowed directories".to_string()));
     }
 
@@ -107,7 +169,7 @@ pub async fn read_file(
 ) -> Result<Json<FileContent>, (StatusCode, String)> {
     let path = resolve_path(&query.path);
 
-    if !is_path_allowed(&path, &state.config.files.allowed_paths) {
+    if !is_path_allowed_dynamic(&path, &state).await {
         return Err((StatusCode::FORBIDDEN, "path not in allowed directories".to_string()));
     }
 
@@ -129,6 +191,38 @@ pub async fn read_file(
         content,
         size: metadata.len(),
     }))
+}
+
+/// GET /api/files/raw?path=... — serve raw file bytes with correct Content-Type.
+pub async fn raw_file(
+    State(state): State<AppState>,
+    Query(query): Query<PathQuery>,
+) -> Result<Response, (StatusCode, String)> {
+    let path = resolve_path(&query.path);
+
+    if !is_path_allowed_dynamic(&path, &state).await {
+        return Err((StatusCode::FORBIDDEN, "path not in allowed directories".to_string()));
+    }
+
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))?;
+
+    // 10MB limit for binary files
+    if metadata.len() > 10 * 1024 * 1024 {
+        return Err((StatusCode::BAD_REQUEST, "file too large (>10MB)".to_string()));
+    }
+
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let content_type = guess_content_type(&path);
+
+    Ok((
+        [(header::CONTENT_TYPE, content_type)],
+        bytes,
+    ).into_response())
 }
 
 /// Resolve ~ and relative paths to absolute.
@@ -162,4 +256,59 @@ fn is_path_allowed(path: &Path, allowed: &[String]) -> bool {
     }
 
     false
+}
+
+/// Dynamic path validation: checks static allowed_paths first, then pane working directories.
+async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
+    // Static config check first
+    if is_path_allowed(path, &state.config.files.allowed_paths) {
+        return true;
+    }
+
+    // Dynamic check: is this path under any pane's current_path?
+    let topology = match state.get_topology().await {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+
+    let canonical = match path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    for pane in &topology.panes {
+        let pane_path = PathBuf::from(&pane.current_path);
+        if let Ok(pane_canonical) = pane_path.canonicalize() {
+            if canonical.starts_with(&pane_canonical) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Map file extension to MIME type for raw serving.
+fn guess_content_type(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("bmp") => "image/bmp",
+        Some("ico") => "image/x-icon",
+        Some("pdf") => "application/pdf",
+        Some("json") => "application/json",
+        Some("js" | "mjs") => "text/javascript",
+        Some("css") => "text/css",
+        Some("html" | "htm") => "text/html",
+        Some("txt" | "md" | "rs" | "toml" | "yaml" | "yml") => "text/plain",
+        _ => "application/octet-stream",
+    }
 }

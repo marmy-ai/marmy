@@ -3,6 +3,7 @@ import type {
   PaneContent,
   DirListing,
   FileContent,
+  SessionRoot,
 } from "../types";
 
 export class MarmyApi {
@@ -107,6 +108,23 @@ export class MarmyApi {
   /** Get configured allowed root paths. */
   async getFileRoots(): Promise<string[]> {
     return this.fetch<string[]>("/api/files/roots");
+  }
+
+  /** Get working directories for panes in a session. */
+  async getSessionRoots(sessionId: string): Promise<SessionRoot[]> {
+    return this.fetch<SessionRoot[]>(
+      `/api/files/session-roots?session_id=${encodeURIComponent(sessionId)}`
+    );
+  }
+
+  /** Build full URL for raw file endpoint (for <Image> source). */
+  getRawFileUrl(path: string): string {
+    return `${this.baseUrl}/api/files/raw?path=${encodeURIComponent(path)}`;
+  }
+
+  /** Expose auth headers for components that need them (e.g. <Image>). */
+  getAuthHeaders(): Record<string, string> {
+    return { Authorization: `Bearer ${this.token}` };
   }
 
   /** List directory contents. */
