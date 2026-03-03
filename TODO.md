@@ -44,3 +44,5 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 
 ## P3 — Polish and Expansion
+
+- [ ] **Menu bar screensaver** — Show an animated screensaver from the macOS menu bar app. Visualize active sessions with movement — pulsing dots, flowing connections, terminal activity sparklines, or a little constellation of agents doing work. Something cute and ambient that makes the menu bar feel alive.
