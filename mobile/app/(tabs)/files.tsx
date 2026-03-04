@@ -12,6 +12,8 @@ import { useConnectionStore } from "../../src/stores/connectionStore";
 import FileTree from "../../src/components/FileTree";
 import CodeViewer from "../../src/components/CodeViewer";
 import ImageViewer, { isImageFile } from "../../src/components/ImageViewer";
+import MarkdownViewer from "../../src/components/MarkdownViewer";
+import PdfViewer from "../../src/components/PdfViewer";
 import type { DirEntry, SessionRoot, TmuxSession } from "../../src/types";
 
 type Phase =
@@ -19,7 +21,9 @@ type Phase =
   | { kind: "roots"; sessionId: string; sessionName: string }
   | { kind: "browse"; sessionId: string }
   | { kind: "file"; path: string; content: string }
-  | { kind: "image"; path: string };
+  | { kind: "image"; path: string }
+  | { kind: "markdown"; path: string; content: string }
+  | { kind: "pdf"; path: string };
 
 export default function FilesScreen() {
   const { api, connected, activeMachine, topology } = useConnectionStore();
@@ -104,10 +108,19 @@ export default function FilesScreen() {
         return;
       }
 
+      if (isPdfFile(filename)) {
+        setPhase({ kind: "pdf", path });
+        return;
+      }
+
       setLoading(true);
       try {
         const file = await api.readFile(path);
-        setPhase({ kind: "file", path: file.path, content: file.content });
+        if (isMarkdownFile(filename)) {
+          setPhase({ kind: "markdown", path: file.path, content: file.content });
+        } else {
+          setPhase({ kind: "file", path: file.path, content: file.content });
+        }
       } catch (e: any) {
         Alert.alert("Error", e.message);
       } finally {
@@ -131,6 +144,8 @@ export default function FilesScreen() {
         break;
       case "file":
       case "image":
+      case "markdown":
+      case "pdf":
         // Go back to browse — entries/currentPath are still in state
         setPhase({ kind: "browse", sessionId: "" });
         break;
@@ -162,6 +177,36 @@ export default function FilesScreen() {
           <Text style={styles.backBtnText}>Back to files</Text>
         </TouchableOpacity>
         <ImageViewer
+          uri={api!.getRawFileUrl(phase.path)}
+          headers={api!.getAuthHeaders()}
+          filename={filename}
+        />
+      </View>
+    );
+  }
+
+  // Phase: Markdown viewer
+  if (phase.kind === "markdown") {
+    const filename = phase.path.split("/").pop() || phase.path;
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+          <Text style={styles.backBtnText}>Back to files</Text>
+        </TouchableOpacity>
+        <MarkdownViewer content={phase.content} filename={filename} />
+      </View>
+    );
+  }
+
+  // Phase: PDF viewer
+  if (phase.kind === "pdf") {
+    const filename = phase.path.split("/").pop() || phase.path;
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+          <Text style={styles.backBtnText}>Back to files</Text>
+        </TouchableOpacity>
+        <PdfViewer
           uri={api!.getRawFileUrl(phase.path)}
           headers={api!.getAuthHeaders()}
           filename={filename}
@@ -279,6 +324,14 @@ export default function FilesScreen() {
       />
     </View>
   );
+}
+
+function isMarkdownFile(name: string): boolean {
+  return /\.(md|mdx)$/i.test(name);
+}
+
+function isPdfFile(name: string): boolean {
+  return /\.pdf$/i.test(name);
 }
 
 const styles = StyleSheet.create({
