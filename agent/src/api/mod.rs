@@ -1,3 +1,4 @@
+pub mod cc;
 pub mod files;
 pub mod panes;
 pub mod sessions;
@@ -31,7 +32,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/files/session-roots", get(files::session_roots))
         .route("/api/files/tree", get(files::list_dir))
         .route("/api/files/content", get(files::read_file))
-        .route("/api/files/raw", get(files::raw_file));
+        .route("/api/files/raw", get(files::raw_file))
+        .route("/api/cc/sessions", get(cc::list_sessions))
+        .route("/api/cc/sessions/:id/context", get(cc::get_session_context))
+        .route("/api/cc/dashboard/start", post(cc::start_dashboard));
 
     Router::new()
         .merge(ws_routes)

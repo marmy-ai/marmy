@@ -20,6 +20,21 @@ export default function SessionsScreen() {
   const router = useRouter();
   const [showNewSession, setShowNewSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState("");
+  const [startingManager, setStartingManager] = useState(false);
+
+  const handleStartManager = async () => {
+    if (!api) return;
+    setStartingManager(true);
+    try {
+      const result = await api.startDashboard();
+      setActivePane(result.pane_id);
+      router.push("/(tabs)/terminal");
+    } catch (e: any) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setStartingManager(false);
+    }
+  };
 
   const handleCreateSession = async () => {
     const name = newSessionName.trim();
@@ -69,6 +84,15 @@ export default function SessionsScreen() {
             <View style={[styles.statusDot, { backgroundColor: "#22c55e" }]} />
             <Text style={styles.headerText}>{activeMachine.name}</Text>
           </View>
+          <TouchableOpacity
+            style={styles.managerBtn}
+            onPress={handleStartManager}
+            disabled={startingManager}
+          >
+            <Text style={styles.managerBtnText}>
+              {startingManager ? "..." : "Start Manager"}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.addBtn}
             onPress={() => setShowNewSession(true)}
@@ -125,7 +149,14 @@ export default function SessionsScreen() {
   }
 
   // Build sections: one per session, items are panes grouped by window
-  const sections = topology.sessions.map((session) => {
+  // Pin "sessions-manager" to the top of the list
+  const sortedSessions = [...topology.sessions].sort((a, b) => {
+    if (a.name === "sessions-manager") return -1;
+    if (b.name === "sessions-manager") return 1;
+    return 0;
+  });
+
+  const sections = sortedSessions.map((session) => {
     const sessionWindows = topology.windows.filter(
       (w) => w.session_id === session.id
     );
@@ -160,6 +191,15 @@ export default function SessionsScreen() {
           <View style={[styles.statusDot, { backgroundColor: "#22c55e" }]} />
           <Text style={styles.headerText}>{activeMachine.name}</Text>
         </View>
+        <TouchableOpacity
+          style={styles.managerBtn}
+          onPress={handleStartManager}
+          disabled={startingManager}
+        >
+          <Text style={styles.managerBtnText}>
+            {startingManager ? "..." : "Start Manager"}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.addBtn}
           onPress={() => setShowNewSession(true)}
@@ -208,17 +248,22 @@ export default function SessionsScreen() {
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
-        renderSectionHeader={({ section }) => (
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onLongPress={() => handleDeleteSession(section.title)}
-          >
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <Text style={styles.sectionBadge}>
-              {section.session.attached ? "attached" : "detached"}
-            </Text>
-          </TouchableOpacity>
-        )}
+        renderSectionHeader={({ section }) => {
+          const isManager = section.title === "sessions-manager";
+          return (
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onLongPress={() => handleDeleteSession(section.title)}
+            >
+              <Text style={[styles.sectionTitle, isManager && { color: "#14b8a6" }]}>
+                {section.title}
+              </Text>
+              <Text style={styles.sectionBadge}>
+                {section.session.attached ? "attached" : "detached"}
+              </Text>
+            </TouchableOpacity>
+          );
+        }}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.paneCard}
@@ -297,6 +342,19 @@ const styles = StyleSheet.create({
   paneCommand: { color: "#7c3aed", fontSize: 14, marginBottom: 2 },
   panePath: { color: "#666", fontSize: 12, marginBottom: 2 },
   paneDimensions: { color: "#555", fontSize: 11 },
+  managerBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#14b8a6",
+    marginRight: 8,
+  },
+  managerBtnText: {
+    color: "#14b8a6",
+    fontSize: 13,
+    fontWeight: "600",
+  },
   addBtn: {
     width: 32,
     height: 32,
