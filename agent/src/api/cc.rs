@@ -431,6 +431,21 @@ Sends text input to a pane. Use the pane ID **without** the `%` prefix.
 
 This lets you give instructions to other Claude sessions directly.
 
+### Create a New Session
+```bash
+curl -s -X POST -H "Authorization: Bearer $MARMY_TOKEN" -H "Content-Type: application/json" \
+  -d '{{"name": "my-session"}}' \
+  http://localhost:{port}/api/sessions
+```
+Creates a new tmux session with the given name.
+
+### Kill a Session
+```bash
+curl -s -X DELETE -H "Authorization: Bearer $MARMY_TOKEN" \
+  http://localhost:{port}/api/sessions/<SESSION_NAME>
+```
+Kills (deletes) a tmux session by name. URL-encode the name if it has special characters.
+
 ### Full Tmux Topology
 ```bash
 curl -s -H "Authorization: Bearer $MARMY_TOKEN" http://localhost:{port}/api/sessions | jq .
