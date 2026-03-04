@@ -159,10 +159,17 @@ The agent will only serve files within these directories. Files are read-only (n
 - Long-press to remove a machine
 
 ### Sessions Tab
-- Live view of all tmux sessions, windows, and panes
-- Shows running process name, current directory, and dimensions per pane
-- Topology auto-updates when sessions/windows/panes are created or destroyed
-- Tap any pane to open in the terminal view
+- Live view of all tmux sessions with session name and working directory
+- Topology auto-updates when sessions are created or destroyed
+- Tap any session to open in the terminal view
+- Long-press to delete a session
+
+### Sessions Manager
+- A dedicated Claude Code session that monitors all other running CC sessions
+- Tap "Start Manager" in the Sessions tab header to launch
+- Queries the marmy API to see what each session is working on (live terminal content + conversation history)
+- Can send messages to other sessions and create/kill sessions
+- Appears at the top of the sessions list with child sessions nested below
 
 ### Terminal Tab
 - Plain-text terminal view — polls pane content via REST every 500ms
@@ -196,13 +203,18 @@ The agent parses these notifications and maintains an in-memory topology model.
 The mobile app uses REST for all core operations — polling pane content, sending input, browsing files. This is simple, stateless, and easy to debug with `curl`.
 
 ```
-GET  /api/sessions              List all sessions/windows/panes
-GET  /api/panes/:id/content     Capture current pane screen (plain text)
-GET  /api/panes/:id/history     Capture full scrollback
-POST /api/panes/:id/input       Send keys to a pane (hex-encoded via send-keys -H)
-POST /api/panes/:id/resize      Resize a pane
-GET  /api/files/tree?path=...   List directory contents
-GET  /api/files/content?path=.. Read file contents
+GET  /api/sessions                    List all sessions/windows/panes
+POST /api/sessions                    Create a new tmux session
+DELETE /api/sessions/:name            Kill a tmux session
+GET  /api/panes/:id/content           Capture current pane screen (plain text)
+GET  /api/panes/:id/history           Capture full scrollback
+POST /api/panes/:id/input             Send keys to a pane
+POST /api/panes/:id/resize            Resize a pane
+GET  /api/files/tree?path=...         List directory contents
+GET  /api/files/content?path=..       Read file contents
+GET  /api/cc/sessions                 List live Claude Code sessions (tmux panes running claude)
+GET  /api/cc/sessions/:id/context     Get session context (live pane content + conversation history)
+POST /api/cc/dashboard/start          Start or reuse the sessions manager
 ```
 
 ### WebSocket (optional)
