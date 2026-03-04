@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tracing::info;
 
 use crate::state::AppState;
@@ -40,26 +40,6 @@ pub struct CcSessionContext {
 pub struct DashboardStartResponse {
     pub pane_id: String,
     pub session_name: String,
-}
-
-/// Wrapper for the sessions-index.json file format.
-#[derive(Debug, Deserialize)]
-struct SessionIndexFile {
-    #[serde(default)]
-    entries: Vec<SessionIndexEntry>,
-}
-
-/// Entry from Claude's sessions-index.json file.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SessionIndexEntry {
-    #[serde(default)]
-    #[allow(dead_code)]
-    session_id: String,
-    #[serde(default)]
-    full_path: String,
-    #[serde(default)]
-    project_path: String,
 }
 
 // --- Handlers ---
@@ -158,8 +138,12 @@ pub async fn get_session_context(
     }))
 }
 
-/// Search sessions-index files to find the most recent conversation for a project path,
-/// then extract the last 5 user inputs and last assistant output.
+/// Find the most recent JSONL conversation file for a project path.
+///
+/// Claude stores conversations in ~/.claude/projects/<encoded-path>/*.jsonl.
+/// The encoding is inconsistent (sometimes `_` → `-`, sometimes not), so we
+/// scan all project directories and find the one whose most recent JSONL
+/// matches. We try multiple encodings of the path to find the right directory.
 fn find_conversation_context(project_path: &str) -> (Vec<String>, Option<String>) {
     let home = match dirs::home_dir() {
         Some(h) => h,
@@ -171,49 +155,56 @@ fn find_conversation_context(project_path: &str) -> (Vec<String>, Option<String>
         return (vec![], None);
     }
 
-    // Find the most recently modified JSONL for this project path
+    // Try multiple encodings of the project path
+    let candidates = vec![
+        project_path.replace('/', "-"),                        // /foo/bar -> -foo-bar
+        project_path.replace('/', "-").replace('_', "-"),      // also replace underscores
+    ];
+
+    // Find the best (most recently modified) JSONL across all candidate dirs
     let mut best_path: Option<PathBuf> = None;
     let mut best_mtime: u64 = 0;
 
-    let dirs = match std::fs::read_dir(&claude_projects) {
-        Ok(d) => d,
-        Err(_) => return (vec![], None),
-    };
-
-    for dir_entry in dirs.flatten() {
-        let index_path = dir_entry.path().join("sessions-index.json");
-        if !index_path.exists() {
+    for candidate in &candidates {
+        let project_dir = claude_projects.join(candidate);
+        if !project_dir.exists() {
             continue;
         }
-        let content = match std::fs::read_to_string(&index_path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-        let parsed: SessionIndexFile = match serde_json::from_str(&content) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        for entry in &parsed.entries {
-            if entry.project_path == project_path && !entry.full_path.is_empty() {
-                let mtime = std::fs::metadata(&entry.full_path)
-                    .and_then(|m| m.modified())
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)))
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                if mtime > best_mtime {
-                    best_mtime = mtime;
-                    best_path = Some(PathBuf::from(&entry.full_path));
-                }
-            }
-        }
+        find_latest_jsonl_in_dir(&project_dir, &mut best_path, &mut best_mtime);
     }
 
     let jsonl_path = match best_path {
-        Some(p) if p.exists() => p,
-        _ => return (vec![], None),
+        Some(p) => p,
+        None => return (vec![], None),
     };
 
     parse_jsonl_context(&jsonl_path)
+}
+
+fn find_latest_jsonl_in_dir(dir: &PathBuf, best_path: &mut Option<PathBuf>, best_mtime: &mut u64) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let mtime = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .and_then(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            })
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if mtime > *best_mtime {
+            *best_mtime = mtime;
+            *best_path = Some(path);
+        }
+    }
 }
 
 /// Parse a JSONL conversation file, extracting user inputs and last assistant output.
