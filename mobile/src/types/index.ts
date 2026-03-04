@@ -73,6 +73,27 @@ export interface PaneContent {
   content: string;
 }
 
+// CC Dashboard types
+
+export interface CcSession {
+  session_name: string;
+  pane_id: string;
+  project_path: string;
+  current_command: string;
+}
+
+export interface CcSessionContext {
+  pane_id: string;
+  pane_content: string;
+  last_user_inputs: string[];
+  last_assistant_output: string | null;
+}
+
+export interface DashboardStartResponse {
+  pane_id: string;
+  session_name: string;
+}
+
 // WebSocket messages (client -> server)
 export type ClientMessage =
   | { type: "subscribe_pane"; pane_id: string }

@@ -190,6 +190,20 @@ impl TmuxController {
         Ok(())
     }
 
+    /// Create a new tmux session with a specific working directory.
+    pub async fn new_session_in_dir(&self, name: &str, dir: &str) -> Result<()> {
+        self.run_tmux(&["new-session", "-d", "-s", name, "-c", dir])
+            .await?;
+        Ok(())
+    }
+
+    /// Set an environment variable on a tmux session.
+    pub async fn set_session_env(&self, session: &str, key: &str, value: &str) -> Result<()> {
+        self.run_tmux(&["set-environment", "-t", session, key, value])
+            .await?;
+        Ok(())
+    }
+
     /// Kill (delete) a tmux session.
     pub async fn kill_session(&self, name: &str) -> Result<()> {
         self.run_tmux(&["kill-session", "-t", name]).await?;

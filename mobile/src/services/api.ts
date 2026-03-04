@@ -4,6 +4,9 @@ import type {
   DirListing,
   FileContent,
   SessionRoot,
+  CcSession,
+  CcSessionContext,
+  DashboardStartResponse,
 } from "../types";
 
 export class MarmyApi {
@@ -139,6 +142,25 @@ export class MarmyApi {
     return this.fetch<FileContent>(
       `/api/files/content?path=${encodeURIComponent(path)}`
     );
+  }
+
+  /** List all discovered CC sessions. */
+  async getCcSessions(): Promise<CcSession[]> {
+    return this.fetch<CcSession[]>("/api/cc/sessions");
+  }
+
+  /** Get context (last inputs + output) for a CC session. */
+  async getCcSessionContext(sessionId: string): Promise<CcSessionContext> {
+    return this.fetch<CcSessionContext>(
+      `/api/cc/sessions/${encodeURIComponent(sessionId)}/context`
+    );
+  }
+
+  /** Start (or reuse) the dashboard agent session. */
+  async startDashboard(): Promise<DashboardStartResponse> {
+    return this.fetch<DashboardStartResponse>("/api/cc/dashboard/start", {
+      method: "POST",
+    });
   }
 
   /** Get WebSocket URL for this machine. */
