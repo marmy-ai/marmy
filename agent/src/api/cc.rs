@@ -332,25 +332,17 @@ pub async fn start_dashboard(
             )
         })?;
 
-    // Set MARMY_TOKEN env var on the session
+    // Export MARMY_TOKEN and launch claude in one command so the token is
+    // available in claude's subprocess environment (tmux set-environment only
+    // affects new shells, not the current one).
+    let pane_target = format!("{}:0.0", session_name);
+    let launch_cmd = format!(
+        "export MARMY_TOKEN='{}' && claude --dangerously-skip-permissions",
+        state.config.auth.token
+    );
     state
         .tmux
-        .set_session_env(session_name, "MARMY_TOKEN", &state.config.auth.token)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("failed to set MARMY_TOKEN: {}", e),
-            )
-        })?;
-
-    // Send the claude command
-    state
-        .tmux
-        .send_text_enter(
-            &format!("{}:0.0", session_name),
-            "claude --dangerously-skip-permissions",
-        )
+        .send_text_enter(&pane_target, &launch_cmd)
         .await
         .map_err(|e| {
             (
@@ -428,12 +420,12 @@ Same pane ID format (no `%` prefix). Returns raw terminal content.
 ### Send Input to a Session
 ```bash
 curl -s -X POST -H "Authorization: Bearer $MARMY_TOKEN" -H "Content-Type: application/json" \
-  -d '{{"keys": "your message here", "literal": true}}' \
+  -d '{{"keys": "your message here\n"}}' \
   http://localhost:{port}/api/panes/<PANE_ID>/input
 ```
 Sends text input to a pane. Use the pane ID **without** the `%` prefix.
-- `keys` — the text to send
-- `literal` — set to `true` to send text as-is (followed by Enter)
+- `keys` — the text to send. **IMPORTANT: append `\n` to press Enter.** Without it the text appears but is never submitted.
+- Keep messages simple — avoid special characters like em-dashes or curly quotes that may break JSON encoding.
 
 This lets you give instructions to other Claude sessions directly.
 
