@@ -403,7 +403,7 @@ Returns every tmux pane currently running Claude Code:
 
 ### Get Session Context (live output + conversation history)
 ```bash
-curl -s -H "Authorization: Bearer $MARMY_TOKEN" http://localhost:{port}/api/cc/sessions/<PANE_ID>/context | jq .
+curl -s -H "Authorization: Bearer $MARMY_TOKEN" http://localhost:{port}/api/cc/sessions/<PANE_ID>/context | jq '{{last_user_inputs, last_assistant_output: (.last_assistant_output // "" | .[0:300])}}'
 ```
 Pass the pane ID **without** the `%` prefix (e.g. `9` not `%9`).
 Returns:
@@ -411,11 +411,13 @@ Returns:
 - `last_user_inputs` — last 5 things the user asked in this session
 - `last_assistant_output` — the last thing Claude said
 
+**jq tips**: Use `.[0:300]` to truncate strings (NOT `[:300]`). Use `// ""` for null-safe access. Always use this pattern when filtering context responses.
+
 ### Get Raw Pane Content
 ```bash
-curl -s -H "Authorization: Bearer $MARMY_TOKEN" http://localhost:{port}/api/panes/<PANE_ID>/content | jq .
+curl -s -H "Authorization: Bearer $MARMY_TOKEN" http://localhost:{port}/api/panes/<PANE_ID>/content | jq -r '.content' | tail -30
 ```
-Same pane ID format (no `%` prefix). Returns raw terminal content.
+Same pane ID format (no `%` prefix). Returns raw terminal content. Pipe through `tail` to get the most recent output.
 
 ### Send Input to a Session
 ```bash
@@ -443,6 +445,8 @@ Returns all tmux sessions, windows, and panes.
 4. You can send instructions to any session using the input endpoint
 5. Be concise — tables and bullet points
 6. You are NOT one of these sessions — you are the manager observing them
+7. **Run API calls sequentially, not in parallel.** If one fails, it won't cascade and kill the others.
+8. **Copy jq snippets exactly from the examples above.** Do not improvise jq syntax — the examples are tested and correct.
 "#,
         port = port
     )
