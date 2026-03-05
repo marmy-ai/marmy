@@ -1,5 +1,6 @@
 pub mod cc;
 pub mod files;
+pub mod notifications;
 pub mod panes;
 pub mod sessions;
 pub mod ws;
@@ -35,7 +36,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/files/raw", get(files::raw_file))
         .route("/api/cc/sessions", get(cc::list_sessions))
         .route("/api/cc/sessions/:id/context", get(cc::get_session_context))
-        .route("/api/cc/dashboard/start", post(cc::start_dashboard));
+        .route("/api/cc/dashboard/start", post(cc::start_dashboard))
+        .route("/api/notifications/register", post(notifications::register_token).delete(notifications::unregister_token))
+        .route("/api/notifications/test", post(notifications::test_notification))
+        .route("/api/notifications/debug", get(notifications::debug_notifications));
 
     Router::new()
         .merge(ws_routes)

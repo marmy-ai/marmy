@@ -106,4 +106,5 @@ export type ServerMessage =
   | { type: "pane_output"; pane_id: string; data: string }
   | { type: "topology"; sessions: TmuxSession[]; windows: TmuxWindow[]; panes: TmuxPane[] }
   | { type: "session_event"; event: string; detail: string }
+  | { type: "notification"; event: "task_complete" | "waiting_for_input"; pane_id: string; session_name: string; message: string }
   | { type: "error"; message: string };

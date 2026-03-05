@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{watch, Mutex, RwLock};
 
 use crate::config::Config;
+use crate::notifications::{self, NotificationDetector};
 use crate::tmux::{TmuxController, TmuxTopology};
 
 /// Shared application state accessible from all API handlers.
@@ -14,27 +15,36 @@ pub struct AppState {
     /// Notifies WebSocket clients when topology changes.
     pub topology_tx: watch::Sender<Option<TmuxTopology>>,
     pub topology_rx: watch::Receiver<Option<TmuxTopology>>,
+    /// Notification detector (owns APNs client).
+    pub detector: Arc<Mutex<NotificationDetector>>,
 }
 
 pub struct AppStateInner {
     /// Cached topology, refreshed periodically.
     pub topology: Option<TmuxTopology>,
+    /// Registered device push tokens (raw APNs tokens).
+    pub push_tokens: Vec<String>,
 }
 
 impl AppState {
     pub fn new(tmux: TmuxController, config: Config) -> Self {
         let (topology_tx, topology_rx) = watch::channel(None);
+        let push_tokens = notifications::load_push_tokens();
+        let detector = NotificationDetector::new(&config.notifications);
         Self {
-            inner: Arc::new(RwLock::new(AppStateInner { topology: None })),
+            inner: Arc::new(RwLock::new(AppStateInner {
+                topology: None,
+                push_tokens,
+            })),
             tmux,
             config,
             topology_tx,
             topology_rx,
+            detector: Arc::new(Mutex::new(detector)),
         }
     }
 
     /// Refresh the cached topology from tmux.
-    /// Sends on the watch channel only if the topology actually changed.
     pub async fn refresh_topology(&self) -> anyhow::Result<()> {
         let new_topology = self.tmux.get_topology().await?;
         let mut inner = self.inner.write().await;
@@ -63,5 +73,27 @@ impl AppState {
             windows: Vec::new(),
             panes: Vec::new(),
         }))
+    }
+
+    /// Register a push token.
+    pub async fn register_push_token(&self, token: String) {
+        let mut inner = self.inner.write().await;
+        if !inner.push_tokens.contains(&token) {
+            inner.push_tokens.push(token);
+            notifications::save_push_tokens(&inner.push_tokens);
+        }
+    }
+
+    /// Unregister a push token.
+    pub async fn unregister_push_token(&self, token: &str) {
+        let mut inner = self.inner.write().await;
+        inner.push_tokens.retain(|t| t != token);
+        notifications::save_push_tokens(&inner.push_tokens);
+    }
+
+    /// Get all registered push tokens.
+    pub async fn get_push_tokens(&self) -> Vec<String> {
+        let inner = self.inner.read().await;
+        inner.push_tokens.clone()
     }
 }

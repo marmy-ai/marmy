@@ -13,6 +13,8 @@ pub struct Config {
     pub files: FilesConfig,
     #[serde(default)]
     pub tmux: TmuxConfig,
+    #[serde(default)]
+    pub notifications: NotificationsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +47,45 @@ pub struct TmuxConfig {
     pub socket_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationsConfig {
+    #[serde(default = "default_notifications_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_cooldown_seconds")]
+    pub cooldown_seconds: u64,
+    /// Path to APNs .p8 key file (from Apple Developer > Keys)
+    #[serde(default)]
+    pub apns_key_path: String,
+    /// APNs Key ID (10-char string from Apple Developer)
+    #[serde(default)]
+    pub apns_key_id: String,
+    /// Apple Developer Team ID
+    #[serde(default)]
+    pub apns_team_id: String,
+    /// APNs topic — your app's bundle identifier
+    #[serde(default = "default_apns_topic")]
+    pub apns_topic: String,
+    /// Use APNs sandbox (true for dev builds, false for production)
+    #[serde(default = "default_apns_sandbox")]
+    pub apns_sandbox: bool,
+}
+
+fn default_notifications_enabled() -> bool {
+    true
+}
+
+fn default_cooldown_seconds() -> u64 {
+    120
+}
+
+fn default_apns_topic() -> String {
+    "com.marmy.app".to_string()
+}
+
+fn default_apns_sandbox() -> bool {
+    true
+}
+
 fn default_server() -> ServerConfig {
     ServerConfig {
         bind: default_bind(),
@@ -73,6 +114,7 @@ impl Default for Config {
             tmux: TmuxConfig {
                 socket_name: String::new(),
             },
+            notifications: NotificationsConfig::default(),
         }
     }
 }
@@ -103,6 +145,20 @@ impl Default for TmuxConfig {
     fn default() -> Self {
         Self {
             socket_name: String::new(),
+        }
+    }
+}
+
+impl Default for NotificationsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_notifications_enabled(),
+            cooldown_seconds: default_cooldown_seconds(),
+            apns_key_path: String::new(),
+            apns_key_id: String::new(),
+            apns_team_id: String::new(),
+            apns_topic: default_apns_topic(),
+            apns_sandbox: default_apns_sandbox(),
         }
     }
 }

@@ -3,6 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import type { Machine, TmuxTopology } from "../types";
 import { MarmyApi } from "../services/api";
 import { MarmySocket } from "../services/websocket";
+import { registerForPushNotifications } from "../services/notifications";
 
 const MACHINES_KEY = "marmy_machines";
 
@@ -115,6 +116,9 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     } catch {
       // WebSocket will provide topology on connect
     }
+
+    // Register for push notifications (fire and forget)
+    registerForPushNotifications(api).catch(() => {});
   },
 
   disconnect: () => {
