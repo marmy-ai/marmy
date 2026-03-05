@@ -179,6 +179,28 @@ export class MarmyApi {
     });
   }
 
+  /** Enable/disable the Claude Code Stop hook for push notifications. */
+  async setNotifyHook(enabled: boolean): Promise<void> {
+    await this.fetch("/api/notifications/hook", {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
+  /** Check if the notification hook is currently enabled. */
+  async getNotifyHookStatus(): Promise<boolean> {
+    const debug = await this.fetch<{ hook_enabled: boolean }>("/api/notifications/debug");
+    return debug.hook_enabled;
+  }
+
+  /** Send a notification (called by Claude via curl, but also available here). */
+  async sendNotification(session?: string, body?: string): Promise<void> {
+    await this.fetch("/api/notifications/send", {
+      method: "POST",
+      body: JSON.stringify({ session: session || "", body: body || "" }),
+    });
+  }
+
   /** Send a test notification. */
   async testNotification(): Promise<void> {
     await this.fetch("/api/notifications/test", {

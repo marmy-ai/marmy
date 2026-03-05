@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use tokio::sync::{watch, Mutex, RwLock};
+use tokio::sync::{watch, RwLock};
 
 use crate::config::Config;
-use crate::notifications::{self, NotificationDetector};
+use crate::notifications::{self, NotificationSender};
 use crate::tmux::{TmuxController, TmuxTopology};
 
 /// Shared application state accessible from all API handlers.
@@ -15,8 +15,8 @@ pub struct AppState {
     /// Notifies WebSocket clients when topology changes.
     pub topology_tx: watch::Sender<Option<TmuxTopology>>,
     pub topology_rx: watch::Receiver<Option<TmuxTopology>>,
-    /// Notification detector (owns APNs client).
-    pub detector: Arc<Mutex<NotificationDetector>>,
+    /// APNs sender — called by the `/api/notifications/send` endpoint.
+    pub sender: Arc<NotificationSender>,
 }
 
 pub struct AppStateInner {
@@ -30,7 +30,7 @@ impl AppState {
     pub fn new(tmux: TmuxController, config: Config) -> Self {
         let (topology_tx, topology_rx) = watch::channel(None);
         let push_tokens = notifications::load_push_tokens();
-        let detector = NotificationDetector::new(&config.notifications);
+        let sender = NotificationSender::new(&config.notifications);
         Self {
             inner: Arc::new(RwLock::new(AppStateInner {
                 topology: None,
@@ -40,7 +40,7 @@ impl AppState {
             config,
             topology_tx,
             topology_rx,
-            detector: Arc::new(Mutex::new(detector)),
+            sender: Arc::new(sender),
         }
     }
 

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -6,138 +5,38 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
 use crate::config::NotificationsConfig;
-use crate::state::AppState;
 
-/// Consecutive polls required to flip S(x) in either direction.
-const THRESHOLD: u32 = 3;
-
-/// Per-session state S(x).
-///   S(x) = false (0): idle / boot state. No notification on entering this state at boot.
-///   S(x) = true  (1): active — Claude is working.
-/// Notification fires only on the 1→0 edge (active → idle).
-struct SessionState {
-    /// S(x): true = active, false = idle. Starts false.
-    active: bool,
-    /// Consecutive polls in the direction opposite to current state.
-    streak: u32,
-}
-
-pub struct NotificationDetector {
-    sessions: HashMap<String, SessionState>,
+/// Holds the APNs client and push tokens. No detection logic —
+/// notifications are triggered by Claude calling `POST /api/notifications/send`.
+pub struct NotificationSender {
     apns: ApnsClient,
 }
 
-impl NotificationDetector {
+impl NotificationSender {
     pub fn new(config: &NotificationsConfig) -> Self {
         Self {
-            sessions: HashMap::new(),
             apns: ApnsClient::new(config),
         }
     }
 
-    pub async fn check_and_notify(&mut self, state: &AppState) {
-        if !state.config.notifications.enabled || !self.apns.is_configured() {
-            return;
-        }
-
-        let tokens = state.get_push_tokens().await;
-        if tokens.is_empty() {
-            return;
-        }
-
-        let topology = match state.get_topology().await {
-            Ok(t) => t,
-            Err(_) => return,
-        };
-
-        // Single ps call: get CPU of every child process, keyed by parent PID.
-        let cpu_by_ppid = get_all_child_cpu().await;
-
-        // Collect the pane IDs we visit so we can prune stale sessions after.
-        let mut seen_sessions = Vec::new();
-
-        for pane in &topology.panes {
-            let session_name = topology
-                .sessions
-                .iter()
-                .find(|s| s.id == pane.session_id)
-                .map(|s| s.name.clone())
-                .unwrap_or_default();
-
-            if session_name == "_marmy_ctrl" || session_name == "sessions-manager" {
-                continue;
-            }
-
-            if !is_claude_process(&pane.current_command) {
-                self.sessions.remove(&pane.id);
-                continue;
-            }
-
-            seen_sessions.push(pane.id.clone());
-
-            // Look up CPU for the Claude child of this pane's shell.
-            let cpu_active = match cpu_by_ppid.get(&pane.pid) {
-                Some(&cpu) => cpu > 0.0,
-                None => continue, // no Claude child found — skip this cycle
-            };
-
-            let ss = self.sessions.entry(pane.id.clone()).or_insert(SessionState {
-                active: false, // S(x) = 0 on boot
-                streak: 0,
-            });
-
-            if cpu_active && !ss.active {
-                // Currently idle, seeing activity
-                ss.streak += 1;
-                if ss.streak >= THRESHOLD {
-                    ss.active = true; // S(x) = 1. No notification.
-                    ss.streak = 0;
-                    info!(pane_id = %pane.id, session = %session_name, "session became active");
-                }
-            } else if !cpu_active && ss.active {
-                // Currently active, seeing idle
-                ss.streak += 1;
-                if ss.streak >= THRESHOLD {
-                    ss.active = false; // S(x) = 0. Fire notification.
-                    ss.streak = 0;
-                    info!(pane_id = %pane.id, session = %session_name, "session became idle, sending notification");
-                    let title = session_name.clone();
-                    let body = "Session finished".to_string();
-                    for token in &tokens {
-                        self.apns
-                            .send(token, &title, &body, &pane.id, &session_name, "task_complete")
-                            .await;
-                    }
-                }
-            } else {
-                // Reading matches current state — reset streak
-                ss.streak = 0;
-            }
-        }
-
-        // Prune sessions for panes that no longer exist
-        self.sessions.retain(|id, _| seen_sessions.contains(id));
+    pub fn is_configured(&self) -> bool {
+        self.apns.is_configured()
     }
 
-    pub fn debug_state(&self) -> serde_json::Value {
-        let sessions: serde_json::Map<String, serde_json::Value> = self
-            .sessions
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    serde_json::json!({
-                        "active": v.active,
-                        "streak": v.streak,
-                    }),
-                )
-            })
-            .collect();
-
-        serde_json::json!({
-            "apns_configured": self.apns.is_configured(),
-            "sessions": sessions,
-        })
+    pub async fn send(
+        &self,
+        tokens: &[String],
+        title: &str,
+        body: &str,
+        pane_id: &str,
+        session_name: &str,
+        event_type: &str,
+    ) {
+        for token in tokens {
+            self.apns
+                .send(token, title, body, pane_id, session_name, event_type)
+                .await;
+        }
     }
 
     pub async fn send_test(&self, tokens: &[String]) {
@@ -149,34 +48,6 @@ impl NotificationDetector {
     }
 }
 
-/// Single `ps` call: returns a map of parent_pid → child_cpu for every process.
-/// Each pane shell PID can then look up its Claude child's CPU in O(1).
-async fn get_all_child_cpu() -> HashMap<u32, f32> {
-    let output = tokio::process::Command::new("ps")
-        .args(["-eo", "ppid=,%cpu="])
-        .output()
-        .await;
-
-    let output = match output {
-        Ok(o) if o.status.success() => o,
-        _ => return HashMap::new(),
-    };
-
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.lines()
-        .filter_map(|line| {
-            let mut parts = line.split_whitespace();
-            let ppid: u32 = parts.next()?.parse().ok()?;
-            let cpu: f32 = parts.next()?.parse().ok()?;
-            Some((ppid, cpu))
-        })
-        .collect()
-}
-
-fn is_claude_process(cmd: &str) -> bool {
-    cmd.contains("claude") || cmd.chars().next().map_or(false, |c| c.is_ascii_digit())
-}
-
 // --- APNs direct push via HTTP/2 + JWT ---
 
 struct ApnsClient {
@@ -184,9 +55,7 @@ struct ApnsClient {
     team_id: String,
     topic: String,
     sandbox: bool,
-    /// PEM bytes of the .p8 key, loaded once on startup
     key_pem: Option<Vec<u8>>,
-    /// Cached JWT + creation time (APNs JWTs valid for 1 hour, we refresh at 50 min)
     cached_jwt: Mutex<Option<(String, Instant)>>,
     http: reqwest::Client,
 }

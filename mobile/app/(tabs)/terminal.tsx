@@ -178,7 +178,7 @@ function renderContent(content: string) {
 
 export default function TerminalScreen() {
   const { api, connected } = useConnectionStore();
-  const { activePaneId } = useSessionStore();
+  const { activePaneId, notifyOnDone, setNotifyOnDone } = useSessionStore();
   const [content, setContent] = useState("");
   const [inputText, setInputText] = useState("");
   const [isKeyboardMode, setIsKeyboardMode] = useState(false);
@@ -190,7 +190,14 @@ export default function TerminalScreen() {
 
   const MAX_INPUT_HEIGHT = 120;
 
-  // Poll pane history (full scrollback) every 500ms
+  // Sync notify toggle with agent on mount
+  useEffect(() => {
+    if (!api) return;
+    api.getNotifyHookStatus().then(setNotifyOnDone).catch(() => {});
+  }, [api]);
+
+  // Poll pane history every 500ms, skip re-render if unchanged
+  const lastContentRef = useRef("");
   useEffect(() => {
     if (!api || !activePaneId) return;
 
@@ -198,7 +205,10 @@ export default function TerminalScreen() {
     const poll = async () => {
       try {
         const result = await api.getPaneHistory(activePaneId);
-        if (active) setContent(result.content);
+        if (active && result.content !== lastContentRef.current) {
+          lastContentRef.current = result.content;
+          setContent(result.content);
+        }
       } catch {}
     };
 
@@ -343,6 +353,26 @@ export default function TerminalScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={100}
     >
+      {/* Top bar */}
+      <View style={styles.topBar}>
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity
+          style={[styles.notifyBtn, notifyOnDone && styles.notifyBtnActive]}
+          onPress={async () => {
+            const next = !notifyOnDone;
+            setNotifyOnDone(next);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            try {
+              await api?.setNotifyHook(next);
+            } catch {}
+          }}
+        >
+          <Text style={[styles.notifyBtnText, notifyOnDone && styles.notifyBtnTextActive]}>
+            {"\u{1F514}"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Terminal content with ANSI rendering */}
       <ScrollView
         ref={scrollRef}
@@ -576,6 +606,34 @@ const styles = StyleSheet.create({
   },
   kbBtnTextActive: {
     color: "#fff",
+  },
+  // Top bar
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a3e",
+    backgroundColor: "#0f0f1a",
+  },
+  notifyBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    backgroundColor: "#2a2a3e",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notifyBtnActive: {
+    backgroundColor: "#7c3aed",
+  },
+  notifyBtnText: {
+    fontSize: 15,
+    opacity: 0.4,
+  },
+  notifyBtnTextActive: {
+    opacity: 1,
   },
   // Input bar
   inputBar: {

@@ -17,7 +17,7 @@ import type { TmuxPane, TmuxSession } from "../../src/types";
 
 export default function SessionsScreen() {
   const { api, topology, activeMachine, connected } = useConnectionStore();
-  const { setActivePane, setActiveSession } = useSessionStore();
+  const { setActivePane, setActiveSession, setActiveSessionName } = useSessionStore();
   const router = useRouter();
   const [showNewSession, setShowNewSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState("");
@@ -73,6 +73,7 @@ export default function SessionsScreen() {
     if (pane) {
       setActivePane(pane.id);
       setActiveSession(session.id);
+      setActiveSessionName(session.name);
       router.push("/(tabs)/terminal");
     }
   };
