@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,12 +7,14 @@ import {
   Pressable,
   TextInput,
   Modal,
+  Switch,
   StyleSheet,
   Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useConnectionStore } from "../../src/stores/connectionStore";
 import { useSessionStore } from "../../src/stores/sessionStore";
+import DirPicker from "../../src/components/DirPicker";
 import type { TmuxPane, TmuxSession } from "../../src/types";
 
 export default function SessionsScreen() {
@@ -22,6 +24,31 @@ export default function SessionsScreen() {
   const [showNewSession, setShowNewSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState("");
   const [startingManager, setStartingManager] = useState(false);
+  const [sessionMode, setSessionMode] = useState<"claude" | "terminal">("claude");
+  const [selectedDir, setSelectedDir] = useState<string | null>(null);
+  const [skipPermissions, setSkipPermissions] = useState(true);
+  const [recentDirs, setRecentDirs] = useState<string[]>([]);
+  const [loadingDirs, setLoadingDirs] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [showDirPicker, setShowDirPicker] = useState(false);
+
+  // Load recent dirs when modal opens
+  useEffect(() => {
+    if (showNewSession && api) {
+      setLoadingDirs(true);
+      api.getRecentDirs().then(setRecentDirs).catch(() => {}).finally(() => setLoadingDirs(false));
+    }
+  }, [showNewSession, api]);
+
+  const resetModal = () => {
+    setShowNewSession(false);
+    setNewSessionName("");
+    setSessionMode("claude");
+    setSelectedDir(null);
+    setSkipPermissions(true);
+    setShowDirPicker(false);
+    setCreating(false);
+  };
 
   const handleStartManager = async () => {
     if (!api) return;
@@ -40,12 +67,20 @@ export default function SessionsScreen() {
   const handleCreateSession = async () => {
     const name = newSessionName.trim();
     if (!name || !api) return;
+    setCreating(true);
     try {
-      await api.createSession(name);
-      setNewSessionName("");
-      setShowNewSession(false);
+      const result = await api.createSession(name, {
+        mode: sessionMode,
+        working_dir: selectedDir ?? undefined,
+        skip_permissions: sessionMode === "claude" ? skipPermissions : undefined,
+      });
+      setActivePane(result.pane_id);
+      setActiveSessionName(result.session_name);
+      resetModal();
+      router.push("/(tabs)/terminal");
     } catch (e: any) {
       Alert.alert("Error", e.message);
+      setCreating(false);
     }
   };
 
@@ -138,42 +173,133 @@ export default function SessionsScreen() {
   const renderModal = () => (
     <Modal
       visible={showNewSession}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setShowNewSession(false)}
+      transparent={!showDirPicker}
+      animationType={showDirPicker ? "slide" : "fade"}
+      onRequestClose={resetModal}
+      presentationStyle={showDirPicker ? "fullScreen" : undefined}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>New Session</Text>
-          <TextInput
-            style={styles.modalInput}
-            value={newSessionName}
-            onChangeText={setNewSessionName}
-            placeholder="Session name"
-            placeholderTextColor="#555"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoFocus
-          />
-          <View style={styles.modalButtons}>
-            <TouchableOpacity
-              style={styles.modalCancelBtn}
-              onPress={() => {
-                setShowNewSession(false);
-                setNewSessionName("");
-              }}
-            >
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalCreateBtn}
-              onPress={handleCreateSession}
-            >
-              <Text style={styles.modalCreateText}>Create</Text>
-            </TouchableOpacity>
+      {showDirPicker && api ? (
+        <DirPicker
+          api={api}
+          recentDirs={recentDirs}
+          onSelect={(path) => {
+            setSelectedDir(path);
+            setShowDirPicker(false);
+          }}
+          onCancel={() => setShowDirPicker(false)}
+        />
+      ) : (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>New Session</Text>
+
+            {/* Mode toggle */}
+            <View style={styles.modeToggle}>
+              <TouchableOpacity
+                style={[
+                  styles.modeBtn,
+                  sessionMode === "claude" && styles.modeBtnActive,
+                ]}
+                onPress={() => setSessionMode("claude")}
+              >
+                <Text
+                  style={[
+                    styles.modeBtnText,
+                    sessionMode === "claude" && styles.modeBtnTextActive,
+                  ]}
+                >
+                  Claude
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modeBtn,
+                  sessionMode === "terminal" && styles.modeBtnActive,
+                ]}
+                onPress={() => setSessionMode("terminal")}
+              >
+                <Text
+                  style={[
+                    styles.modeBtnText,
+                    sessionMode === "terminal" && styles.modeBtnTextActive,
+                  ]}
+                >
+                  Terminal
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Session name */}
+            <TextInput
+              style={styles.modalInput}
+              value={newSessionName}
+              onChangeText={setNewSessionName}
+              placeholder="Session name"
+              placeholderTextColor="#555"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+            />
+
+            {/* Claude-only options */}
+            {sessionMode === "claude" && (
+              <>
+                {/* Working directory */}
+                <TouchableOpacity
+                  style={styles.dirSelector}
+                  onPress={() => setShowDirPicker(true)}
+                >
+                  <Text style={styles.dirLabel}>Working directory</Text>
+                  <Text
+                    style={[
+                      styles.dirValue,
+                      !selectedDir && styles.dirValuePlaceholder,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {selectedDir ? shortPath(selectedDir) : "No directory selected"}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Skip permissions toggle */}
+                <View style={styles.toggleRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.toggleLabel}>Skip permissions</Text>
+                    <Text style={styles.toggleSubtext}>
+                      --dangerously-skip-permissions
+                    </Text>
+                  </View>
+                  <Switch
+                    value={skipPermissions}
+                    onValueChange={setSkipPermissions}
+                    trackColor={{ false: "#2a2a3e", true: "#7c3aed" }}
+                    thumbColor={skipPermissions ? "#fff" : "#888"}
+                  />
+                </View>
+              </>
+            )}
+
+            {/* Buttons */}
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={resetModal}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalCreateBtn, creating && { opacity: 0.6 }]}
+                onPress={handleCreateSession}
+                disabled={creating}
+              >
+                <Text style={styles.modalCreateText}>
+                  {creating ? "Creating..." : "Create"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
+      )}
     </Modal>
   );
 
@@ -397,4 +523,69 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   modalCreateText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+
+  // Mode toggle
+  modeToggle: {
+    flexDirection: "row",
+    backgroundColor: "#0f0f1a",
+    borderRadius: 8,
+    marginBottom: 16,
+    padding: 3,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  modeBtnActive: {
+    backgroundColor: "#7c3aed",
+  },
+  modeBtnText: {
+    color: "#888",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modeBtnTextActive: {
+    color: "#fff",
+  },
+
+  // Dir selector
+  dirSelector: {
+    backgroundColor: "#0f0f1a",
+    borderWidth: 1,
+    borderColor: "#2a2a3e",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  dirLabel: {
+    color: "#888",
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  dirValue: {
+    color: "#e0e0e0",
+    fontSize: 15,
+  },
+  dirValuePlaceholder: {
+    color: "#555",
+  },
+
+  // Toggle row
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  toggleLabel: {
+    color: "#e0e0e0",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  toggleSubtext: {
+    color: "#666",
+    fontSize: 11,
+    marginTop: 2,
+  },
 });

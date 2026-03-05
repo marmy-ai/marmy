@@ -94,6 +94,11 @@ export interface DashboardStartResponse {
   session_name: string;
 }
 
+export interface CreateSessionResponse {
+  pane_id: string;
+  session_name: string;
+}
+
 // WebSocket messages (client -> server)
 export type ClientMessage =
   | { type: "subscribe_pane"; pane_id: string }
