@@ -196,7 +196,7 @@ export default function TerminalScreen() {
     api.getNotifyHookStatus().then(setNotifyOnDone).catch(() => {});
   }, [api]);
 
-  // Poll pane history every 500ms, skip re-render if unchanged
+  // Poll visible pane content every 500ms, skip re-render if unchanged
   const lastContentRef = useRef("");
   useEffect(() => {
     if (!api || !activePaneId) return;
@@ -204,7 +204,7 @@ export default function TerminalScreen() {
     let active = true;
     const poll = async () => {
       try {
-        const result = await api.getPaneHistory(activePaneId);
+        const result = await api.getPaneContent(activePaneId);
         if (active && result.content !== lastContentRef.current) {
           lastContentRef.current = result.content;
           setContent(result.content);
@@ -216,6 +216,7 @@ export default function TerminalScreen() {
     const interval = setInterval(poll, 500);
     return () => {
       active = false;
+      lastContentRef.current = "";
       clearInterval(interval);
     };
   }, [api, activePaneId]);
