@@ -163,6 +163,29 @@ export class MarmyApi {
     });
   }
 
+  /** Register a push notification token with the agent. */
+  async registerPushToken(token: string): Promise<void> {
+    await this.fetch("/api/notifications/register", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  /** Unregister a push notification token. */
+  async unregisterPushToken(token: string): Promise<void> {
+    await this.fetch("/api/notifications/register", {
+      method: "DELETE",
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  /** Send a test notification. */
+  async testNotification(): Promise<void> {
+    await this.fetch("/api/notifications/test", {
+      method: "POST",
+    });
+  }
+
   /** Get WebSocket URL for this machine. */
   getWsUrl(): string {
     const wsBase = this.baseUrl

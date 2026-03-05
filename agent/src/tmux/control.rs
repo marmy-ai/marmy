@@ -142,7 +142,7 @@ impl TmuxController {
 
     /// Capture the current visible content of a pane.
     pub async fn capture_pane(&self, pane_id: &str, scrollback: bool) -> Result<String> {
-        let mut args = vec!["capture-pane", "-t", pane_id, "-p"];
+        let mut args = vec!["capture-pane", "-t", pane_id, "-p", "-e"];
         if scrollback {
             args.push("-S");
             args.push("-");

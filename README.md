@@ -25,7 +25,7 @@ Marmy is a React Native mobile app paired with a lightweight Rust daemon that br
 
 ### On your development machine (server)
 
-- **Rust** 1.75+ (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- **Rust** (latest stable — `brew install rust` or via [rustup](https://rustup.rs))
 - **tmux** 3.2+ (`apt install tmux` / `brew install tmux`)
 
 ### On your phone
@@ -151,6 +151,60 @@ allowed_paths = ["~/projects", "/home/me/code"]
 
 The agent will only serve files within these directories. Files are read-only (no write access from the mobile app).
 
+## Push Notifications
+
+Push notifications alert you when a Claude session finishes a task or is waiting for input. They go directly to APNs (Apple Push Notification service) — no Expo account, no third-party push service, no external infrastructure.
+
+### One-Time Setup
+
+1. Go to [Apple Developer](https://developer.apple.com) > Certificates, Identifiers & Profiles > **Keys**
+2. Click **+** to create a new key
+3. Name it (e.g. "Marmy APNs"), check **Apple Push Notifications service (APNs)**, click Continue then Register
+4. **Download** the `.p8` file (you can only download it once)
+5. Note the **Key ID** shown on the page (10-character string)
+6. Note your **Team ID** (top-right of the developer portal, or under Membership)
+
+```bash
+# Save the key
+mkdir -p ~/.marmy
+cp ~/Downloads/AuthKey_XXXXXXXXXX.p8 ~/.marmy/apns_key.p8
+```
+
+Add to your agent config (`~/Library/Application Support/marmy/config.toml` on macOS):
+
+```toml
+[notifications]
+enabled = true
+apns_key_path = "~/.marmy/apns_key.p8"
+apns_key_id = "XXXXXXXXXX"
+apns_team_id = "XXXXXXXXXX"
+apns_sandbox = true
+```
+
+Set `apns_sandbox = true` for dev builds (running from Xcode). Set `false` for TestFlight/App Store builds.
+
+Restart the agent. The mobile app automatically registers its device token when it connects to a machine.
+
+### Testing
+
+```bash
+# Check that a device token was registered
+cat ~/.marmy/push_tokens.json
+
+# Send a test notification
+TOKEN="your-marmy-auth-token"
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9876/api/notifications/test
+```
+
+### Notification Events
+
+| Event | Trigger |
+|-------|---------|
+| **Task completed** | Claude process exits (pane switches from claude to a shell) |
+| **Waiting for input** | Claude is idle at a prompt for 4+ seconds |
+
+Notifications are deduplicated per pane with a 2-minute cooldown (configurable via `cooldown_seconds`).
+
 ## Features
 
 ### Machines Tab
@@ -215,6 +269,9 @@ GET  /api/files/content?path=..       Read file contents
 GET  /api/cc/sessions                 List live Claude Code sessions (tmux panes running claude)
 GET  /api/cc/sessions/:id/context     Get session context (live pane content + conversation history)
 POST /api/cc/dashboard/start          Start or reuse the sessions manager
+POST /api/notifications/register      Register a device push token
+DELETE /api/notifications/register    Unregister a push token
+POST /api/notifications/test          Send a test push notification
 ```
 
 ### WebSocket (optional)
@@ -672,6 +729,7 @@ marmy/
 │       ├── config.rs          # TOML config management
 │       ├── auth.rs            # Bearer token auth middleware
 │       ├── state.rs           # Shared app state (topology cache)
+│       ├── notifications.rs   # Push notification detection + APNs delivery
 │       ├── tmux/
 │       │   ├── types.rs       # Session/Window/Pane types, WS messages
 │       │   ├── parser.rs      # Control mode protocol parser
@@ -681,7 +739,8 @@ marmy/
 │           ├── sessions.rs    # GET /api/sessions
 │           ├── panes.rs       # Pane input/content/resize endpoints
 │           ├── files.rs       # File tree and content endpoints
-│           └── ws.rs          # WebSocket handler
+│           ├── ws.rs          # WebSocket handler
+│           └── notifications.rs  # Push token register/unregister/test endpoints
 ├── macos/                     # macOS menu bar app (Swift)
 │   └── MarmyMenuBar/
 │       ├── MarmyMenuBar.xcodeproj
@@ -707,7 +766,7 @@ marmy/
 │   │       └── files.tsx      # File browser
 │   └── src/
 │       ├── types/             # TypeScript types (API contract)
-│       ├── services/          # API client, WebSocket manager
+│       ├── services/          # API client, WebSocket manager, push notifications
 │       ├── stores/            # Zustand state stores
 │       └── components/        # Reusable UI components
 │           ├── FileTree       # Directory listing

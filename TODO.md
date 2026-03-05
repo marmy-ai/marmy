@@ -14,6 +14,12 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 ## P1 — High-Value Enhancements
 
+- [ ] **Claude-first session creation** — New session dialog should be a simple toggle between "Claude" and "Terminal". Claude mode lets you pick permission level (ask, auto-accept, bypass) and optionally set an initial prompt. Terminal mode stays as-is. Claude Code is the primary use case — make it feel native, not bolted on.
+
+- [ ] **Rethink navigation around sessions** — The terminal tab feels redundant since users always navigate there from sessions. Consider merging the flow so tapping a session goes straight into its terminal. The sessions list *is* the home screen; the terminal tab as a separate concept may not be needed.
+
+- [ ] **Files scoped to sessions** — Files tab should show files relevant to the currently selected session (its working directory), not a global file browser. When you tap into a session, the file tree should reflect that session's context automatically.
+
 - [ ] **Seamless Tailscale integration** — Detect Tailscale automatically, use Tailscale IPs for pairing, and streamline the connection flow so users don't need to manually find IPs or configure networking. Include showing the Tailscale IP in `marmy-agent pair` output when Tailscale is detected.
 
 - [ ] **Team topology** — Treat tmux sessions as team members. Define team structures and hierarchies (leads, sub-agents), assign roles, and get recommended org layouts based on project needs.
