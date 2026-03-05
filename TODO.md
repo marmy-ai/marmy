@@ -30,6 +30,8 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 ## P2 — Quality of Life
 
+- [ ] **Push notification deep link to session** — Tapping a push notification should open the app directly into that session's terminal, not the home screen. The notification payload already carries `pane_id` and `session_name` — wire up the tap handler to set the active pane and navigate to the terminal view.
+
 - [ ] **Session folder scope from menu bar** — Add a setting in the macOS menu bar app to configure which folders sessions can start from. Let users define allowed root directories so new sessions are scoped to specific project folders instead of defaulting to a single path.
 
 - [ ] **Session-aware file browsing** — Instead of a fixed `allowed_paths` list, derive file roots from sessions. Each tmux session's working directory becomes a browsable root, so file access automatically matches what you're working on without manual config.
