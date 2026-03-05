@@ -3,35 +3,35 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use sha2::{Digest, Sha256};
 use tracing::{error, info, warn};
 
 use crate::config::NotificationsConfig;
 use crate::state::AppState;
 
-/// Per-pane state: tracks whether content was changing (active) or stable (idle).
-/// We only notify on the transition from active → idle.
-struct PaneState {
-    prev_hash: String,
-    /// true = content has been changing recently (Claude is working)
-    was_active: bool,
-    /// true = we already sent a notification for the current idle period
-    notified: bool,
+/// Consecutive polls required to flip S(x) in either direction.
+const THRESHOLD: u32 = 3;
+
+/// Per-session state S(x).
+///   S(x) = false (0): idle / boot state. No notification on entering this state at boot.
+///   S(x) = true  (1): active — Claude is working.
+/// Notification fires only on the 1→0 edge (active → idle).
+struct SessionState {
+    /// S(x): true = active, false = idle. Starts false.
+    active: bool,
+    /// Consecutive polls in the direction opposite to current state.
+    streak: u32,
 }
 
 pub struct NotificationDetector {
-    panes: HashMap<String, PaneState>,
+    sessions: HashMap<String, SessionState>,
     apns: ApnsClient,
-    /// Suppress all notifications for the first N cycles to establish baseline.
-    warmup_remaining: u32,
 }
 
 impl NotificationDetector {
     pub fn new(config: &NotificationsConfig) -> Self {
         Self {
-            panes: HashMap::new(),
+            sessions: HashMap::new(),
             apns: ApnsClient::new(config),
-            warmup_remaining: 5, // ~10s at 2s poll
         }
     }
 
@@ -45,13 +45,16 @@ impl NotificationDetector {
             return;
         }
 
-        let in_warmup = self.warmup_remaining > 0;
-        self.warmup_remaining = self.warmup_remaining.saturating_sub(1);
-
         let topology = match state.get_topology().await {
             Ok(t) => t,
             Err(_) => return,
         };
+
+        // Single ps call: get CPU of every child process, keyed by parent PID.
+        let cpu_by_ppid = get_all_child_cpu().await;
+
+        // Collect the pane IDs we visit so we can prune stale sessions after.
+        let mut seen_sessions = Vec::new();
 
         for pane in &topology.panes {
             let session_name = topology
@@ -66,61 +69,66 @@ impl NotificationDetector {
             }
 
             if !is_claude_process(&pane.current_command) {
-                self.panes.remove(&pane.id);
+                self.sessions.remove(&pane.id);
                 continue;
             }
 
-            let content = match state.tmux.capture_pane(&pane.id, false).await {
-                Ok(c) => c,
-                Err(_) => continue,
+            seen_sessions.push(pane.id.clone());
+
+            // Look up CPU for the Claude child of this pane's shell.
+            let cpu_active = match cpu_by_ppid.get(&pane.pid) {
+                Some(&cpu) => cpu > 0.0,
+                None => continue, // no Claude child found — skip this cycle
             };
 
-            let hash = content_hash(&content);
-            let ps = self.panes.entry(pane.id.clone()).or_insert(PaneState {
-                prev_hash: String::new(),
-                was_active: false,
-                notified: true, // start as "already notified" so we don't fire on first sight
+            let ss = self.sessions.entry(pane.id.clone()).or_insert(SessionState {
+                active: false, // S(x) = 0 on boot
+                streak: 0,
             });
 
-            let content_changed = ps.prev_hash != hash;
-            ps.prev_hash = hash;
-
-            if content_changed {
-                // Content is changing → Claude is working
-                ps.was_active = true;
-                ps.notified = false;
-            } else if ps.was_active && !ps.notified {
-                // Content just stabilized after being active → transition to idle
-                // Check if there's actually a prompt visible
-                if detect_prompt(&content).is_some() {
-                    ps.was_active = false;
-                    ps.notified = true;
-
-                    if !in_warmup {
-                        info!(pane_id = %pane.id, session = %session_name, "session became idle, sending notification");
-                        let title = session_name.clone();
-                        let body = "Session finished".to_string();
-                        for token in &tokens {
-                            self.apns
-                                .send(token, &title, &body, &pane.id, &session_name, "task_complete")
-                                .await;
-                        }
+            if cpu_active && !ss.active {
+                // Currently idle, seeing activity
+                ss.streak += 1;
+                if ss.streak >= THRESHOLD {
+                    ss.active = true; // S(x) = 1. No notification.
+                    ss.streak = 0;
+                    info!(pane_id = %pane.id, session = %session_name, "session became active");
+                }
+            } else if !cpu_active && ss.active {
+                // Currently active, seeing idle
+                ss.streak += 1;
+                if ss.streak >= THRESHOLD {
+                    ss.active = false; // S(x) = 0. Fire notification.
+                    ss.streak = 0;
+                    info!(pane_id = %pane.id, session = %session_name, "session became idle, sending notification");
+                    let title = session_name.clone();
+                    let body = "Session finished".to_string();
+                    for token in &tokens {
+                        self.apns
+                            .send(token, &title, &body, &pane.id, &session_name, "task_complete")
+                            .await;
                     }
                 }
+            } else {
+                // Reading matches current state — reset streak
+                ss.streak = 0;
             }
         }
+
+        // Prune sessions for panes that no longer exist
+        self.sessions.retain(|id, _| seen_sessions.contains(id));
     }
 
     pub fn debug_state(&self) -> serde_json::Value {
-        let panes: serde_json::Map<String, serde_json::Value> = self
-            .panes
+        let sessions: serde_json::Map<String, serde_json::Value> = self
+            .sessions
             .iter()
             .map(|(k, v)| {
                 (
                     k.clone(),
                     serde_json::json!({
-                        "was_active": v.was_active,
-                        "notified": v.notified,
+                        "active": v.active,
+                        "streak": v.streak,
                     }),
                 )
             })
@@ -128,8 +136,7 @@ impl NotificationDetector {
 
         serde_json::json!({
             "apns_configured": self.apns.is_configured(),
-            "warmup_remaining": self.warmup_remaining,
-            "panes": panes,
+            "sessions": sessions,
         })
     }
 
@@ -142,77 +149,32 @@ impl NotificationDetector {
     }
 }
 
+/// Single `ps` call: returns a map of parent_pid → child_cpu for every process.
+/// Each pane shell PID can then look up its Claude child's CPU in O(1).
+async fn get_all_child_cpu() -> HashMap<u32, f32> {
+    let output = tokio::process::Command::new("ps")
+        .args(["-eo", "ppid=,%cpu="])
+        .output()
+        .await;
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return HashMap::new(),
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let ppid: u32 = parts.next()?.parse().ok()?;
+            let cpu: f32 = parts.next()?.parse().ok()?;
+            Some((ppid, cpu))
+        })
+        .collect()
+}
+
 fn is_claude_process(cmd: &str) -> bool {
     cmd.contains("claude") || cmd.chars().next().map_or(false, |c| c.is_ascii_digit())
-}
-
-fn is_shell_process(cmd: &str) -> bool {
-    matches!(cmd, "zsh" | "bash" | "fish" | "sh")
-}
-
-fn content_hash(content: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
-
-fn detect_prompt(content: &str) -> Option<String> {
-    let last_lines: Vec<&str> = content.lines().rev().take(10).collect();
-    let tail = last_lines.iter().rev().cloned().collect::<Vec<_>>().join("\n");
-
-    // Strip ANSI escape sequences for pattern matching
-    let clean = strip_ansi(&tail);
-
-    // Claude Code idle prompt: line containing just "❯" (U+276F) or "> "
-    if clean.contains('\u{276F}') || clean.trim_end().ends_with("> ") || clean.trim_end().ends_with(">") {
-        return Some("Ready for next task".to_string());
-    }
-    // Claude Code permission prompt: "bypass permissions" or "Allow"
-    if clean.contains("bypass permissions") || clean.contains("Allow ") {
-        // Only if it looks like it's waiting (not mid-execution)
-        if !clean.contains("Running") && !clean.contains("Wandering") {
-            return Some("Permission requested".to_string());
-        }
-    }
-    if clean.contains("Do you want to") {
-        return Some("Confirmation needed".to_string());
-    }
-    if clean.contains("(y/n)") || clean.contains("(Y/n)") || clean.contains("(y/N)") {
-        return Some("Yes/no question".to_string());
-    }
-
-    None
-}
-
-fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip ESC [ ... final_byte sequences (CSI)
-            if chars.peek() == Some(&'[') {
-                chars.next();
-                while let Some(&nc) = chars.peek() {
-                    chars.next();
-                    if nc.is_ascii_alphabetic() || nc == 'm' {
-                        break;
-                    }
-                }
-            // Skip ESC ] ... ST sequences (OSC)
-            } else if chars.peek() == Some(&']') {
-                chars.next();
-                while let Some(&nc) = chars.peek() {
-                    chars.next();
-                    if nc == '\x07' || nc == '\\' {
-                        break;
-                    }
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }
 
 // --- APNs direct push via HTTP/2 + JWT ---
