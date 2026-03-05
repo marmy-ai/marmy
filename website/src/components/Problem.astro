@@ -4,31 +4,34 @@
       One agent is easy. Five across three machines is not.
     </h2>
     <p class="text-text-muted text-center max-w-2xl mx-auto mb-12">
-      Coding agents are getting powerful fast. The tooling to actually run them at scale? Nonexistent.
+      The tools for managing coding agents are either too hands-on or too hands-off.
     </p>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Too granular -->
       <div class="p-6 rounded-lg bg-bg-card border border-border">
-        <div class="text-2xl mb-3">🤖</div>
-        <h3 class="text-lg font-semibold mb-2">Telegram bots and duct tape</h3>
+        <div class="text-xs font-mono text-text-muted uppercase tracking-wider mb-3">Too granular</div>
+        <h3 class="text-lg font-semibold mb-2">Claude Code CLI</h3>
         <p class="text-text-muted text-sm leading-relaxed">
-          People are piping agent output to Telegram, rigging WhatsApp alerts, and wiring up Slack bots — just to know when an agent needs input. That's not orchestration, that's a cry for help.
+          One terminal per session. SSH into each machine. Alt-tab between windows to check what's running. Works for one agent — falls apart at three.
         </p>
       </div>
 
-      <div class="p-6 rounded-lg bg-bg-card border border-border">
-        <div class="text-2xl mb-3">🔀</div>
-        <h3 class="text-lg font-semibold mb-2">No concept of a team</h3>
+      <!-- The sweet spot -->
+      <div class="p-6 rounded-lg bg-bg-card border-2 border-accent">
+        <div class="text-xs font-mono text-accent uppercase tracking-wider mb-3">The sweet spot</div>
+        <h3 class="text-lg font-semibold mb-2">Marmy</h3>
         <p class="text-text-muted text-sm leading-relaxed">
-          You've got a lead agent planning architecture, two sub-agents writing code, and one running tests. But your tools treat them as four unrelated terminal sessions. There's no structure, no hierarchy, no coordination layer.
+          A native app that shows every session across every machine. Monitor, message, and manage your agents from your phone. No infrastructure required.
         </p>
       </div>
 
+      <!-- Too abstracted -->
       <div class="p-6 rounded-lg bg-bg-card border border-border">
-        <div class="text-2xl mb-3">🏗️</div>
-        <h3 class="text-lg font-semibold mb-2">Enterprise overkill or nothing</h3>
+        <div class="text-xs font-mono text-text-muted uppercase tracking-wider mb-3">Too abstracted</div>
+        <h3 class="text-lg font-semibold mb-2">Orchestration platforms</h3>
         <p class="text-text-muted text-sm leading-relaxed">
-          The alternative is enterprise orchestration platforms that want YAML, cloud infrastructure, and a new mental model. You don't need a platform. You need to see what your agents are doing, structure them, and let them run.
+          YAML configs, cloud infrastructure, layers of abstraction. You wanted to manage a few agents, not deploy a platform.
         </p>
       </div>
     </div>

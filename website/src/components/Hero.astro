@@ -3,11 +3,13 @@
     <!-- Copy -->
     <div class="flex-1 text-center lg:text-left">
       <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
-        Run your coding agents
-        <span class="text-accent">like a team.</span>
+        Manage your coding agents
+        <span class="rotating-text-wrapper">
+          <span id="rotating-text" class="text-accent inline-block transition-all duration-300">like a boss.</span>
+        </span>
       </h1>
       <p class="text-lg sm:text-xl text-text-muted max-w-xl mx-auto lg:mx-0 mb-8">
-        You're not running one agent anymore. You're running five, across three machines, on different tasks. Marmy is a native app to orchestrate all of them — structure teams, schedule autonomous runs, and stay in the loop without the chaos.
+        Marmy lets you monitor, message, and manage all your Claude Code sessions from a single mobile app. No cloud, no YAML, no complexity.
       </p>
       <div class="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
         <a
@@ -46,58 +48,50 @@
           <div class="rounded-2xl bg-bg-deep overflow-hidden">
             <!-- App header -->
             <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-              <span class="text-xs font-mono font-semibold text-text-primary">Team</span>
-              <span class="text-[10px] font-mono text-text-muted">3 machines</span>
+              <span class="text-xs font-mono font-semibold text-text-primary">Sessions</span>
+              <span class="text-[10px] font-mono text-text-muted">work-mbp</span>
             </div>
 
-            <!-- Agent list -->
+            <!-- Session list -->
             <div class="p-2 space-y-1.5 font-mono text-[11px]">
-              <!-- Lead agent -->
+              <!-- Session 1 -->
               <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-1.5">
-                    <span class="text-accent">lead</span>
-                    <span class="text-text-muted">·</span>
-                    <span class="text-text-muted">work-mbp</span>
+                    <span class="text-accent">api-redesign</span>
                   </div>
                   <div class="w-1.5 h-1.5 rounded-full bg-green"></div>
                 </div>
-                <div class="text-text-muted text-[10px] mt-0.5">Planning API redesign...</div>
+                <div class="text-text-muted text-[10px] mt-0.5">Refactoring auth endpoints...</div>
               </div>
 
-              <!-- Sub-agent 1 -->
+              <!-- Session 2 -->
               <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-1.5">
-                    <span class="text-green">backend</span>
-                    <span class="text-text-muted">·</span>
-                    <span class="text-text-muted">home-server</span>
+                    <span class="text-green">test-suite</span>
                   </div>
                   <div class="w-1.5 h-1.5 rounded-full bg-green"></div>
                 </div>
-                <div class="text-text-muted text-[10px] mt-0.5">Writing rate limiter middleware</div>
+                <div class="text-text-muted text-[10px] mt-0.5">Writing integration tests</div>
               </div>
 
-              <!-- Sub-agent 2 -->
+              <!-- Session 3 -->
               <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-1.5">
-                    <span class="text-green">tests</span>
-                    <span class="text-text-muted">·</span>
-                    <span class="text-text-muted">home-server</span>
+                    <span class="text-green">docs-update</span>
                   </div>
                   <div class="w-1.5 h-1.5 rounded-full bg-[#eab308]"></div>
                 </div>
                 <div class="text-text-muted text-[10px] mt-0.5">Waiting for approval</div>
               </div>
 
-              <!-- Sub-agent 3 -->
+              <!-- Session 4 -->
               <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-1.5">
-                    <span class="text-green">frontend</span>
-                    <span class="text-text-muted">·</span>
-                    <span class="text-text-muted">cloud-vm</span>
+                    <span class="text-green">frontend-fix</span>
                   </div>
                   <div class="w-1.5 h-1.5 rounded-full bg-green"></div>
                 </div>
@@ -108,13 +102,16 @@
             <!-- Bottom nav -->
             <div class="flex justify-around py-2 border-t border-border">
               <div class="text-center">
-                <div class="text-[10px] text-accent">Team</div>
-              </div>
-              <div class="text-center">
-                <div class="text-[10px] text-text-muted">Sessions</div>
-              </div>
-              <div class="text-center">
                 <div class="text-[10px] text-text-muted">Machines</div>
+              </div>
+              <div class="text-center">
+                <div class="text-[10px] text-accent">Sessions</div>
+              </div>
+              <div class="text-center">
+                <div class="text-[10px] text-text-muted">Terminal</div>
+              </div>
+              <div class="text-center">
+                <div class="text-[10px] text-text-muted">Files</div>
               </div>
             </div>
           </div>
@@ -123,3 +120,27 @@
     </div>
   </div>
 </section>
+
+<script>
+  const phrases = [
+    "like a boss.",
+    "from your phone.",
+    "while you sleep.",
+    "from anywhere.",
+    "without the chaos.",
+  ];
+  let index = 0;
+  const el = document.getElementById("rotating-text");
+  if (el) {
+    setInterval(() => {
+      el.style.opacity = "0";
+      el.style.transform = "translateY(8px)";
+      setTimeout(() => {
+        index = (index + 1) % phrases.length;
+        el.textContent = phrases[index];
+        el.style.opacity = "1";
+        el.style.transform = "translateY(0)";
+      }, 300);
+    }, 2500);
+  }
+</script>

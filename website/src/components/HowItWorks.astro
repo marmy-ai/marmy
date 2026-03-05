@@ -23,7 +23,7 @@ import TerminalWindow from './TerminalWindow.astro';
 
       <div class="text-center">
         <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-accent/20 text-accent font-mono font-bold text-sm mb-4">2</div>
-        <h3 class="text-lg font-semibold mb-2">Pair and add machines</h3>
+        <h3 class="text-lg font-semibold mb-2">Pair your phone</h3>
         <p class="text-text-muted text-sm">
           Scan the QR code or enter the pairing key. Each machine joins your fleet — over LAN or Tailscale. Direct connection, no cloud relay.
         </p>
@@ -31,23 +31,124 @@ import TerminalWindow from './TerminalWindow.astro';
 
       <div class="text-center">
         <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-accent/20 text-accent font-mono font-bold text-sm mb-4">3</div>
-        <h3 class="text-lg font-semibold mb-2">Structure your team</h3>
+        <h3 class="text-lg font-semibold mb-2">Start managing</h3>
         <p class="text-text-muted text-sm">
-          Define agent roles, assign leads and sub-agents, set up autonomous schedules. Marmy turns a pile of sessions into a coordinated operation.
+          Sessions appear automatically in the app. Monitor output, send messages, browse files — all from your phone.
         </p>
       </div>
     </div>
 
     <!-- Architecture diagram -->
-    <TerminalWindow title="architecture" class="max-w-3xl mx-auto">
+    <TerminalWindow title="architecture" class="max-w-3xl mx-auto mb-20">
       <pre class="text-xs sm:text-sm"><span class="text-text-muted">┌──────────────┐</span>         <span class="text-text-muted">┌───────────────────┐</span>         <span class="text-text-muted">┌──────────────┐</span>
 <span class="text-text-muted">│</span>  <span class="text-accent">Your Phone</span>  <span class="text-text-muted">│</span>  <span class="text-text-muted">ws://</span>  <span class="text-text-muted">│</span>  <span class="text-green">marmy agent</span>      <span class="text-text-muted">│</span>  <span class="text-text-muted">stdin/</span>  <span class="text-text-muted">│</span>  <span class="text-text-primary">Claude Code</span> <span class="text-text-muted">│</span>
-<span class="text-text-muted">│</span>  React Native <span class="text-text-muted">│ ◄──────► │</span>  Python daemon    <span class="text-text-muted">│ ◄──────► │</span>  (subprocess) <span class="text-text-muted">│</span>
+<span class="text-text-muted">│</span>  React Native <span class="text-text-muted">│ ◄──────► │</span>  Rust daemon       <span class="text-text-muted">│ ◄──────► │</span>  (subprocess) <span class="text-text-muted">│</span>
 <span class="text-text-muted">│</span>              <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>                   <span class="text-text-muted">│</span>  <span class="text-text-muted">stdout</span>  <span class="text-text-muted">│</span>              <span class="text-text-muted">│</span>
-<span class="text-text-muted">│</span>  <span class="text-text-muted">Fleet view</span>  <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">One per machine</span>   <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">N sessions</span>  <span class="text-text-muted">│</span>
-<span class="text-text-muted">│</span>  <span class="text-text-muted">Team mgmt</span>   <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">WebSocket on</span>     <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">per machine</span> <span class="text-text-muted">│</span>
-<span class="text-text-muted">│</span>  <span class="text-text-muted">Scheduling</span>  <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">:8765 (LAN/TS)</span>   <span class="text-text-muted">│</span>         <span class="text-text-muted">└──────────────┘</span>
+<span class="text-text-muted">│</span>  <span class="text-text-muted">Sessions</span>    <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">One per machine</span>   <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">N sessions</span>  <span class="text-text-muted">│</span>
+<span class="text-text-muted">│</span>  <span class="text-text-muted">Terminal</span>    <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">WebSocket on</span>     <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">per machine</span> <span class="text-text-muted">│</span>
+<span class="text-text-muted">│</span>  <span class="text-text-muted">Files</span>       <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">:8765 (LAN/TS)</span>   <span class="text-text-muted">│</span>         <span class="text-text-muted">└──────────────┘</span>
 <span class="text-text-muted">└──────────────┘</span>         <span class="text-text-muted">└───────────────────┘</span></pre>
     </TerminalWindow>
+
+    <!-- Sessions Manager -->
+    <div class="max-w-4xl mx-auto">
+      <h3 class="text-2xl sm:text-3xl font-bold text-center mb-4">
+        The Sessions Manager
+      </h3>
+      <p class="text-text-muted text-center max-w-2xl mx-auto mb-6">
+        A dedicated Claude Code session that acts as a manager for all your other sessions. One tap in the app launches it.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+        <ul class="space-y-3 text-sm text-text-muted">
+          <li class="flex items-start gap-2">
+            <span class="text-accent mt-0.5">&#x25B8;</span>
+            <span>Query all running Claude Code sessions across the machine</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="text-accent mt-0.5">&#x25B8;</span>
+            <span>Read live terminal output from any session</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="text-accent mt-0.5">&#x25B8;</span>
+            <span>Access conversation history — last inputs and assistant responses</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="text-accent mt-0.5">&#x25B8;</span>
+            <span>Send messages and instructions to any session</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="text-accent mt-0.5">&#x25B8;</span>
+            <span>Create new sessions or kill existing ones</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="text-accent mt-0.5">&#x25B8;</span>
+            <span>Coordinate work across agents</span>
+          </li>
+        </ul>
+
+        <div class="flex items-center justify-center">
+          <div class="text-center">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-accent/20 text-accent font-mono font-bold text-xl mb-3">M</div>
+            <p class="text-sm text-text-muted">One agent to manage them all</p>
+          </div>
+        </div>
+      </div>
+
+      <TerminalWindow title="sessions-manager" class="max-w-3xl mx-auto">
+        <div class="space-y-2 text-xs sm:text-sm">
+          <div>
+            <span class="text-accent font-bold">manager:</span>
+            <span class="text-text-muted"> Checking status of all sessions...</span>
+          </div>
+
+          <div class="pt-2 border-t border-border mt-2"></div>
+
+          <div>
+            <span class="text-green">session-1</span>
+            <span class="text-text-muted"> (api-redesign)</span>
+            <span class="text-text-muted"> ·</span>
+            <span class="text-green"> running</span>
+          </div>
+          <div class="pl-4 text-text-muted">
+            Refactoring auth middleware — 80% complete
+          </div>
+
+          <div class="pt-1">
+            <span class="text-green">session-2</span>
+            <span class="text-text-muted"> (test-suite)</span>
+            <span class="text-text-muted"> ·</span>
+            <span class="text-green"> running</span>
+          </div>
+          <div class="pl-4 text-text-muted">
+            Writing integration tests for /api/users endpoint
+          </div>
+
+          <div class="pt-1">
+            <span class="text-green">session-3</span>
+            <span class="text-text-muted"> (docs-update)</span>
+            <span class="text-text-muted"> ·</span>
+            <span class="text-[#eab308]"> waiting</span>
+          </div>
+          <div class="pl-4 text-text-muted">
+            Idle — waiting for API changes to land
+          </div>
+
+          <div class="pt-3 border-t border-border mt-2">
+            <span class="text-accent font-bold">manager:</span>
+            <span class="text-text-muted"> Session 1 is almost done. Sending instruction to session 3...</span>
+          </div>
+          <div class="pt-1">
+            <span class="text-text-muted">→</span>
+            <span class="text-text-primary"> session-3:</span>
+            <span class="text-text-muted"> "Start updating the API docs — auth endpoints are being finalized in session 1."</span>
+          </div>
+          <div class="pt-1">
+            <span class="text-green">✓</span>
+            <span class="text-text-muted"> Message delivered. session-3 resumed.</span>
+          </div>
+        </div>
+      </TerminalWindow>
+    </div>
   </div>
 </section>

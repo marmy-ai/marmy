@@ -1,0 +1,99 @@
+<section class="py-20 px-4 sm:px-6 border-t border-border">
+  <div class="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
+    <!-- Copy -->
+    <div class="flex-1 text-center lg:text-left">
+      <h2 class="text-3xl sm:text-4xl font-bold mb-4">
+        Browse your agent's files from your phone
+      </h2>
+      <p class="text-text-muted text-lg mb-8">
+        Your agent generates code, writes docs, and creates artifacts. See them in real time.
+      </p>
+      <ul class="space-y-3 text-sm text-text-muted text-left max-w-md mx-auto lg:mx-0">
+        <li class="flex items-start gap-2">
+          <span class="text-accent mt-0.5">&#x25B8;</span>
+          <span>Syntax-highlighted code in any language</span>
+        </li>
+        <li class="flex items-start gap-2">
+          <span class="text-accent mt-0.5">&#x25B8;</span>
+          <span>Rendered markdown with full formatting</span>
+        </li>
+        <li class="flex items-start gap-2">
+          <span class="text-accent mt-0.5">&#x25B8;</span>
+          <span>Inline image previews</span>
+        </li>
+        <li class="flex items-start gap-2">
+          <span class="text-accent mt-0.5">&#x25B8;</span>
+          <span>PDF documents with page navigation</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Phone mockup (mirrored perspective) -->
+    <div class="flex-shrink-0" style="perspective: 800px;">
+      <div class="phone-mockup" style="transform: rotateY(5deg) rotateX(2deg);">
+        <div class="w-[280px] sm:w-[300px] rounded-[2rem] border-2 border-border bg-bg-card p-2 shadow-2xl shadow-accent/10">
+          <!-- Status bar -->
+          <div class="flex items-center justify-between px-5 py-2">
+            <span class="text-[10px] text-text-muted font-mono">9:41</span>
+            <div class="w-20 h-5 rounded-full bg-bg-deep"></div>
+            <div class="flex gap-1">
+              <div class="w-1 h-1 rounded-full bg-green"></div>
+              <span class="text-[10px] text-text-muted">●●●</span>
+            </div>
+          </div>
+
+          <!-- Screen content -->
+          <div class="rounded-2xl bg-bg-deep overflow-hidden">
+            <!-- App header -->
+            <div class="px-3 py-2 border-b border-border flex items-center justify-between">
+              <span class="text-xs font-mono font-semibold text-text-primary">Files</span>
+              <span class="text-[10px] font-mono text-text-muted">api-redesign</span>
+            </div>
+
+            <!-- File tree -->
+            <div class="p-2 font-mono text-[11px]">
+              <div class="space-y-0.5">
+                <div class="px-2 py-1 text-text-muted">src/</div>
+                <div class="px-2 py-1 pl-5 rounded-md bg-bg-card border border-accent/30">
+                  <span class="text-accent">auth.ts</span>
+                  <span class="text-text-muted text-[9px] ml-1">modified</span>
+                </div>
+                <div class="px-2 py-1 pl-5 text-text-muted">index.ts</div>
+                <div class="px-2 py-1 pl-5 text-text-muted">routes.ts</div>
+                <div class="px-2 py-1 text-text-muted">docs/</div>
+                <div class="px-2 py-1 pl-5 text-text-muted">README.md</div>
+                <div class="px-2 py-1 pl-5 text-text-muted">setup.pdf</div>
+              </div>
+
+              <!-- Code preview -->
+              <div class="mt-2 rounded-md bg-bg-card border border-border p-2 text-[10px]">
+                <div class="text-text-muted mb-1">auth.ts</div>
+                <div><span class="text-accent">export</span> <span class="text-green">async function</span> <span class="text-text-primary">verify</span>(</div>
+                <div class="pl-2"><span class="text-text-muted">token:</span> <span class="text-green">string</span></div>
+                <div>) {'{'}</div>
+                <div class="pl-2"><span class="text-accent">return</span> jwt.decode(token)</div>
+                <div>{'}'}</div>
+              </div>
+            </div>
+
+            <!-- Bottom nav -->
+            <div class="flex justify-around py-2 border-t border-border">
+              <div class="text-center">
+                <div class="text-[10px] text-text-muted">Machines</div>
+              </div>
+              <div class="text-center">
+                <div class="text-[10px] text-text-muted">Sessions</div>
+              </div>
+              <div class="text-center">
+                <div class="text-[10px] text-text-muted">Terminal</div>
+              </div>
+              <div class="text-center">
+                <div class="text-[10px] text-accent">Files</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
