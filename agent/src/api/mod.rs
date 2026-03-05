@@ -38,6 +38,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/cc/sessions/:id/context", get(cc::get_session_context))
         .route("/api/cc/dashboard/start", post(cc::start_dashboard))
         .route("/api/notifications/register", post(notifications::register_token).delete(notifications::unregister_token))
+        .route("/api/notifications/send", post(notifications::send_notification))
+        .route("/api/notifications/hook", post(notifications::set_hook))
         .route("/api/notifications/test", post(notifications::test_notification))
         .route("/api/notifications/debug", get(notifications::debug_notifications));
 

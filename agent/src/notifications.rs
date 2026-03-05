@@ -1,136 +1,42 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use sha2::{Digest, Sha256};
 use tracing::{error, info, warn};
 
 use crate::config::NotificationsConfig;
-use crate::state::AppState;
 
-/// Per-pane state: tracks whether content was changing (active) or stable (idle).
-/// We only notify on the transition from active → idle.
-struct PaneState {
-    prev_hash: String,
-    /// true = content has been changing recently (Claude is working)
-    was_active: bool,
-    /// true = we already sent a notification for the current idle period
-    notified: bool,
-}
-
-pub struct NotificationDetector {
-    panes: HashMap<String, PaneState>,
+/// Holds the APNs client and push tokens. No detection logic —
+/// notifications are triggered by Claude calling `POST /api/notifications/send`.
+pub struct NotificationSender {
     apns: ApnsClient,
-    /// Suppress all notifications for the first N cycles to establish baseline.
-    warmup_remaining: u32,
 }
 
-impl NotificationDetector {
+impl NotificationSender {
     pub fn new(config: &NotificationsConfig) -> Self {
         Self {
-            panes: HashMap::new(),
             apns: ApnsClient::new(config),
-            warmup_remaining: 5, // ~10s at 2s poll
         }
     }
 
-    pub async fn check_and_notify(&mut self, state: &AppState) {
-        if !state.config.notifications.enabled || !self.apns.is_configured() {
-            return;
-        }
-
-        let tokens = state.get_push_tokens().await;
-        if tokens.is_empty() {
-            return;
-        }
-
-        let in_warmup = self.warmup_remaining > 0;
-        self.warmup_remaining = self.warmup_remaining.saturating_sub(1);
-
-        let topology = match state.get_topology().await {
-            Ok(t) => t,
-            Err(_) => return,
-        };
-
-        for pane in &topology.panes {
-            let session_name = topology
-                .sessions
-                .iter()
-                .find(|s| s.id == pane.session_id)
-                .map(|s| s.name.clone())
-                .unwrap_or_default();
-
-            if session_name == "_marmy_ctrl" || session_name == "sessions-manager" {
-                continue;
-            }
-
-            if !is_claude_process(&pane.current_command) {
-                self.panes.remove(&pane.id);
-                continue;
-            }
-
-            let content = match state.tmux.capture_pane(&pane.id, false).await {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-
-            let hash = content_hash(&content);
-            let ps = self.panes.entry(pane.id.clone()).or_insert(PaneState {
-                prev_hash: String::new(),
-                was_active: false,
-                notified: true, // start as "already notified" so we don't fire on first sight
-            });
-
-            let content_changed = ps.prev_hash != hash;
-            ps.prev_hash = hash;
-
-            if content_changed {
-                // Content is changing → Claude is working
-                ps.was_active = true;
-                ps.notified = false;
-            } else if ps.was_active && !ps.notified {
-                // Content just stabilized after being active → transition to idle
-                // Check if there's actually a prompt visible
-                if detect_prompt(&content).is_some() {
-                    ps.was_active = false;
-                    ps.notified = true;
-
-                    if !in_warmup {
-                        info!(pane_id = %pane.id, session = %session_name, "session became idle, sending notification");
-                        let title = session_name.clone();
-                        let body = "Session finished".to_string();
-                        for token in &tokens {
-                            self.apns
-                                .send(token, &title, &body, &pane.id, &session_name, "task_complete")
-                                .await;
-                        }
-                    }
-                }
-            }
-        }
+    pub fn is_configured(&self) -> bool {
+        self.apns.is_configured()
     }
 
-    pub fn debug_state(&self) -> serde_json::Value {
-        let panes: serde_json::Map<String, serde_json::Value> = self
-            .panes
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    serde_json::json!({
-                        "was_active": v.was_active,
-                        "notified": v.notified,
-                    }),
-                )
-            })
-            .collect();
-
-        serde_json::json!({
-            "apns_configured": self.apns.is_configured(),
-            "warmup_remaining": self.warmup_remaining,
-            "panes": panes,
-        })
+    pub async fn send(
+        &self,
+        tokens: &[String],
+        title: &str,
+        body: &str,
+        pane_id: &str,
+        session_name: &str,
+        event_type: &str,
+    ) {
+        for token in tokens {
+            self.apns
+                .send(token, title, body, pane_id, session_name, event_type)
+                .await;
+        }
     }
 
     pub async fn send_test(&self, tokens: &[String]) {
@@ -142,79 +48,6 @@ impl NotificationDetector {
     }
 }
 
-fn is_claude_process(cmd: &str) -> bool {
-    cmd.contains("claude") || cmd.chars().next().map_or(false, |c| c.is_ascii_digit())
-}
-
-fn is_shell_process(cmd: &str) -> bool {
-    matches!(cmd, "zsh" | "bash" | "fish" | "sh")
-}
-
-fn content_hash(content: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
-
-fn detect_prompt(content: &str) -> Option<String> {
-    let last_lines: Vec<&str> = content.lines().rev().take(10).collect();
-    let tail = last_lines.iter().rev().cloned().collect::<Vec<_>>().join("\n");
-
-    // Strip ANSI escape sequences for pattern matching
-    let clean = strip_ansi(&tail);
-
-    // Claude Code idle prompt: line containing just "❯" (U+276F) or "> "
-    if clean.contains('\u{276F}') || clean.trim_end().ends_with("> ") || clean.trim_end().ends_with(">") {
-        return Some("Ready for next task".to_string());
-    }
-    // Claude Code permission prompt: "bypass permissions" or "Allow"
-    if clean.contains("bypass permissions") || clean.contains("Allow ") {
-        // Only if it looks like it's waiting (not mid-execution)
-        if !clean.contains("Running") && !clean.contains("Wandering") {
-            return Some("Permission requested".to_string());
-        }
-    }
-    if clean.contains("Do you want to") {
-        return Some("Confirmation needed".to_string());
-    }
-    if clean.contains("(y/n)") || clean.contains("(Y/n)") || clean.contains("(y/N)") {
-        return Some("Yes/no question".to_string());
-    }
-
-    None
-}
-
-fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip ESC [ ... final_byte sequences (CSI)
-            if chars.peek() == Some(&'[') {
-                chars.next();
-                while let Some(&nc) = chars.peek() {
-                    chars.next();
-                    if nc.is_ascii_alphabetic() || nc == 'm' {
-                        break;
-                    }
-                }
-            // Skip ESC ] ... ST sequences (OSC)
-            } else if chars.peek() == Some(&']') {
-                chars.next();
-                while let Some(&nc) = chars.peek() {
-                    chars.next();
-                    if nc == '\x07' || nc == '\\' {
-                        break;
-                    }
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
 // --- APNs direct push via HTTP/2 + JWT ---
 
 struct ApnsClient {
@@ -222,9 +55,7 @@ struct ApnsClient {
     team_id: String,
     topic: String,
     sandbox: bool,
-    /// PEM bytes of the .p8 key, loaded once on startup
     key_pem: Option<Vec<u8>>,
-    /// Cached JWT + creation time (APNs JWTs valid for 1 hour, we refresh at 50 min)
     cached_jwt: Mutex<Option<(String, Instant)>>,
     http: reqwest::Client,
 }

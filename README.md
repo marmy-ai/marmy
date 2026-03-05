@@ -153,9 +153,18 @@ The agent will only serve files within these directories. Files are read-only (n
 
 ## Push Notifications
 
-Push notifications alert you when a Claude session finishes a task or is waiting for input. They go directly to APNs (Apple Push Notification service) — no Expo account, no third-party push service, no external infrastructure.
+Push notifications alert you when a Claude session finishes a task. They use Claude Code's `Stop` hook to fire a curl command to the agent, which sends directly to APNs — no polling, no terminal scraping, no third-party push service.
 
-### One-Time Setup
+### How It Works
+
+1. Toggle the bell icon (top-right of the terminal screen) to enable notifications
+2. The agent writes a Claude Code `Stop` hook to `~/.claude/settings.json`
+3. Whenever Claude finishes responding, the hook runs `curl` to hit the agent's `/api/notifications/send` endpoint
+4. The agent sends an APNs push to your phone
+
+No detection heuristics, no CPU monitoring, no prompt pattern matching. Claude Code itself tells the agent it's done.
+
+### APNs Setup
 
 1. Go to [Apple Developer](https://developer.apple.com) > Certificates, Identifiers & Profiles > **Keys**
 2. Click **+** to create a new key
@@ -194,16 +203,10 @@ cat ~/.marmy/push_tokens.json
 # Send a test notification
 TOKEN="your-marmy-auth-token"
 curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9876/api/notifications/test
+
+# Check hook status
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9876/api/notifications/debug
 ```
-
-### Notification Events
-
-| Event | Trigger |
-|-------|---------|
-| **Task completed** | Claude process exits (pane switches from claude to a shell) |
-| **Waiting for input** | Claude is idle at a prompt for 4+ seconds |
-
-Notifications are deduplicated per pane with a 2-minute cooldown (configurable via `cooldown_seconds`).
 
 ## Features
 
@@ -271,7 +274,10 @@ GET  /api/cc/sessions/:id/context     Get session context (live pane content + c
 POST /api/cc/dashboard/start          Start or reuse the sessions manager
 POST /api/notifications/register      Register a device push token
 DELETE /api/notifications/register    Unregister a push token
+POST /api/notifications/send          Send a push notification (called by Claude Code Stop hook)
+POST /api/notifications/hook          Enable/disable the Claude Code Stop hook
 POST /api/notifications/test          Send a test push notification
+GET  /api/notifications/debug         Check notification config status
 ```
 
 ### WebSocket (optional)
@@ -729,7 +735,7 @@ marmy/
 │       ├── config.rs          # TOML config management
 │       ├── auth.rs            # Bearer token auth middleware
 │       ├── state.rs           # Shared app state (topology cache)
-│       ├── notifications.rs   # Push notification detection + APNs delivery
+│       ├── notifications.rs   # APNs client + push token persistence
 │       ├── tmux/
 │       │   ├── types.rs       # Session/Window/Pane types, WS messages
 │       │   ├── parser.rs      # Control mode protocol parser
@@ -740,7 +746,7 @@ marmy/
 │           ├── panes.rs       # Pane input/content/resize endpoints
 │           ├── files.rs       # File tree and content endpoints
 │           ├── ws.rs          # WebSocket handler
-│           └── notifications.rs  # Push token register/unregister/test endpoints
+│           └── notifications.rs  # Push token, hook management, send/test endpoints
 ├── macos/                     # macOS menu bar app (Swift)
 │   └── MarmyMenuBar/
 │       ├── MarmyMenuBar.xcodeproj

@@ -84,7 +84,7 @@ async fn cmd_serve(bind_override: Option<String>, port_override: Option<u16>) ->
         error!(error = %e, "failed initial topology refresh");
     }
 
-    // Spawn polling loop: re-query topology every 2 seconds + notification detection
+    // Spawn polling loop: re-query topology every 2 seconds
     let refresh_state = state.clone();
     tokio::spawn(async move {
         loop {
@@ -92,8 +92,6 @@ async fn cmd_serve(bind_override: Option<String>, port_override: Option<u16>) ->
             if let Err(e) = refresh_state.refresh_topology().await {
                 error!(error = %e, "topology refresh failed");
             }
-            let mut detector = refresh_state.detector.lock().await;
-            detector.check_and_notify(&refresh_state).await;
         }
     });
 

@@ -178,7 +178,7 @@ function renderContent(content: string) {
 
 export default function TerminalScreen() {
   const { api, connected } = useConnectionStore();
-  const { activePaneId } = useSessionStore();
+  const { activePaneId, notifyOnDone, setNotifyOnDone } = useSessionStore();
   const [content, setContent] = useState("");
   const [inputText, setInputText] = useState("");
   const [isKeyboardMode, setIsKeyboardMode] = useState(false);
@@ -187,8 +187,15 @@ export default function TerminalScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const isScrolledUp = useRef(false);
   const prevTextRef = useRef("");
+  const lastContentRef = useRef("");
 
   const MAX_INPUT_HEIGHT = 120;
+
+  // Sync notify toggle with agent on mount
+  useEffect(() => {
+    if (!api) return;
+    api.getNotifyHookStatus().then(setNotifyOnDone).catch(() => {});
+  }, [api]);
 
   // Poll pane history (full scrollback) every 500ms
   useEffect(() => {
@@ -198,7 +205,10 @@ export default function TerminalScreen() {
     const poll = async () => {
       try {
         const result = await api.getPaneHistory(activePaneId);
-        if (active) setContent(result.content);
+        if (active && result.content !== lastContentRef.current) {
+          lastContentRef.current = result.content;
+          setContent(result.content);
+        }
       } catch {}
     };
 
@@ -316,7 +326,15 @@ export default function TerminalScreen() {
     }
   };
 
-  const renderedContent = useMemo(() => renderContent(content), [content]);
+  const renderedContent = useMemo(() => {
+    // Cap lines to prevent OOM on large scrollback buffers
+    const MAX_LINES = 500;
+    const lines = content.split("\n");
+    const trimmed = lines.length > MAX_LINES
+      ? lines.slice(-MAX_LINES).join("\n")
+      : content;
+    return renderContent(trimmed);
+  }, [content]);
 
   if (!connected) {
     return (
@@ -343,6 +361,27 @@ export default function TerminalScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={100}
     >
+      {/* Notify toggle */}
+      <TouchableOpacity
+        style={[styles.notifyBar, notifyOnDone && styles.notifyBarActive]}
+        activeOpacity={0.7}
+        onPress={async () => {
+          const next = !notifyOnDone;
+          setNotifyOnDone(next);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          try {
+            await api?.setNotifyHook(next);
+          } catch {}
+        }}
+      >
+        <View style={[styles.toggleTrack, notifyOnDone && styles.toggleTrackActive]}>
+          <View style={[styles.toggleThumb, notifyOnDone && styles.toggleThumbActive]} />
+        </View>
+        <Text style={[styles.notifyLabel, notifyOnDone && styles.notifyLabelActive]}>
+          Notify when done
+        </Text>
+      </TouchableOpacity>
+
       {/* Terminal content with ANSI rendering */}
       <ScrollView
         ref={scrollRef}
@@ -576,6 +615,49 @@ const styles = StyleSheet.create({
   },
   kbBtnTextActive: {
     color: "#fff",
+  },
+  // Notify toggle
+  notifyBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a3e",
+    backgroundColor: "#0f0f1a",
+    gap: 10,
+  },
+  notifyBarActive: {
+    backgroundColor: "rgba(124, 58, 237, 0.08)",
+  },
+  toggleTrack: {
+    width: 36,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#2a2a3e",
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+  toggleTrackActive: {
+    backgroundColor: "#7c3aed",
+  },
+  toggleThumb: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#555",
+  },
+  toggleThumbActive: {
+    backgroundColor: "#fff",
+    alignSelf: "flex-end",
+  },
+  notifyLabel: {
+    color: "#555",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  notifyLabelActive: {
+    color: "#c4b5fd",
   },
   // Input bar
   inputBar: {
