@@ -21,6 +21,12 @@ pub struct SendRequest {
     pub session: String,
     #[serde(default)]
     pub body: String,
+    /// Working directory from Claude Code Stop hook stdin
+    #[serde(default)]
+    pub cwd: String,
+    /// Stop reason from Claude Code Stop hook stdin (e.g. "end_turn")
+    #[serde(default)]
+    pub stop_reason: String,
 }
 
 #[derive(Deserialize)]
@@ -59,10 +65,26 @@ pub async fn send_notification(
     }
 
     let (session, msg) = match body {
-        Some(Json(b)) => (
-            if b.session.is_empty() { "Session".to_string() } else { b.session },
-            if b.body.is_empty() { "Task complete".to_string() } else { b.body },
-        ),
+        Some(Json(b)) => {
+            // Prefer cwd basename as session name (from Stop hook stdin)
+            let title = if !b.cwd.is_empty() {
+                std::path::Path::new(&b.cwd)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Session")
+                    .to_string()
+            } else if !b.session.is_empty() {
+                b.session
+            } else {
+                "Session".to_string()
+            };
+            let body_text = if !b.body.is_empty() {
+                b.body
+            } else {
+                "Task complete".to_string()
+            };
+            (title, body_text)
+        }
         None => ("Session".to_string(), "Task complete".to_string()),
     };
 
@@ -152,7 +174,7 @@ fn write_claude_hook(enabled: bool, port: u16) -> Result<(), String> {
             "hooks": [{
                 "type": "command",
                 "command": format!(
-                    "curl -sX POST http://localhost:{}/api/notifications/send",
+                    "curl -sX POST http://localhost:{}/api/notifications/send -H 'Content-Type: application/json' -d @-",
                     port
                 ),
                 "timeout": 5

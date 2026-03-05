@@ -187,6 +187,7 @@ export default function TerminalScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const isScrolledUp = useRef(false);
   const prevTextRef = useRef("");
+  const lastContentRef = useRef("");
 
   const MAX_INPUT_HEIGHT = 120;
 
@@ -204,7 +205,10 @@ export default function TerminalScreen() {
     const poll = async () => {
       try {
         const result = await api.getPaneHistory(activePaneId);
-        if (active) setContent(result.content);
+        if (active && result.content !== lastContentRef.current) {
+          lastContentRef.current = result.content;
+          setContent(result.content);
+        }
       } catch {}
     };
 
@@ -349,25 +353,26 @@ export default function TerminalScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={100}
     >
-      {/* Top bar */}
-      <View style={styles.topBar}>
-        <View style={{ flex: 1 }} />
-        <TouchableOpacity
-          style={[styles.notifyBtn, notifyOnDone && styles.notifyBtnActive]}
-          onPress={async () => {
-            const next = !notifyOnDone;
-            setNotifyOnDone(next);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            try {
-              await api?.setNotifyHook(next);
-            } catch {}
-          }}
-        >
-          <Text style={[styles.notifyBtnText, notifyOnDone && styles.notifyBtnTextActive]}>
-            {"\u{1F514}"}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* Notify toggle */}
+      <TouchableOpacity
+        style={[styles.notifyBar, notifyOnDone && styles.notifyBarActive]}
+        activeOpacity={0.7}
+        onPress={async () => {
+          const next = !notifyOnDone;
+          setNotifyOnDone(next);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          try {
+            await api?.setNotifyHook(next);
+          } catch {}
+        }}
+      >
+        <View style={[styles.toggleTrack, notifyOnDone && styles.toggleTrackActive]}>
+          <View style={[styles.toggleThumb, notifyOnDone && styles.toggleThumbActive]} />
+        </View>
+        <Text style={[styles.notifyLabel, notifyOnDone && styles.notifyLabelActive]}>
+          Notify when done
+        </Text>
+      </TouchableOpacity>
 
       {/* Terminal content with ANSI rendering */}
       <ScrollView
@@ -603,33 +608,48 @@ const styles = StyleSheet.create({
   kbBtnTextActive: {
     color: "#fff",
   },
-  // Top bar
-  topBar: {
+  // Notify toggle
+  notifyBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#2a2a3e",
     backgroundColor: "#0f0f1a",
+    gap: 10,
   },
-  notifyBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
+  notifyBarActive: {
+    backgroundColor: "rgba(124, 58, 237, 0.08)",
+  },
+  toggleTrack: {
+    width: 36,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: "#2a2a3e",
-    alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 2,
   },
-  notifyBtnActive: {
+  toggleTrackActive: {
     backgroundColor: "#7c3aed",
   },
-  notifyBtnText: {
-    fontSize: 15,
-    opacity: 0.4,
+  toggleThumb: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#555",
   },
-  notifyBtnTextActive: {
-    opacity: 1,
+  toggleThumbActive: {
+    backgroundColor: "#fff",
+    alignSelf: "flex-end",
+  },
+  notifyLabel: {
+    color: "#555",
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  notifyLabelActive: {
+    color: "#c4b5fd",
   },
   // Input bar
   inputBar: {
