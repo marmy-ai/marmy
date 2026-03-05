@@ -326,7 +326,15 @@ export default function TerminalScreen() {
     }
   };
 
-  const renderedContent = useMemo(() => renderContent(content), [content]);
+  const renderedContent = useMemo(() => {
+    // Cap lines to prevent OOM on large scrollback buffers
+    const MAX_LINES = 500;
+    const lines = content.split("\n");
+    const trimmed = lines.length > MAX_LINES
+      ? lines.slice(-MAX_LINES).join("\n")
+      : content;
+    return renderContent(trimmed);
+  }, [content]);
 
   if (!connected) {
     return (

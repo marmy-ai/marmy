@@ -66,18 +66,14 @@ pub async fn send_notification(
 
     let (session, msg) = match body {
         Some(Json(b)) => {
-            // Prefer cwd basename as session name (from Stop hook stdin)
+            // Match cwd against tmux pane paths to find the session name
             let title = if !b.cwd.is_empty() {
-                std::path::Path::new(&b.cwd)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("Session")
-                    .to_string()
-            } else if !b.session.is_empty() {
-                b.session
+                resolve_session_name(&state, &b.cwd).await
+                    .unwrap_or_else(|| b.session.clone())
             } else {
-                "Session".to_string()
+                b.session.clone()
             };
+            let title = if title.is_empty() { "Session".to_string() } else { title };
             let body_text = if !b.body.is_empty() {
                 b.body
             } else {
@@ -202,6 +198,30 @@ fn write_claude_hook(enabled: bool, port: u16) -> Result<(), String> {
     }
 
     write_settings(&settings)
+}
+
+/// Match the hook's cwd against tmux pane working directories to find
+/// which session Claude is running in. Picks the longest matching prefix
+/// so `/projects/marmy/agent` matches a pane at `/projects/marmy`.
+async fn resolve_session_name(state: &AppState, cwd: &str) -> Option<String> {
+    let topology = state.get_topology().await.ok()?;
+    let cwd_path = std::path::Path::new(cwd);
+
+    // Only consider panes belonging to visible sessions (excludes _marmy_ctrl etc.)
+    let session_ids: std::collections::HashSet<&str> = topology.sessions.iter()
+        .map(|s| s.id.as_str())
+        .collect();
+
+    // Find the pane whose current_path is the longest prefix of cwd
+    let best = topology.panes.iter()
+        .filter(|p| !p.current_path.is_empty())
+        .filter(|p| session_ids.contains(p.session_id.as_str()))
+        .filter(|p| cwd_path.starts_with(&p.current_path))
+        .max_by_key(|p| p.current_path.len())?;
+
+    topology.sessions.iter()
+        .find(|s| s.id == best.session_id)
+        .map(|s| s.name.clone())
 }
 
 fn is_hook_enabled() -> bool {
