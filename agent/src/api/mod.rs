@@ -24,6 +24,7 @@ pub fn build_router(state: AppState) -> Router {
     // Authenticated API routes
     let api_routes = Router::new()
         .route("/api/sessions", get(sessions::list_sessions).post(sessions::create_session))
+        .route("/api/sessions/recent-dirs", get(sessions::recent_dirs))
         .route("/api/sessions/:name", delete(sessions::delete_session))
         .route("/api/panes/:id/input", post(panes::send_input))
         .route("/api/panes/:id/resize", post(panes::resize_pane))

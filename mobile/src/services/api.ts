@@ -7,6 +7,7 @@ import type {
   CcSession,
   CcSessionContext,
   DashboardStartResponse,
+  CreateSessionResponse,
 } from "../types";
 
 export class MarmyApi {
@@ -56,11 +57,19 @@ export class MarmyApi {
   }
 
   /** Create a new tmux session. */
-  async createSession(name: string): Promise<void> {
-    await this.fetch("/api/sessions", {
+  async createSession(
+    name: string,
+    options?: { mode?: string; working_dir?: string; skip_permissions?: boolean }
+  ): Promise<CreateSessionResponse> {
+    return this.fetch<CreateSessionResponse>("/api/sessions", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...options }),
     });
+  }
+
+  /** Get recent working directories from all panes. */
+  async getRecentDirs(): Promise<string[]> {
+    return this.fetch<string[]>("/api/sessions/recent-dirs");
   }
 
   /** Delete (kill) a tmux session. */
