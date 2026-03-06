@@ -109,7 +109,8 @@ pub async fn set_hook(
     Json(body): Json<HookRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let port = state.config.server.port;
-    match write_claude_hook(body.enabled, port) {
+    let token = &state.config.auth.token;
+    match write_claude_hook(body.enabled, port, token) {
         Ok(_) => {
             info!("claude Stop hook {}", if body.enabled { "enabled" } else { "disabled" });
             Ok(StatusCode::OK)
@@ -161,17 +162,17 @@ fn write_settings(settings: &serde_json::Value) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
-fn write_claude_hook(enabled: bool, port: u16) -> Result<(), String> {
+fn write_claude_hook(enabled: bool, port: u16, token: &str) -> Result<(), String> {
     let mut settings = read_settings();
 
     if enabled {
-        // Build the Stop hook entry
+        // Build the Stop hook entry — token is hardcoded since this is a local config file
         let hook_entry = serde_json::json!([{
             "hooks": [{
                 "type": "command",
                 "command": format!(
-                    "curl -sX POST http://localhost:{}/api/notifications/send -H 'Content-Type: application/json' -H \"Authorization: Bearer $MARMY_TOKEN\" -d @-",
-                    port
+                    "curl -sX POST http://localhost:{}/api/notifications/send -H 'Content-Type: application/json' -H 'Authorization: Bearer {}' -d @-",
+                    port, token
                 ),
                 "timeout": 5
             }]
