@@ -345,7 +345,7 @@ pub async fn start_dashboard(
             )
         })?;
     let launch_cmd = format!(
-        "eval $(tmux show-environment -t {} -s MARMY_TOKEN) && claude --dangerously-skip-permissions",
+        "unset CLAUDECODE && eval $(tmux show-environment -t {} -s MARMY_TOKEN) && claude --dangerously-skip-permissions",
         session_name
     );
     state

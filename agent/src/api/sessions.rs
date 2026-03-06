@@ -96,7 +96,7 @@ pub async fn create_session(
                 )
             })?;
         let launch_cmd = format!(
-            "eval $(tmux show-environment -t {} -s MARMY_TOKEN) && claude{}",
+            "unset CLAUDECODE && eval $(tmux show-environment -t {} -s MARMY_TOKEN) && claude{}",
             name, skip_flag
         );
         state
