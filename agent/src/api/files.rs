@@ -118,7 +118,7 @@ pub async fn list_dir(
 ) -> Result<Json<DirListing>, (StatusCode, String)> {
     let path = resolve_path(&query.path);
 
-    if !is_path_allowed_dynamic(&path, &state).await {
+    if !is_path_allowed_for_browsing(&path, &state).await {
         return Err((StatusCode::FORBIDDEN, "path not in allowed directories".to_string()));
     }
 
@@ -301,6 +301,46 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
                 continue;
             }
             if canonical.starts_with(&pane_canonical) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Like is_path_allowed_dynamic, but also allows ancestor directories of pane paths.
+/// Used for directory browsing (list_dir) so users can navigate down to pane working dirs.
+async fn is_path_allowed_for_browsing(path: &Path, state: &AppState) -> bool {
+    if is_path_allowed_dynamic(path, state).await {
+        return true;
+    }
+
+    // Allow ancestors of pane working directories (for navigating down)
+    let topology = match state.get_topology().await {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+
+    let canonical = match path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    for pane in &topology.panes {
+        let pane_path = PathBuf::from(&pane.current_path);
+        if let Ok(pane_canonical) = pane_path.canonicalize() {
+            if pane_canonical.starts_with(&canonical) {
+                return true;
+            }
+        }
+    }
+
+    // Also allow ancestors of static allowed_paths
+    for allowed_path in &state.config.files.allowed_paths {
+        let allowed = resolve_path(allowed_path);
+        if let Ok(allowed_canonical) = allowed.canonicalize() {
+            if allowed_canonical.starts_with(&canonical) {
                 return true;
             }
         }
