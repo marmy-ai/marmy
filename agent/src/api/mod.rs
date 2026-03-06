@@ -6,19 +6,22 @@ pub mod sessions;
 pub mod ws;
 
 use axum::{
+    http::{header, Method},
+    middleware,
     routing::{delete, get, post},
-    Router,
+    Extension, Router,
 };
 use tower_http::cors::{Any, CorsLayer};
+use crate::auth::{auth_middleware, AuthToken};
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE]);
 
-    // Public route: WebSocket (auth via query param or first message)
+    // Public route: WebSocket (auth via query param)
     let ws_routes = Router::new().route("/ws", get(ws::ws_handler));
 
     // Authenticated API routes
@@ -42,7 +45,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/notifications/send", post(notifications::send_notification))
         .route("/api/notifications/hook", post(notifications::set_hook))
         .route("/api/notifications/test", post(notifications::test_notification))
-        .route("/api/notifications/debug", get(notifications::debug_notifications));
+        .route("/api/notifications/debug", get(notifications::debug_notifications))
+        .layer(middleware::from_fn(auth_middleware))
+        .layer(Extension(AuthToken(state.config.auth.token.clone())));
 
     Router::new()
         .merge(ws_routes)

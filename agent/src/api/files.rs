@@ -169,6 +169,10 @@ pub async fn read_file(
 ) -> Result<Json<FileContent>, (StatusCode, String)> {
     let path = resolve_path(&query.path);
 
+    if has_hidden_component(&path) {
+        return Err((StatusCode::FORBIDDEN, "access to hidden files is not allowed".to_string()));
+    }
+
     if !is_path_allowed_dynamic(&path, &state).await {
         return Err((StatusCode::FORBIDDEN, "path not in allowed directories".to_string()));
     }
@@ -200,6 +204,10 @@ pub async fn raw_file(
 ) -> Result<Response, (StatusCode, String)> {
     let path = resolve_path(&query.path);
 
+    if has_hidden_component(&path) {
+        return Err((StatusCode::FORBIDDEN, "access to hidden files is not allowed".to_string()));
+    }
+
     if !is_path_allowed_dynamic(&path, &state).await {
         return Err((StatusCode::FORBIDDEN, "path not in allowed directories".to_string()));
     }
@@ -223,6 +231,15 @@ pub async fn raw_file(
         [(header::CONTENT_TYPE, content_type)],
         bytes,
     ).into_response())
+}
+
+/// Check if any component of the path starts with '.' (hidden file/directory).
+fn has_hidden_component(path: &Path) -> bool {
+    path.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .map_or(false, |s| s.starts_with('.'))
+    })
 }
 
 /// Resolve ~ and relative paths to absolute.
@@ -279,6 +296,10 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
     for pane in &topology.panes {
         let pane_path = PathBuf::from(&pane.current_path);
         if let Ok(pane_canonical) = pane_path.canonicalize() {
+            // Skip panes at filesystem root — too broad
+            if pane_canonical == PathBuf::from("/") {
+                continue;
+            }
             if canonical.starts_with(&pane_canonical) {
                 return true;
             }

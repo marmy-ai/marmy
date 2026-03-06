@@ -51,6 +51,12 @@ pub enum ClientMessage {
     Input { pane_id: String, keys: String },
     #[serde(rename = "resize")]
     Resize { pane_id: String, cols: u32, rows: u32 },
+    #[serde(rename = "subscribe_pane")]
+    SubscribePane { pane_id: String },
+    #[serde(rename = "unsubscribe_pane")]
+    UnsubscribePane { pane_id: String },
+    #[serde(rename = "ping")]
+    Ping,
 }
 
 /// Messages sent from the agent to WebSocket clients.
@@ -59,6 +65,10 @@ pub enum ClientMessage {
 pub enum ServerMessage {
     #[serde(rename = "topology")]
     Topology(TmuxTopology),
+    #[serde(rename = "pane_output")]
+    PaneOutput { pane_id: String, data: String },
+    #[serde(rename = "pong")]
+    Pong,
     #[serde(rename = "error")]
     Error { message: String },
 }

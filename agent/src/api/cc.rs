@@ -332,13 +332,21 @@ pub async fn start_dashboard(
             )
         })?;
 
-    // Export MARMY_TOKEN and launch claude in one command so the token is
-    // available in claude's subprocess environment (tmux set-environment only
-    // affects new shells, not the current one).
+    // Set token in tmux environment so it never appears in scrollback
     let pane_target = format!("{}:0.0", session_name);
+    state
+        .tmux
+        .set_session_env(session_name, "MARMY_TOKEN", &state.config.auth.token)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("failed to set env: {}", e),
+            )
+        })?;
     let launch_cmd = format!(
-        "export MARMY_TOKEN='{}' && claude --dangerously-skip-permissions",
-        state.config.auth.token
+        "eval $(tmux show-environment -t {} -s MARMY_TOKEN) && claude --dangerously-skip-permissions",
+        session_name
     );
     state
         .tmux
