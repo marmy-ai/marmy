@@ -170,7 +170,7 @@ fn write_claude_hook(enabled: bool, port: u16) -> Result<(), String> {
             "hooks": [{
                 "type": "command",
                 "command": format!(
-                    "curl -sX POST http://localhost:{}/api/notifications/send -H 'Content-Type: application/json' -d @-",
+                    "curl -sX POST http://localhost:{}/api/notifications/send -H 'Content-Type: application/json' -H \"Authorization: Bearer $MARMY_TOKEN\" -d @-",
                     port
                 ),
                 "timeout": 5
