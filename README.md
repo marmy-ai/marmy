@@ -693,27 +693,19 @@ npm install
 # Generate the native ios/ project
 npx expo prebuild --platform ios
 
-# Install CocoaPods
-cd ios && pod install && cd ..
+# Clean and install CocoaPods (avoids "undefined symbol facebook::react" linker errors)
+cd ios && rm -rf Pods Podfile.lock && pod install && cd ..
 
 # Open the Xcode workspace
 open ios/marmy.xcworkspace
 ```
 
-In a separate terminal, start the Metro bundler (keep it running):
-
-```bash
-cd mobile
-npx expo start
-```
-
 In Xcode:
 
 1. Select your **signing team** under **Signing & Capabilities** for the `Marmy` target.
-2. Connect your iPhone via USB and select it as the build destination.
-3. Press **Cmd+R** (or **Product > Run**) to build and install directly on your device.
-
-> **Note:** Debug builds load JS from the Metro bundler, so Metro must be running on the same network as your phone. If you want a standalone build that doesn't need Metro, switch the Xcode scheme to **Release** (**Product > Scheme > Edit Scheme > Run > Build Configuration > Release**).
+2. Set the build configuration to **Release**: **Product > Scheme > Edit Scheme > Run > Build Configuration > Release**. This bundles the JS into the app so it runs standalone on the device without Metro.
+3. Connect your iPhone via USB and select it as the build destination.
+4. Press **Cmd+R** (or **Product > Run**) to build and install directly on your device.
 
 To create an archive for App Store / TestFlight distribution:
 
