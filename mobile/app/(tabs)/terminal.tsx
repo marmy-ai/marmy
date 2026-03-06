@@ -11,6 +11,7 @@ import {
   ScrollView,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import { useNavigation } from "expo-router";
 import { useConnectionStore } from "../../src/stores/connectionStore";
 import { useSessionStore } from "../../src/stores/sessionStore";
 
@@ -178,7 +179,13 @@ function renderContent(content: string) {
 
 export default function TerminalScreen() {
   const { api, connected } = useConnectionStore();
-  const { activePaneId, notifyOnDone, setNotifyOnDone } = useSessionStore();
+  const { activePaneId, activeSessionName, notifyOnDone, setNotifyOnDone } = useSessionStore();
+  const navigation = useNavigation();
+
+  // Set the nav header title to the session name
+  useEffect(() => {
+    navigation.setOptions({ title: activeSessionName || "Terminal" });
+  }, [activeSessionName, navigation]);
   const [content, setContent] = useState("");
   const [inputText, setInputText] = useState("");
   const [isKeyboardMode, setIsKeyboardMode] = useState(false);
@@ -190,6 +197,8 @@ export default function TerminalScreen() {
   const lastContentRef = useRef("");
 
   const MAX_INPUT_HEIGHT = 120;
+  // Padding character so KB mode always has something for backspace to delete
+  const KB_PAD = " ";
 
   // Sync notify toggle with agent on mount
   useEffect(() => {
@@ -227,11 +236,12 @@ export default function TerminalScreen() {
     }
   }, [content]);
 
+
   // Reset TextInput when switching to keyboard mode
   useEffect(() => {
     if (isKeyboardMode) {
-      setInputText("");
-      prevTextRef.current = "";
+      setInputText(KB_PAD);
+      prevTextRef.current = KB_PAD;
       setCtrlActive(false);
     }
   }, [isKeyboardMode]);
@@ -313,8 +323,8 @@ export default function TerminalScreen() {
       api.sendInput(activePaneId, delSequence).catch(() => {});
     }
 
-    prevTextRef.current = "";
-    setInputText("");
+    prevTextRef.current = KB_PAD;
+    setInputText(KB_PAD);
   };
 
   const handleSubmitEditing = () => {
@@ -327,13 +337,15 @@ export default function TerminalScreen() {
   };
 
   const renderedContent = useMemo(() => {
+    // Strip trailing blank lines (tmux pane includes full screen height of empty lines)
+    const lines = content.split("\n");
+    while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+      lines.pop();
+    }
     // Cap lines to prevent OOM on large scrollback buffers
     const MAX_LINES = 500;
-    const lines = content.split("\n");
-    const trimmed = lines.length > MAX_LINES
-      ? lines.slice(-MAX_LINES).join("\n")
-      : content;
-    return renderContent(trimmed);
+    const capped = lines.length > MAX_LINES ? lines.slice(-MAX_LINES) : lines;
+    return renderContent(capped.join("\n"));
   }, [content]);
 
   if (!connected) {
@@ -389,6 +401,7 @@ export default function TerminalScreen() {
         contentContainerStyle={styles.terminalContent}
         keyboardDismissMode="on-drag"
         onTouchStart={() => Keyboard.dismiss()}
+
         onScroll={(e) => {
           const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
           const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
