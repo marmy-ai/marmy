@@ -234,6 +234,8 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9876/api/notifications/d
 - Text input bar for typing commands (sent via REST POST)
 - Shortcut bar: Ctrl-C, Tab, Up, Down, y, n
 - Selectable text for copy/paste
+- Width slider (40–200 cols) to resize the tmux window so content fits the phone screen
+- Notify toggle to get push notifications when Claude finishes a task
 
 ### Files Tab
 - Browse remote file trees
@@ -266,7 +268,7 @@ DELETE /api/sessions/:name            Kill a tmux session
 GET  /api/panes/:id/content           Capture current pane screen (plain text)
 GET  /api/panes/:id/history           Capture full scrollback
 POST /api/panes/:id/input             Send keys to a pane
-POST /api/panes/:id/resize            Resize a pane
+POST /api/panes/:id/resize            Resize a pane's tmux window (cols × rows)
 GET  /api/files/tree?path=...         List directory contents
 GET  /api/files/content?path=..       Read file contents
 GET  /api/cc/sessions                 List live Claude Code sessions (tmux panes running claude)
