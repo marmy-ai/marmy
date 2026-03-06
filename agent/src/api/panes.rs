@@ -60,7 +60,7 @@ pub async fn send_input(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// POST /api/panes/:id/resize — resize a pane.
+/// POST /api/panes/:id/resize — resize a pane (resizes the whole window).
 pub async fn resize_pane(
     State(state): State<AppState>,
     Path(pane_id): Path<String>,
@@ -68,9 +68,26 @@ pub async fn resize_pane(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let pane_id = normalize_pane_id(&pane_id);
 
+    let topo = state
+        .get_topology()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let pane = topo
+        .panes
+        .iter()
+        .find(|p| p.id == pane_id)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("pane {} not found", pane_id)))?;
+
+    let session = topo
+        .sessions
+        .iter()
+        .find(|s| s.id == pane.session_id)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("session for pane {} not found", pane_id)))?;
+
     state
         .tmux
-        .resize_pane(&pane_id, req.cols, req.rows)
+        .resize_window(&session.name, req.cols, req.rows)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 

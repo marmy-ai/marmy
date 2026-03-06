@@ -10,6 +10,7 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@react-native-community/slider": "5.0.1",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@types/marked": "^5.0.2",
     "expo": "~54.0.0",

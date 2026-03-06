@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
+import Constants from "expo-constants";
 import type { MarmyApi } from "../services/api";
 import type { DirEntry } from "../types";
 
@@ -71,7 +72,7 @@ export default function DirPicker({ api, recentDirs, onSelect, onCancel }: DirPi
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={onCancel}>
+          <TouchableOpacity onPress={onCancel} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}>
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Select Directory</Text>
@@ -120,7 +121,7 @@ export default function DirPicker({ api, recentDirs, onSelect, onCancel }: DirPi
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => setBrowsing(false)}>
+        <TouchableOpacity onPress={() => setBrowsing(false)} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}>
           <Text style={styles.cancelText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Browse</Text>
@@ -198,6 +199,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0f0f1a",
+    paddingTop: Constants.statusBarHeight,
   },
   header: {
     flexDirection: "row",

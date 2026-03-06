@@ -218,6 +218,15 @@ impl TmuxController {
             .await?;
         Ok(())
     }
+
+    /// Resize an entire window (all panes expand to fill).
+    pub async fn resize_window(&self, session_name: &str, cols: u32, rows: u32) -> Result<()> {
+        let cols_str = cols.to_string();
+        let rows_str = rows.to_string();
+        self.run_tmux(&["resize-window", "-t", session_name, "-x", &cols_str, "-y", &rows_str])
+            .await?;
+        Ok(())
+    }
 }
 
 // --- Pure parsing functions (testable without tmux) ---

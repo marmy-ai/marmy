@@ -77,7 +77,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 }
                             }
                             Ok(ClientMessage::Resize { pane_id, cols, rows }) => {
-                                let _ = state.tmux.resize_pane(&pane_id, cols, rows).await;
+                                if let Ok(topo) = state.get_topology().await {
+                                    if let Some(pane) = topo.panes.iter().find(|p| p.id == pane_id) {
+                                        if let Some(session) = topo.sessions.iter().find(|s| s.id == pane.session_id) {
+                                            let _ = state.tmux.resize_window(&session.name, cols, rows).await;
+                                        }
+                                    }
+                                }
                             }
                             Err(e) => {
                                 debug!(error = %e, "failed to parse client message");
