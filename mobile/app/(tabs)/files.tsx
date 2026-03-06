@@ -345,10 +345,14 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: "#888", fontSize: 18 },
   backBtn: {
-    padding: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#2a2a3e",
     backgroundColor: "#1a1a2e",
+    zIndex: 10,
+    minHeight: 48,
+    justifyContent: "center",
   },
   backBtnText: { color: "#7c3aed", fontSize: 15 },
   listHeader: {

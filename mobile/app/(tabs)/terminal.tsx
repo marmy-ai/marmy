@@ -10,6 +10,7 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
+import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "expo-router";
 import { useConnectionStore } from "../../src/stores/connectionStore";
@@ -40,6 +41,12 @@ const KB_GRID_ROW2 = [
   { label: "\u2192", value: "\x1b[C" },
   { label: "\u2193", value: "\x1b[B" },
 ];
+
+const DEFAULT_COLS = 60;
+const DEFAULT_ROWS = 50;
+const MIN_COLS = 40;
+const MAX_COLS = 200;
+const COLS_STEP = 10;
 
 // --- ANSI parser ---
 
@@ -195,6 +202,13 @@ export default function TerminalScreen() {
   const isScrolledUp = useRef(false);
   const prevTextRef = useRef("");
   const lastContentRef = useRef("");
+  const [termCols, setTermCols] = useState(DEFAULT_COLS);
+
+  // Resize the tmux window whenever pane or cols changes
+  useEffect(() => {
+    if (!api || !activePaneId) return;
+    api.resizPane(activePaneId, termCols, DEFAULT_ROWS).catch(() => {});
+  }, [api, activePaneId, termCols]);
 
   const MAX_INPUT_HEIGHT = 120;
   // Padding character so KB mode always has something for backspace to delete
@@ -373,26 +387,43 @@ export default function TerminalScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={100}
     >
-      {/* Notify toggle */}
-      <TouchableOpacity
-        style={[styles.notifyBar, notifyOnDone && styles.notifyBarActive]}
-        activeOpacity={0.7}
-        onPress={async () => {
-          const next = !notifyOnDone;
-          setNotifyOnDone(next);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          try {
-            await api?.setNotifyHook(next);
-          } catch {}
-        }}
-      >
-        <View style={[styles.toggleTrack, notifyOnDone && styles.toggleTrackActive]}>
-          <View style={[styles.toggleThumb, notifyOnDone && styles.toggleThumbActive]} />
+      {/* Toolbar: notify toggle + width slider */}
+      <View style={styles.toolbar}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={styles.notifySection}
+          onPress={async () => {
+            const next = !notifyOnDone;
+            setNotifyOnDone(next);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            try {
+              await api?.setNotifyHook(next);
+            } catch {}
+          }}
+        >
+          <View style={[styles.toggleTrack, notifyOnDone && styles.toggleTrackActive]}>
+            <View style={[styles.toggleThumb, notifyOnDone && styles.toggleThumbActive]} />
+          </View>
+          <Text style={[styles.notifyLabel, notifyOnDone && styles.notifyLabelActive]}>
+            Notify
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.widthSection}>
+          <Slider
+            style={styles.widthSlider}
+            minimumValue={MIN_COLS}
+            maximumValue={MAX_COLS}
+            step={COLS_STEP}
+            value={termCols}
+            onValueChange={(v) => setTermCols(v)}
+            minimumTrackTintColor="#7c3aed"
+            maximumTrackTintColor="#2a2a3e"
+            thumbImage={require("../../assets/slider-thumb.png")}
+          />
+          <Text style={styles.widthLabel}>{termCols}</Text>
         </View>
-        <Text style={[styles.notifyLabel, notifyOnDone && styles.notifyLabelActive]}>
-          Notify when done
-        </Text>
-      </TouchableOpacity>
+      </View>
 
       {/* Terminal content with ANSI rendering */}
       <ScrollView
@@ -548,6 +579,38 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: "#888", fontSize: 18, marginBottom: 8 },
   emptySubtext: { color: "#555", fontSize: 14 },
+  toolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    height: 36,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a3e",
+    backgroundColor: "#0f0f1a",
+    gap: 8,
+  },
+  notifySection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  widthSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: "auto",
+    gap: 2,
+  },
+  widthSlider: {
+    width: 120,
+    height: 28,
+  },
+  widthLabel: {
+    color: "#888",
+    fontSize: 11,
+    fontFamily: "monospace",
+    width: 24,
+    textAlign: "right",
+  },
   terminalScroll: {
     flex: 1,
     backgroundColor: "#0f0f1a",
@@ -628,20 +691,6 @@ const styles = StyleSheet.create({
   },
   kbBtnTextActive: {
     color: "#fff",
-  },
-  // Notify toggle
-  notifyBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2a2a3e",
-    backgroundColor: "#0f0f1a",
-    gap: 10,
-  },
-  notifyBarActive: {
-    backgroundColor: "rgba(124, 58, 237, 0.08)",
   },
   toggleTrack: {
     width: 36,

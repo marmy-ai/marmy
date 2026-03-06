@@ -14,7 +14,7 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 ## P1 — High-Value Enhancements
 
-- [ ] **Claude-first session creation** — New session dialog should be a simple toggle between "Claude" and "Terminal". Claude mode lets you pick permission level (ask, auto-accept, bypass) and optionally set an initial prompt. Terminal mode stays as-is. Claude Code is the primary use case — make it feel native, not bolted on.
+- [x] **Claude-first session creation** — New session dialog should be a simple toggle between "Claude" and "Terminal". Claude mode lets you pick permission level (ask, auto-accept, bypass) and optionally set an initial prompt. Terminal mode stays as-is. Claude Code is the primary use case — make it feel native, not bolted on.
 
 - [ ] **Rethink navigation around sessions** — The terminal tab feels redundant since users always navigate there from sessions. Consider merging the flow so tapping a session goes straight into its terminal. The sessions list *is* the home screen; the terminal tab as a separate concept may not be needed.
 
@@ -39,6 +39,10 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 - [ ] **QR code pairing** — Generate a QR code in the menu bar app or CLI (`marmy-agent pair --qr`) containing the address and token. Scan from the mobile app to add a machine instantly — no manual typing.
 
 - [ ] **Session clone** — Start a new session in the same working directory as an existing one. Quick way to spin up a parallel agent in the same project context without manually picking the folder again.
+
+- [x] **Auto-resize tmux window from mobile** — Terminal toolbar includes a width slider (40–200 cols) that resizes the tmux window via REST so content fits the phone screen. Uses `resize-window` instead of `resize-pane` so single-pane windows stay resized.
+
+- [x] **DirPicker safe area fix** — Cancel/Back button in the directory picker was occluded by the dynamic island. Fixed with explicit status bar padding on the fullscreen modal.
 
 - [ ] **App polish** — General cleanup pass on the mobile app. Tighten UI consistency, fix rough edges, improve navigation flow, and handle error/empty states gracefully.
 
