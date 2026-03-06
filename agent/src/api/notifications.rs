@@ -233,3 +233,15 @@ fn is_hook_enabled() -> bool {
         .map(|arr| !arr.is_empty())
         .unwrap_or(false)
 }
+
+/// If the hook is already enabled, rewrite it with current port/token.
+/// Call on agent startup so deploying a new agent version updates the hook.
+pub fn refresh_hook_if_enabled(port: u16, token: &str) {
+    if is_hook_enabled() {
+        if let Err(e) = write_claude_hook(true, port, token) {
+            tracing::warn!("failed to refresh notification hook: {}", e);
+        } else {
+            tracing::info!("refreshed notification hook with current config");
+        }
+    }
+}
