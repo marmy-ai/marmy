@@ -84,9 +84,20 @@ pub async fn create_session(
         } else {
             ""
         };
+        // Set token in tmux environment so it never appears in scrollback
+        state
+            .tmux
+            .set_session_env(&name, "MARMY_TOKEN", &state.config.auth.token)
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("failed to set env: {}", e),
+                )
+            })?;
         let launch_cmd = format!(
-            "export MARMY_TOKEN='{}' && claude{}",
-            state.config.auth.token, skip_flag
+            "unset CLAUDECODE && eval $(tmux show-environment -t {} -s MARMY_TOKEN) && claude{}",
+            name, skip_flag
         );
         state
             .tmux

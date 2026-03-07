@@ -217,11 +217,11 @@ export class MarmyApi {
     });
   }
 
-  /** Get WebSocket URL for this machine. */
+  /** Get WebSocket URL for this machine (includes auth token). */
   getWsUrl(): string {
     const wsBase = this.baseUrl
       .replace("http://", "ws://")
       .replace("https://", "wss://");
-    return `${wsBase}/ws`;
+    return `${wsBase}/ws?token=${encodeURIComponent(this.token)}`;
   }
 }

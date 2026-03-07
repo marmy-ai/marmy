@@ -185,7 +185,7 @@ function renderContent(content: string) {
 }
 
 export default function TerminalScreen() {
-  const { api, connected } = useConnectionStore();
+  const { api, socket, connected } = useConnectionStore();
   const { activePaneId, activeSessionName, notifyOnDone, setNotifyOnDone } = useSessionStore();
   const navigation = useNavigation();
 
@@ -206,9 +206,9 @@ export default function TerminalScreen() {
 
   // Resize the tmux window whenever pane or cols changes
   useEffect(() => {
-    if (!api || !activePaneId) return;
-    api.resizPane(activePaneId, termCols, DEFAULT_ROWS).catch(() => {});
-  }, [api, activePaneId, termCols]);
+    if (!socket || !activePaneId) return;
+    socket.resizePane(activePaneId, termCols, DEFAULT_ROWS);
+  }, [socket, activePaneId, termCols]);
 
   const MAX_INPUT_HEIGHT = 120;
   // Padding character so KB mode always has something for backspace to delete
@@ -220,28 +220,26 @@ export default function TerminalScreen() {
     api.getNotifyHookStatus().then(setNotifyOnDone).catch(() => {});
   }, [api]);
 
-  // Poll pane history (full scrollback) every 500ms
+  // Subscribe to pane output via WebSocket
   useEffect(() => {
-    if (!api || !activePaneId) return;
+    if (!socket || !activePaneId) return;
 
-    let active = true;
-    const poll = async () => {
-      try {
-        const result = await api.getPaneHistory(activePaneId);
-        if (active && result.content !== lastContentRef.current) {
-          lastContentRef.current = result.content;
-          setContent(result.content);
+    socket.subscribePane(activePaneId);
+
+    const unsub = socket.onMessage((msg) => {
+      if (msg.type === "pane_output" && msg.pane_id === activePaneId) {
+        if (msg.data !== lastContentRef.current) {
+          lastContentRef.current = msg.data;
+          setContent(msg.data);
         }
-      } catch {}
-    };
+      }
+    });
 
-    poll();
-    const interval = setInterval(poll, 500);
     return () => {
-      active = false;
-      clearInterval(interval);
+      socket.unsubscribePane(activePaneId);
+      unsub();
     };
-  }, [api, activePaneId]);
+  }, [socket, activePaneId]);
 
   // Auto-scroll to bottom on new content, but only if user hasn't scrolled up
   useEffect(() => {
@@ -267,8 +265,8 @@ export default function TerminalScreen() {
     }
   }, [isKeyboardMode]);
 
-  const handleSend = async () => {
-    if (!inputText.trim() || !api || !activePaneId) return;
+  const handleSend = () => {
+    if (!inputText.trim() || !socket || !activePaneId) return;
     const text = inputText
       .replace(/\u2014/g, "--")
       .replace(/\u2013/g, "-")
@@ -276,12 +274,10 @@ export default function TerminalScreen() {
       .replace(/[\u2018\u2019]/g, "'");
     setInputText("");
     setInputHeight(40);
-    try {
-      await api.sendInput(activePaneId, text + "\n");
-    } catch {}
+    socket.sendInput(activePaneId, text + "\n");
   };
 
-  const handleShortcut = async (value: string) => {
+  const handleShortcut = (value: string) => {
     if (value === "__CTRL__") {
       setCtrlActive((prev) => !prev);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -293,11 +289,9 @@ export default function TerminalScreen() {
       return;
     }
 
-    if (!api || !activePaneId) return;
+    if (!socket || !activePaneId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      await api.sendInput(activePaneId, value);
-    } catch {}
+    socket.sendInput(activePaneId, value);
   };
 
   const handleChangeText = (newText: string) => {
@@ -306,7 +300,7 @@ export default function TerminalScreen() {
       return;
     }
 
-    if (!api || !activePaneId) return;
+    if (!socket || !activePaneId) return;
 
     const prev = prevTextRef.current;
 
@@ -319,22 +313,21 @@ export default function TerminalScreen() {
         .replace(/[\u2018\u2019]/g, "'");
 
       if (ctrlActive) {
-        // Send Ctrl+char: convert A-Z to 1-26, a-z to 1-26
         for (const ch of cleaned) {
           const upper = ch.toUpperCase();
           const code = upper.charCodeAt(0) - 64;
           if (code >= 1 && code <= 26) {
-            api.sendInput(activePaneId, String.fromCharCode(code)).catch(() => {});
+            socket.sendInput(activePaneId, String.fromCharCode(code));
           }
         }
         setCtrlActive(false);
       } else {
-        api.sendInput(activePaneId, cleaned).catch(() => {});
+        socket.sendInput(activePaneId, cleaned);
       }
     } else if (newText.length < prev.length) {
       const deletedCount = prev.length - newText.length;
       const delSequence = "\x7f".repeat(deletedCount);
-      api.sendInput(activePaneId, delSequence).catch(() => {});
+      socket.sendInput(activePaneId, delSequence);
     }
 
     prevTextRef.current = KB_PAD;
@@ -343,8 +336,8 @@ export default function TerminalScreen() {
 
   const handleSubmitEditing = () => {
     if (isKeyboardMode) {
-      if (!api || !activePaneId) return;
-      api.sendInput(activePaneId, "\n").catch(() => {});
+      if (!socket || !activePaneId) return;
+      socket.sendInput(activePaneId, "\n");
     } else {
       handleSend();
     }

@@ -104,11 +104,13 @@ export type ClientMessage =
   | { type: "subscribe_pane"; pane_id: string }
   | { type: "unsubscribe_pane"; pane_id: string }
   | { type: "input"; pane_id: string; keys: string }
-  | { type: "resize"; pane_id: string; cols: number; rows: number };
+  | { type: "resize"; pane_id: string; cols: number; rows: number }
+  | { type: "ping" };
 
 // WebSocket messages (server -> client)
 export type ServerMessage =
   | { type: "pane_output"; pane_id: string; data: string }
+  | { type: "pong" }
   | { type: "topology"; sessions: TmuxSession[]; windows: TmuxWindow[]; panes: TmuxPane[] }
   | { type: "session_event"; event: string; detail: string }
   | { type: "notification"; event: "task_complete" | "waiting_for_input"; pane_id: string; session_name: string; message: string }

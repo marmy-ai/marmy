@@ -109,7 +109,8 @@ pub async fn set_hook(
     Json(body): Json<HookRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let port = state.config.server.port;
-    match write_claude_hook(body.enabled, port) {
+    let token = &state.config.auth.token;
+    match write_claude_hook(body.enabled, port, token) {
         Ok(_) => {
             info!("claude Stop hook {}", if body.enabled { "enabled" } else { "disabled" });
             Ok(StatusCode::OK)
@@ -161,17 +162,17 @@ fn write_settings(settings: &serde_json::Value) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
 }
 
-fn write_claude_hook(enabled: bool, port: u16) -> Result<(), String> {
+fn write_claude_hook(enabled: bool, port: u16, token: &str) -> Result<(), String> {
     let mut settings = read_settings();
 
     if enabled {
-        // Build the Stop hook entry
+        // Build the Stop hook entry — token is hardcoded since this is a local config file
         let hook_entry = serde_json::json!([{
             "hooks": [{
                 "type": "command",
                 "command": format!(
-                    "curl -sX POST http://localhost:{}/api/notifications/send -H 'Content-Type: application/json' -d @-",
-                    port
+                    "curl -sX POST http://localhost:{}/api/notifications/send -H 'Content-Type: application/json' -H 'Authorization: Bearer {}' -d @-",
+                    port, token
                 ),
                 "timeout": 5
             }]
@@ -231,4 +232,16 @@ fn is_hook_enabled() -> bool {
         .and_then(|s| s.as_array())
         .map(|arr| !arr.is_empty())
         .unwrap_or(false)
+}
+
+/// If the hook is already enabled, rewrite it with current port/token.
+/// Call on agent startup so deploying a new agent version updates the hook.
+pub fn refresh_hook_if_enabled(port: u16, token: &str) {
+    if is_hook_enabled() {
+        if let Err(e) = write_claude_hook(true, port, token) {
+            tracing::warn!("failed to refresh notification hook: {}", e);
+        } else {
+            tracing::info!("refreshed notification hook with current config");
+        }
+    }
 }
