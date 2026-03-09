@@ -197,24 +197,28 @@ export class VoiceSession {
     return this.active;
   }
 
-  /** Call when user presses the talk button */
+  /** Call when user unmutes */
   pushToTalkStart() {
     if (!this.ws || !this.setupComplete) return;
     toggleRecording(true);
     this.ws.send(JSON.stringify({
       realtimeInput: { activityStart: {} },
     }));
-    console.log("[Voice] PTT start");
+    console.log("[Voice] Mic unmuted");
   }
 
-  /** Call when user releases the talk button */
+  /** Call when user mutes */
   pushToTalkEnd() {
     if (!this.ws || !this.setupComplete) return;
     this.ws.send(JSON.stringify({
       realtimeInput: { activityEnd: {} },
     }));
+    // Signal end of audio stream so Gemini flushes cached audio and stops billing
+    this.ws.send(JSON.stringify({
+      realtimeInput: { audioStreamEnd: true },
+    }));
     toggleRecording(false);
-    console.log("[Voice] PTT end");
+    console.log("[Voice] Mic muted");
   }
 
   private setState(state: VoiceState) {
