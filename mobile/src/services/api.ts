@@ -8,6 +8,7 @@ import type {
   CcSessionContext,
   DashboardStartResponse,
   CreateSessionResponse,
+  VoiceTokenResponse,
 } from "../types";
 
 export class MarmyApi {
@@ -215,6 +216,11 @@ export class MarmyApi {
     await this.fetch("/api/notifications/test", {
       method: "POST",
     });
+  }
+
+  /** Get Gemini API key for voice mode. */
+  async getVoiceToken(): Promise<VoiceTokenResponse> {
+    return this.fetch<VoiceTokenResponse>("/api/voice/token");
   }
 
   /** Get WebSocket URL for this machine (includes auth token). */

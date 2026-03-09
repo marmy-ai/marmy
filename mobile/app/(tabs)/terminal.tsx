@@ -9,12 +9,16 @@ import {
   Keyboard,
   Platform,
   ScrollView,
+  Animated,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "expo-router";
 import { useConnectionStore } from "../../src/stores/connectionStore";
 import { useSessionStore } from "../../src/stores/sessionStore";
+import { VoiceSession } from "../../src/services/voiceSession";
+import type { VoiceState } from "../../src/services/voiceSession";
+import VoiceCallBar from "../../src/components/VoiceCallBar";
 
 const CHAT_SHORTCUT_KEYS = [
   { label: "Ctrl-C", value: "\x03" },
@@ -203,6 +207,63 @@ export default function TerminalScreen() {
   const prevTextRef = useRef("");
   const lastContentRef = useRef("");
   const [termCols, setTermCols] = useState(DEFAULT_COLS);
+
+  // Voice mode
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const voiceSessionRef = useRef<VoiceSession | null>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Pulse animation for call button
+  useEffect(() => {
+    if (voiceActive) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [voiceActive]);
+
+  // Cleanup voice on unmount
+  useEffect(() => {
+    return () => {
+      voiceSessionRef.current?.stop();
+    };
+  }, []);
+
+  const startVoice = async () => {
+    if (!api || !activePaneId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setVoiceActive(true);
+    setVoiceState("connecting");
+    try {
+      const { token } = await api.getVoiceToken();
+      console.log("[Voice] Got token, connecting to Gemini...");
+      const session = new VoiceSession({
+        geminiApiKey: token,
+        api,
+        paneId: activePaneId,
+        onStateChange: setVoiceState,
+      });
+      voiceSessionRef.current = session;
+      await session.start();
+    } catch (e) {
+      console.error("[Voice] Failed to start:", e);
+      setVoiceState("error");
+    }
+  };
+
+  const stopVoice = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await voiceSessionRef.current?.stop();
+    voiceSessionRef.current = null;
+    setVoiceState("idle");
+    setVoiceActive(false);
+  };
 
   // Resize the tmux window whenever pane or cols changes
   useEffect(() => {
@@ -402,6 +463,25 @@ export default function TerminalScreen() {
           </Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={[styles.callButton, voiceActive && styles.callButtonActive]}
+          onPress={voiceActive ? stopVoice : startVoice}
+        >
+          {voiceActive && (
+            <Animated.View
+              style={[styles.callPulse, { opacity: pulseAnim }]}
+            />
+          )}
+          <Text
+            style={[
+              styles.callButtonText,
+              voiceActive && styles.callButtonTextActive,
+            ]}
+          >
+            {voiceActive ? "End" : "Call"}
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.widthSection}>
           <Slider
             style={styles.widthSlider}
@@ -438,8 +518,15 @@ export default function TerminalScreen() {
         </Text>
       </ScrollView>
 
-      {/* Shortcut bar */}
-      {isKeyboardMode ? (
+      {/* Shortcut bar / Voice call bar */}
+      {voiceActive ? (
+        <VoiceCallBar
+          state={voiceState}
+          onEnd={stopVoice}
+          onPttStart={() => voiceSessionRef.current?.pushToTalkStart()}
+          onPttEnd={() => voiceSessionRef.current?.pushToTalkEnd()}
+        />
+      ) : isKeyboardMode ? (
         <View style={styles.kbGrid}>
           <View style={styles.kbRow}>
             {KB_GRID_ROW1.map((key) => (
@@ -531,9 +618,11 @@ export default function TerminalScreen() {
           style={[
             styles.textInput,
             !isKeyboardMode && { height: inputHeight },
+            voiceActive && { opacity: 0.4 },
           ]}
           value={inputText}
           onChangeText={handleChangeText}
+          editable={!voiceActive}
           multiline={!isKeyboardMode}
           onContentSizeChange={(e) => {
             if (!isKeyboardMode) {
@@ -541,7 +630,7 @@ export default function TerminalScreen() {
               setInputHeight(Math.max(40, h));
             }
           }}
-          placeholder={isKeyboardMode ? "Keys sent live..." : "Type command..."}
+          placeholder={voiceActive ? "Voice mode active..." : isKeyboardMode ? "Keys sent live..." : "Type command..."}
           placeholderTextColor="#555"
           autoCapitalize="none"
           autoCorrect={false}
@@ -586,6 +675,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+  },
+  callButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "#2a2a3e",
+    gap: 4,
+  },
+  callButtonActive: {
+    backgroundColor: "#4ade80",
+  },
+  callPulse: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#fff",
+  },
+  callButtonText: {
+    color: "#888",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  callButtonTextActive: {
+    color: "#0f0f1a",
   },
   widthSection: {
     flexDirection: "row",

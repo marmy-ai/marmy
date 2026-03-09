@@ -11,6 +11,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.marmy.app",
       "infoPlist": {
+        "NSMicrophoneUsageDescription": "Marmy needs microphone access for voice mode to talk with your terminal sessions.",
         "NSLocalNetworkUsageDescription": "Marmy needs local network access to connect to your development machines.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
