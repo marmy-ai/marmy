@@ -3,6 +3,7 @@ pub mod files;
 pub mod notifications;
 pub mod panes;
 pub mod sessions;
+pub mod voice;
 pub mod ws;
 
 use axum::{
@@ -46,6 +47,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/notifications/hook", post(notifications::set_hook))
         .route("/api/notifications/test", post(notifications::test_notification))
         .route("/api/notifications/debug", get(notifications::debug_notifications))
+        .route("/api/voice/token", get(voice::get_voice_token))
         .layer(middleware::from_fn(auth_middleware))
         .layer(Extension(AuthToken(state.config.auth.token.clone())));
 

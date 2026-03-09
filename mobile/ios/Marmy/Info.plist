@@ -47,6 +47,8 @@
     <string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Marmy needs local network access to connect to your development machines.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Marmy needs microphone access for voice mode to talk with your terminal sessions.</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

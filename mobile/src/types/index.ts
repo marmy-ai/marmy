@@ -99,6 +99,10 @@ export interface CreateSessionResponse {
   session_name: string;
 }
 
+export interface VoiceTokenResponse {
+  token: string;
+}
+
 // WebSocket messages (client -> server)
 export type ClientMessage =
   | { type: "subscribe_pane"; pane_id: string }

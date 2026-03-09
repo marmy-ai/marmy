@@ -9,12 +9,17 @@ import {
   Keyboard,
   Platform,
   ScrollView,
+  AppState,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useConnectionStore } from "../../src/stores/connectionStore";
 import { useSessionStore } from "../../src/stores/sessionStore";
+import { VoiceSession } from "../../src/services/voiceSession";
+import type { VoiceState } from "../../src/services/voiceSession";
+import VoiceCallBar from "../../src/components/VoiceCallBar";
 
 const CHAT_SHORTCUT_KEYS = [
   { label: "Ctrl-C", value: "\x03" },
@@ -203,6 +208,63 @@ export default function TerminalScreen() {
   const prevTextRef = useRef("");
   const lastContentRef = useRef("");
   const [termCols, setTermCols] = useState(DEFAULT_COLS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Voice mode
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const voiceSessionRef = useRef<VoiceSession | null>(null);
+
+  // Cleanup voice on unmount
+  useEffect(() => {
+    return () => {
+      voiceSessionRef.current?.stop();
+    };
+  }, []);
+
+  // Stop voice when app goes to background
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active" && voiceSessionRef.current) {
+        voiceSessionRef.current.stop();
+        voiceSessionRef.current = null;
+        setVoiceState("idle");
+        setVoiceActive(false);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  const startVoice = async () => {
+    if (!api || !activePaneId) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setVoiceActive(true);
+    setVoiceState("connecting");
+    try {
+      const { token } = await api.getVoiceToken();
+      console.log("[Voice] Got token, connecting to Gemini...");
+      const session = new VoiceSession({
+        geminiApiKey: token,
+        api,
+        paneId: activePaneId,
+        sessionName: activeSessionName || "default",
+        onStateChange: setVoiceState,
+      });
+      voiceSessionRef.current = session;
+      await session.start();
+    } catch (e) {
+      console.error("[Voice] Failed to start:", e);
+      setVoiceState("error");
+    }
+  };
+
+  const stopVoice = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await voiceSessionRef.current?.stop();
+    voiceSessionRef.current = null;
+    setVoiceState("idle");
+    setVoiceActive(false);
+  };
 
   // Resize the tmux window whenever pane or cols changes
   useEffect(() => {
@@ -380,43 +442,82 @@ export default function TerminalScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={100}
     >
-      {/* Toolbar: notify toggle + width slider */}
+      {/* Toolbar */}
       <View style={styles.toolbar}>
         <TouchableOpacity
-          activeOpacity={0.7}
-          style={styles.notifySection}
-          onPress={async () => {
-            const next = !notifyOnDone;
-            setNotifyOnDone(next);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            try {
-              await api?.setNotifyHook(next);
-            } catch {}
-          }}
+          style={[styles.callButton, voiceActive && styles.callButtonActive]}
+          onPress={voiceActive ? stopVoice : startVoice}
         >
-          <View style={[styles.toggleTrack, notifyOnDone && styles.toggleTrackActive]}>
-            <View style={[styles.toggleThumb, notifyOnDone && styles.toggleThumbActive]} />
-          </View>
-          <Text style={[styles.notifyLabel, notifyOnDone && styles.notifyLabelActive]}>
-            Notify
+          <Ionicons
+            name={voiceActive ? "call" : "call"}
+            size={16}
+            color={voiceActive ? "#fff" : "#0f0f1a"}
+            style={voiceActive && { transform: [{ rotate: "135deg" }] }}
+          />
+          <Text
+            style={[
+              styles.callButtonText,
+              voiceActive && styles.callButtonTextActive,
+            ]}
+          >
+            {voiceActive ? "End" : "Call"}
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.widthSection}>
-          <Slider
-            style={styles.widthSlider}
-            minimumValue={MIN_COLS}
-            maximumValue={MAX_COLS}
-            step={COLS_STEP}
-            value={termCols}
-            onValueChange={(v) => setTermCols(v)}
-            minimumTrackTintColor="#7c3aed"
-            maximumTrackTintColor="#2a2a3e"
-            thumbImage={require("../../assets/slider-thumb.png")}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={[styles.settingsButton, settingsOpen && styles.settingsButtonActive]}
+          onPress={() => {
+            setSettingsOpen((prev) => !prev);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }}
+        >
+          <Ionicons
+            name={settingsOpen ? "settings" : "settings-outline"}
+            size={20}
+            color={settingsOpen ? "#fff" : "#888"}
           />
-          <Text style={styles.widthLabel}>{termCols}</Text>
-        </View>
+        </TouchableOpacity>
       </View>
+
+      {/* Settings panel */}
+      {settingsOpen && (
+        <View style={styles.settingsPanel}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.settingsRow}
+            onPress={async () => {
+              const next = !notifyOnDone;
+              setNotifyOnDone(next);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              try {
+                await api?.setNotifyHook(next);
+              } catch {}
+            }}
+          >
+            <Text style={styles.settingsLabel}>Notify on done</Text>
+            <View style={[styles.toggleTrack, notifyOnDone && styles.toggleTrackActive]}>
+              <View style={[styles.toggleThumb, notifyOnDone && styles.toggleThumbActive]} />
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.settingsRow}>
+            <Text style={styles.settingsLabel}>Width</Text>
+            <Slider
+              style={styles.settingsSlider}
+              minimumValue={MIN_COLS}
+              maximumValue={MAX_COLS}
+              step={COLS_STEP}
+              value={termCols}
+              onValueChange={(v) => setTermCols(v)}
+              minimumTrackTintColor="#7c3aed"
+              maximumTrackTintColor="#2a2a3e"
+              thumbImage={require("../../assets/slider-thumb.png")}
+            />
+            <Text style={styles.settingsValue}>{termCols}</Text>
+          </View>
+        </View>
+      )}
 
       {/* Terminal content with ANSI rendering */}
       <ScrollView
@@ -531,9 +632,11 @@ export default function TerminalScreen() {
           style={[
             styles.textInput,
             !isKeyboardMode && { height: inputHeight },
+            voiceActive && { opacity: 0.4 },
           ]}
           value={inputText}
           onChangeText={handleChangeText}
+          editable={!voiceActive}
           multiline={!isKeyboardMode}
           onContentSizeChange={(e) => {
             if (!isKeyboardMode) {
@@ -541,7 +644,7 @@ export default function TerminalScreen() {
               setInputHeight(Math.max(40, h));
             }
           }}
-          placeholder={isKeyboardMode ? "Keys sent live..." : "Type command..."}
+          placeholder={voiceActive ? "Voice mode active..." : isKeyboardMode ? "Keys sent live..." : "Type command..."}
           placeholderTextColor="#555"
           autoCapitalize="none"
           autoCorrect={false}
@@ -558,6 +661,17 @@ export default function TerminalScreen() {
           </TouchableOpacity>
         )}
       </View>
+      {/* Floating voice call overlay */}
+      {voiceActive && (
+        <View style={styles.voiceOverlayWrapper} pointerEvents="box-none">
+          <VoiceCallBar
+            state={voiceState}
+            onEnd={stopVoice}
+            onMicOn={() => voiceSessionRef.current?.pushToTalkStart()}
+            onMicOff={() => voiceSessionRef.current?.pushToTalkEnd()}
+          />
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -575,33 +689,71 @@ const styles = StyleSheet.create({
   toolbar: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 12,
-    height: 36,
+    height: 44,
     borderBottomWidth: 1,
     borderBottomColor: "#2a2a3e",
     backgroundColor: "#0f0f1a",
-    gap: 8,
   },
-  notifySection: {
+  settingsButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#2a2a3e",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  settingsButtonActive: {
+    backgroundColor: "#7c3aed",
+  },
+  callButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#4ade80",
   },
-  widthSection: {
+  callButtonActive: {
+    backgroundColor: "#ef4444",
+  },
+  callButtonText: {
+    color: "#0f0f1a",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  callButtonTextActive: {
+    color: "#fff",
+  },
+  settingsPanel: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a3e",
+    backgroundColor: "#131322",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  settingsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: "auto",
-    gap: 2,
+    justifyContent: "space-between",
   },
-  widthSlider: {
-    width: 120,
+  settingsLabel: {
+    color: "#aaa",
+    fontSize: 14,
+  },
+  settingsSlider: {
+    flex: 1,
     height: 28,
+    marginHorizontal: 12,
   },
-  widthLabel: {
+  settingsValue: {
     color: "#888",
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: "monospace",
-    width: 24,
+    width: 28,
     textAlign: "right",
   },
   terminalScroll: {
@@ -706,14 +858,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     alignSelf: "flex-end",
   },
-  notifyLabel: {
-    color: "#555",
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  notifyLabelActive: {
-    color: "#c4b5fd",
-  },
   // Input bar
   inputBar: {
     flexDirection: "row",
@@ -775,5 +919,15 @@ const styles = StyleSheet.create({
   },
   segmentTextActive: {
     color: "#fff",
+  },
+  voiceOverlayWrapper: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingBottom: 160,
   },
 });

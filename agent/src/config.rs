@@ -15,6 +15,8 @@ pub struct Config {
     pub tmux: TmuxConfig,
     #[serde(default)]
     pub notifications: NotificationsConfig,
+    #[serde(default)]
+    pub voice: VoiceConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +72,21 @@ pub struct NotificationsConfig {
     pub apns_sandbox: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceConfig {
+    /// Gemini API key for voice mode.
+    #[serde(default)]
+    pub gemini_api_key: String,
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            gemini_api_key: String::new(),
+        }
+    }
+}
+
 fn default_notifications_enabled() -> bool {
     true
 }
@@ -115,6 +132,7 @@ impl Default for Config {
                 socket_name: String::new(),
             },
             notifications: NotificationsConfig::default(),
+            voice: VoiceConfig::default(),
         }
     }
 }
