@@ -44,6 +44,10 @@ Ordered by importance. Use `/prioritize` to evaluate where a new idea fits.
 
 - [x] **DirPicker safe area fix** — Cancel/Back button in the directory picker was occluded by the dynamic island. Fixed with explicit status bar padding on the fullscreen modal.
 
+- [ ] **Git diff view in file browser** — Show a unified diff of the current working tree vs the checked-out branch. Green/+ for additions, red/- for removals, VS Code-style inline. Unified view only (no side-by-side — too cramped on mobile). New backend endpoint (`git diff`) + a DiffViewer component. Only available when the session's project has git initialized; hide/disable otherwise.
+
+- [ ] **Syntax highlighting in file browser** — Render code files with proper syntax highlighting for Python, JS/TS, Rust, and other common languages. Use `react-native-syntax-highlighter` (or similar) keyed on file extension. Drop-in upgrade to CodeViewer's current plain monospace rendering.
+
 - [ ] **App polish** — General cleanup pass on the mobile app. Tighten UI consistency, fix rough edges, improve navigation flow, and handle error/empty states gracefully.
 
 - [x] **Backspace in live keyboard mode** — Backspace key doesn't work when in live keyboard (KB) mode. Need to send the correct escape sequence or control character so backspace behaves as expected during real-time key-by-key input.
