@@ -14,6 +14,7 @@ import {
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useConnectionStore } from "../../src/stores/connectionStore";
 import { useSessionStore } from "../../src/stores/sessionStore";
 import { VoiceSession } from "../../src/services/voiceSession";
@@ -447,6 +448,12 @@ export default function TerminalScreen() {
           style={[styles.callButton, voiceActive && styles.callButtonActive]}
           onPress={voiceActive ? stopVoice : startVoice}
         >
+          <Ionicons
+            name={voiceActive ? "call" : "call"}
+            size={16}
+            color={voiceActive ? "#fff" : "#0f0f1a"}
+            style={voiceActive && { transform: [{ rotate: "135deg" }] }}
+          />
           <Text
             style={[
               styles.callButtonText,
@@ -465,9 +472,11 @@ export default function TerminalScreen() {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           }}
         >
-          <Text style={[styles.settingsIcon, settingsOpen && styles.settingsIconActive]}>
-            {"\u2699"}
-          </Text>
+          <Ionicons
+            name={settingsOpen ? "settings" : "settings-outline"}
+            size={20}
+            color={settingsOpen ? "#fff" : "#888"}
+          />
         </TouchableOpacity>
       </View>
 
@@ -698,17 +707,13 @@ const styles = StyleSheet.create({
   settingsButtonActive: {
     backgroundColor: "#7c3aed",
   },
-  settingsIcon: {
-    color: "#888",
-    fontSize: 18,
-  },
-  settingsIconActive: {
-    color: "#fff",
-  },
   callButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 16,
     backgroundColor: "#4ade80",
   },
   callButtonActive: {
