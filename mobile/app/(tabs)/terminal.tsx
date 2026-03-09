@@ -207,6 +207,7 @@ export default function TerminalScreen() {
   const prevTextRef = useRef("");
   const lastContentRef = useRef("");
   const [termCols, setTermCols] = useState(DEFAULT_COLS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Voice mode
   const [voiceActive, setVoiceActive] = useState(false);
@@ -245,6 +246,7 @@ export default function TerminalScreen() {
         geminiApiKey: token,
         api,
         paneId: activePaneId,
+        sessionName: activeSessionName || "default",
         onStateChange: setVoiceState,
       });
       voiceSessionRef.current = session;
@@ -439,28 +441,8 @@ export default function TerminalScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={100}
     >
-      {/* Toolbar: notify toggle + width slider */}
+      {/* Toolbar */}
       <View style={styles.toolbar}>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          style={styles.notifySection}
-          onPress={async () => {
-            const next = !notifyOnDone;
-            setNotifyOnDone(next);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            try {
-              await api?.setNotifyHook(next);
-            } catch {}
-          }}
-        >
-          <View style={[styles.toggleTrack, notifyOnDone && styles.toggleTrackActive]}>
-            <View style={[styles.toggleThumb, notifyOnDone && styles.toggleThumbActive]} />
-          </View>
-          <Text style={[styles.notifyLabel, notifyOnDone && styles.notifyLabelActive]}>
-            Notify
-          </Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.callButton, voiceActive && styles.callButtonActive]}
           onPress={voiceActive ? stopVoice : startVoice}
@@ -471,25 +453,62 @@ export default function TerminalScreen() {
               voiceActive && styles.callButtonTextActive,
             ]}
           >
-            {voiceActive ? "End" : "\u{1F4DE}"}
+            {voiceActive ? "End" : "Call"}
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.widthSection}>
-          <Slider
-            style={styles.widthSlider}
-            minimumValue={MIN_COLS}
-            maximumValue={MAX_COLS}
-            step={COLS_STEP}
-            value={termCols}
-            onValueChange={(v) => setTermCols(v)}
-            minimumTrackTintColor="#7c3aed"
-            maximumTrackTintColor="#2a2a3e"
-            thumbImage={require("../../assets/slider-thumb.png")}
-          />
-          <Text style={styles.widthLabel}>{termCols}</Text>
-        </View>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={[styles.settingsButton, settingsOpen && styles.settingsButtonActive]}
+          onPress={() => {
+            setSettingsOpen((prev) => !prev);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }}
+        >
+          <Text style={[styles.settingsIcon, settingsOpen && styles.settingsIconActive]}>
+            {"\u2699"}
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      {/* Settings panel */}
+      {settingsOpen && (
+        <View style={styles.settingsPanel}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.settingsRow}
+            onPress={async () => {
+              const next = !notifyOnDone;
+              setNotifyOnDone(next);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              try {
+                await api?.setNotifyHook(next);
+              } catch {}
+            }}
+          >
+            <Text style={styles.settingsLabel}>Notify on done</Text>
+            <View style={[styles.toggleTrack, notifyOnDone && styles.toggleTrackActive]}>
+              <View style={[styles.toggleThumb, notifyOnDone && styles.toggleThumbActive]} />
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.settingsRow}>
+            <Text style={styles.settingsLabel}>Width</Text>
+            <Slider
+              style={styles.settingsSlider}
+              minimumValue={MIN_COLS}
+              maximumValue={MAX_COLS}
+              step={COLS_STEP}
+              value={termCols}
+              onValueChange={(v) => setTermCols(v)}
+              minimumTrackTintColor="#7c3aed"
+              maximumTrackTintColor="#2a2a3e"
+              thumbImage={require("../../assets/slider-thumb.png")}
+            />
+            <Text style={styles.settingsValue}>{termCols}</Text>
+          </View>
+        </View>
+      )}
 
       {/* Terminal content with ANSI rendering */}
       <ScrollView
@@ -661,55 +680,75 @@ const styles = StyleSheet.create({
   toolbar: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 12,
-    height: 36,
+    height: 44,
     borderBottomWidth: 1,
     borderBottomColor: "#2a2a3e",
     backgroundColor: "#0f0f1a",
-    gap: 8,
   },
-  notifySection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  callButton: {
+  settingsButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#2a2a3e",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: "#1a2e1a",
-    borderWidth: 1,
-    borderColor: "#4ade80",
+  },
+  settingsButtonActive: {
+    backgroundColor: "#7c3aed",
+  },
+  settingsIcon: {
+    color: "#888",
+    fontSize: 18,
+  },
+  settingsIconActive: {
+    color: "#fff",
+  },
+  callButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#4ade80",
   },
   callButtonActive: {
-    backgroundColor: "#3a1a1a",
-    borderColor: "#ef4444",
+    backgroundColor: "#ef4444",
   },
   callButtonText: {
-    fontSize: 16,
-  },
-  callButtonTextActive: {
-    color: "#ef4444",
+    color: "#0f0f1a",
     fontSize: 13,
     fontWeight: "700",
   },
-  widthSection: {
+  callButtonTextActive: {
+    color: "#fff",
+  },
+  settingsPanel: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a3e",
+    backgroundColor: "#131322",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+  },
+  settingsRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: "auto",
-    gap: 2,
+    justifyContent: "space-between",
   },
-  widthSlider: {
-    width: 120,
+  settingsLabel: {
+    color: "#aaa",
+    fontSize: 14,
+  },
+  settingsSlider: {
+    flex: 1,
     height: 28,
+    marginHorizontal: 12,
   },
-  widthLabel: {
+  settingsValue: {
     color: "#888",
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: "monospace",
-    width: 24,
+    width: 28,
     textAlign: "right",
   },
   terminalScroll: {
@@ -813,14 +852,6 @@ const styles = StyleSheet.create({
   toggleThumbActive: {
     backgroundColor: "#fff",
     alignSelf: "flex-end",
-  },
-  notifyLabel: {
-    color: "#555",
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  notifyLabelActive: {
-    color: "#c4b5fd",
   },
   // Input bar
   inputBar: {

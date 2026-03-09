@@ -19,7 +19,8 @@ export type VoiceState =
 const GEMINI_WS_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
-const SYSTEM_PROMPT = `You are a voice assistant connected to an active terminal session where Claude Code is already running. The user is hands-free — they may be running, driving, or otherwise unable to type. Your primary job is to act as an intermediary: the user speaks to you, you relay their instructions to Claude Code by typing into the terminal, and you report back what Claude Code is doing.
+function buildSystemPrompt(sessionName: string): string {
+  return `You are a voice assistant connected to an active terminal session called "${sessionName}" where Claude Code is already running. The user is hands-free — they may be running, driving, or otherwise unable to type. Your primary job is to act as an intermediary: the user speaks to you, you relay their instructions to Claude Code by typing into the terminal, and you report back what Claude Code is doing.
 
 IMPORTANT: Claude Code is ALREADY running in this terminal. NEVER run "claude", "claude --dangerously-skip-permissions", or any command to start or restart Claude Code. It is already active. If the terminal appears to show a regular shell prompt without Claude Code, simply ask the user what they'd like to do — do NOT launch Claude Code yourself.
 
@@ -34,54 +35,58 @@ Keep responses concise — you're in a voice conversation. Summarize terminal ou
 If the terminal shows something waiting for input (y/n prompt, password, or Claude Code asking a question), tell the user immediately.
 
 When the session starts, greet the user by saying "How can I help you?".`;
+}
 
-const SETUP_MESSAGE = {
-  setup: {
-    model: "models/gemini-2.5-flash-native-audio-preview-12-2025",
-    generationConfig: {
-      responseModalities: ["AUDIO"],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: "Kore" },
+function buildSetupMessage(sessionName: string) {
+  return {
+    setup: {
+      model: "models/gemini-2.5-flash-native-audio-preview-12-2025",
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: "Kore" },
+          },
+        },
+      },
+      systemInstruction: {
+        parts: [{ text: buildSystemPrompt(sessionName) }],
+      },
+      tools: [
+        {
+          functionDeclarations: [
+            {
+              name: "write_to_shell",
+              description:
+                "Send text input to the active terminal session. Appends a newline to submit the command. Only call this when the user has confirmed or clearly asked you to execute something.",
+              parameters: {
+                type: "object",
+                properties: {
+                  text: {
+                    type: "string",
+                    description: "The text/command to type into the terminal",
+                  },
+                },
+                required: ["text"],
+              },
+            },
+          ],
+        },
+      ],
+      realtimeInputConfig: {
+        automaticActivityDetection: {
+          disabled: true,
         },
       },
     },
-    systemInstruction: {
-      parts: [{ text: SYSTEM_PROMPT }],
-    },
-    tools: [
-      {
-        functionDeclarations: [
-          {
-            name: "write_to_shell",
-            description:
-              "Send text input to the active terminal session. Appends a newline to submit the command. Only call this when the user has confirmed or clearly asked you to execute something.",
-            parameters: {
-              type: "object",
-              properties: {
-                text: {
-                  type: "string",
-                  description: "The text/command to type into the terminal",
-                },
-              },
-              required: ["text"],
-            },
-          },
-        ],
-      },
-    ],
-    realtimeInputConfig: {
-      automaticActivityDetection: {
-        disabled: true,
-      },
-    },
-  },
-};
+  };
+}
 
 interface VoiceSessionConfig {
   geminiApiKey: string;
   api: MarmyApi;
   paneId: string;
+  sessionName: string;
   onStateChange: (state: VoiceState) => void;
 }
 
@@ -231,7 +236,7 @@ export class VoiceSession {
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      const setup = { ...SETUP_MESSAGE };
+      const setup = buildSetupMessage(this.config.sessionName);
       if (this.sessionResumptionHandle) {
         (setup.setup as any).sessionResumption = {
           handle: this.sessionResumptionHandle,
