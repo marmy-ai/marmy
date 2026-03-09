@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Pressable,
   StyleSheet,
   Animated,
   PanResponder,
@@ -14,8 +13,8 @@ import type { VoiceState } from "../services/voiceSession";
 interface VoiceCallBarProps {
   state: VoiceState;
   onEnd: () => void;
-  onPttStart: () => void;
-  onPttEnd: () => void;
+  onMicOn: () => void;
+  onMicOff: () => void;
 }
 
 const STATE_CONFIG: Record<VoiceState, { color: string; text: string }> = {
@@ -32,9 +31,9 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VoiceCallBar({ state, onEnd, onPttStart, onPttEnd }: VoiceCallBarProps) {
+export default function VoiceCallBar({ state, onEnd, onMicOn, onMicOff }: VoiceCallBarProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const [holding, setHolding] = useState(false);
+  const [micActive, setMicActive] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
 
@@ -104,34 +103,36 @@ export default function VoiceCallBar({ state, onEnd, onPttStart, onPttEnd }: Voi
             style={[styles.dot, { backgroundColor: color, opacity: pulseAnim }]}
           />
           <Text style={[styles.statusText, { color }]}>
-            {holding ? "Recording..." : text}
+            {micActive ? "Recording..." : text}
           </Text>
         </View>
       </View>
 
-      {/* Big PTT button */}
-      <Pressable
+      {/* Mute/Unmute toggle */}
+      <TouchableOpacity
         style={[
           styles.pttButton,
-          holding && styles.pttButtonActive,
+          micActive && styles.pttButtonActive,
           !canTalk && styles.pttButtonDisabled,
         ]}
         disabled={!canTalk}
-        onPressIn={() => {
-          setHolding(true);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          onPttStart();
-        }}
-        onPressOut={() => {
-          setHolding(false);
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onPttEnd();
+        activeOpacity={0.7}
+        onPress={() => {
+          if (micActive) {
+            setMicActive(false);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onMicOff();
+          } else {
+            setMicActive(true);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            onMicOn();
+          }
         }}
       >
-        <Text style={[styles.pttText, holding && styles.pttTextActive]}>
-          {holding ? "Release" : "Hold to Talk"}
+        <Text style={[styles.pttText, micActive && styles.pttTextActive]}>
+          {micActive ? "Mute" : "Unmute"}
         </Text>
-      </Pressable>
+      </TouchableOpacity>
 
       {/* End call */}
       <TouchableOpacity

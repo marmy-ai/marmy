@@ -639,8 +639,8 @@ export default function TerminalScreen() {
           <VoiceCallBar
             state={voiceState}
             onEnd={stopVoice}
-            onPttStart={() => voiceSessionRef.current?.pushToTalkStart()}
-            onPttEnd={() => voiceSessionRef.current?.pushToTalkEnd()}
+            onMicOn={() => voiceSessionRef.current?.pushToTalkStart()}
+            onMicOff={() => voiceSessionRef.current?.pushToTalkEnd()}
           />
         </View>
       )}
