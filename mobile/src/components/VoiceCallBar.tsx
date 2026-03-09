@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   Animated,
+  PanResponder,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import type { VoiceState } from "../services/voiceSession";
@@ -25,10 +26,36 @@ const STATE_CONFIG: Record<VoiceState, { color: string; text: string }> = {
   error: { color: "#ef4444", text: "Error" },
 };
 
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 export default function VoiceCallBar({ state, onEnd, onPttStart, onPttEnd }: VoiceCallBarProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [holding, setHolding] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
 
+  // Dragging
+  const pan = useRef(new Animated.ValueXY()).current;
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
+      onPanResponderMove: Animated.event(
+        [null, { dx: pan.x, dy: pan.y }],
+        { useNativeDriver: false }
+      ),
+      onPanResponderRelease: () => {
+        pan.extractOffset();
+      },
+    })
+  ).current;
+
+  // Pulse animation when model is speaking
   useEffect(() => {
     if (state === "model_speaking") {
       Animated.loop(
@@ -42,70 +69,125 @@ export default function VoiceCallBar({ state, onEnd, onPttStart, onPttEnd }: Voi
     }
   }, [state]);
 
+  // Start timer once connected
+  useEffect(() => {
+    if (!timerRunning && (state === "listening" || state === "model_speaking")) {
+      setTimerRunning(true);
+    }
+  }, [state, timerRunning]);
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    const interval = setInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [timerRunning]);
+
   const { color, text } = STATE_CONFIG[state];
   const canTalk = state === "listening" || state === "model_speaking";
 
   return (
-    <View style={styles.container}>
+    <Animated.View
+      style={[styles.overlay, { transform: pan.getTranslateTransform() }]}
+    >
+      {/* Drag handle */}
+      <View {...panResponder.panHandlers} style={styles.dragHandle}>
+        <View style={styles.dragIndicator} />
+      </View>
+
+      {/* Timer + status */}
       <View style={styles.statusRow}>
-        <Animated.View
-          style={[styles.dot, { backgroundColor: color, opacity: pulseAnim }]}
-        />
-        <Text style={[styles.statusText, { color }]}>
-          {holding ? "Recording..." : text}
+        <Text style={styles.timer}>{formatDuration(elapsed)}</Text>
+        <View style={styles.statusRight}>
+          <Animated.View
+            style={[styles.dot, { backgroundColor: color, opacity: pulseAnim }]}
+          />
+          <Text style={[styles.statusText, { color }]}>
+            {holding ? "Recording..." : text}
+          </Text>
+        </View>
+      </View>
+
+      {/* Big PTT button */}
+      <Pressable
+        style={[
+          styles.pttButton,
+          holding && styles.pttButtonActive,
+          !canTalk && styles.pttButtonDisabled,
+        ]}
+        disabled={!canTalk}
+        onPressIn={() => {
+          setHolding(true);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          onPttStart();
+        }}
+        onPressOut={() => {
+          setHolding(false);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onPttEnd();
+        }}
+      >
+        <Text style={[styles.pttText, holding && styles.pttTextActive]}>
+          {holding ? "Release" : "Hold to Talk"}
         </Text>
-      </View>
+      </Pressable>
 
-      <View style={styles.buttons}>
-        {canTalk && (
-          <Pressable
-            style={[styles.pttButton, holding && styles.pttButtonActive]}
-            onPressIn={() => {
-              setHolding(true);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              onPttStart();
-            }}
-            onPressOut={() => {
-              setHolding(false);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onPttEnd();
-            }}
-          >
-            <Text style={[styles.pttText, holding && styles.pttTextActive]}>
-              Hold to Talk
-            </Text>
-          </Pressable>
-        )}
-
-        <TouchableOpacity
-          style={styles.endButton}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            onEnd();
-          }}
-        >
-          <Text style={styles.endButtonText}>End</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      {/* End call */}
+      <TouchableOpacity
+        style={styles.endButton}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          onEnd();
+        }}
+      >
+        <Text style={styles.endButtonText}>End Call</Text>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    height: 44,
-    borderTopWidth: 1,
-    borderTopColor: "#2a2a3e",
+  overlay: {
+    width: 200,
     backgroundColor: "#1a1a2e",
-    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#2a2a3e",
+    paddingBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  dragHandle: {
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  dragIndicator: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#555",
   },
   statusRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  timer: {
+    color: "#e0e0e0",
+    fontSize: 20,
+    fontWeight: "700",
+    fontFamily: "monospace",
+  },
+  statusRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   dot: {
     width: 10,
@@ -113,43 +195,48 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   statusText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     fontFamily: "monospace",
   },
-  buttons: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
   pttButton: {
+    marginHorizontal: 16,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: "#2a2a3e",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: "#4ade80",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
   },
   pttButtonActive: {
     backgroundColor: "#4ade80",
+    borderColor: "#4ade80",
+  },
+  pttButtonDisabled: {
+    borderColor: "#555",
+    opacity: 0.5,
   },
   pttText: {
     color: "#4ade80",
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: "700",
   },
   pttTextActive: {
     color: "#0f0f1a",
   },
   endButton: {
+    marginHorizontal: 16,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "#ef4444",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
   endButtonText: {
     color: "#fff",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
   },
 });

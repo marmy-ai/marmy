@@ -21,15 +21,21 @@ const GEMINI_WS_URL =
 
 const SYSTEM_PROMPT = `You are a voice assistant for a live terminal session. The user is interacting with you hands-free — they may be running, driving, or otherwise unable to type.
 
-You can see the terminal screen. It is provided to you as periodic text updates labeled TERMINAL UPDATE. When you receive one, note any significant changes (command completed, error appeared, build finished, process waiting for input) and proactively mention them if relevant.
+You act as an intermediary between the user and an AI coding agent called Claude Code. Claude Code is a CLI tool that runs in the terminal — it can read files, write code, run commands, and make changes to a codebase autonomously. The user talks to you, you relay their intent to Claude Code by typing into the terminal, and you report back what Claude Code is doing.
 
-You have one tool: write_to_shell. It sends text to the terminal and presses Enter. ONLY call this tool when the user explicitly asks you to run something or clearly confirms an action. Never execute commands without clear user consent. If you're unsure what the user wants to run, ask for clarification.
+To start a Claude Code session, run claude --dangerously-skip-permissions in the terminal. This launches Claude Code in fully autonomous mode with no permission prompts. Once running, Claude Code accepts natural language instructions — just type what you want it to do and press Enter.
+
+You can see the terminal screen. It is provided to you as periodic text updates labeled TERMINAL UPDATE. When you receive one, note any significant changes (command completed, error appeared, build finished, Claude Code asking a question, process waiting for input) and proactively mention them if relevant. When Claude Code asks the user a question or needs clarification, tell the user immediately so they can respond through you.
+
+You have one tool: write_to_shell. It sends text to the terminal and presses Enter. ONLY call this tool when the user explicitly asks you to run something or clearly confirms an action. Never execute commands without clear user consent. If you're unsure what the user wants to run, ask for clarification. When the user tells you what to say to Claude Code, type their message into the terminal verbatim or rephrase it clearly.
 
 Keep responses concise — you're in a voice conversation, not writing documentation. Summarize terminal output rather than reading it verbatim. If the user asks "what's happening", describe the current state in 1-2 sentences.
 
 When describing errors or logs, focus on the actionable part: what went wrong and what to do about it. Skip file paths, stack traces, and boilerplate unless the user specifically asks for details.
 
-If the terminal shows a command waiting for input (like a y/n prompt or a password prompt), tell the user immediately.`;
+If the terminal shows a command waiting for input (like a y/n prompt, a password prompt, or Claude Code asking a question), tell the user immediately.
+
+When the session starts, greet the user by saying "How can I help you?".`;
 
 const SETUP_MESSAGE = {
   setup: {
@@ -129,6 +135,7 @@ export class VoiceSession {
 
   // Audio
   private micSubscription: { remove: () => void } | null = null;
+  private eventSubscriptions: { remove: () => void }[] = [];
 
   // Context injection
   private contextInterval: ReturnType<typeof setInterval> | null = null;
@@ -138,6 +145,8 @@ export class VoiceSession {
   // State
   private active = false;
   private state: VoiceState = "idle";
+  private reconnectCount = 0;
+  private static MAX_RECONNECTS = 5;
 
   constructor(config: VoiceSessionConfig) {
     this.config = config;
@@ -261,6 +270,12 @@ export class VoiceSession {
         this.setState("error");
         return;
       }
+      if (this.reconnectCount >= VoiceSession.MAX_RECONNECTS) {
+        console.error("[Voice] Max reconnects reached, giving up");
+        this.setState("error");
+        return;
+      }
+      this.reconnectCount++;
       setTimeout(() => {
         if (this.active) {
           this.setState("connecting");
@@ -273,6 +288,7 @@ export class VoiceSession {
   private handleServerMessage(data: any) {
     if (data.setupComplete !== undefined) {
       this.setupComplete = true;
+      this.reconnectCount = 0;
       console.log("[Voice] Setup complete, starting capture");
       this.setState("listening");
       this.startAudioCapture();
@@ -314,14 +330,18 @@ export class VoiceSession {
   private startAudioCapture() {
     if (this.micSubscription) return;
 
-    // Listen for audio interruptions
-    addExpoTwoWayAudioEventListener("onAudioInterruption", (event) => {
-      console.log("[Voice] Audio interruption:", event.data);
-    });
+    // Listen for audio interruptions (track for cleanup)
+    this.eventSubscriptions.push(
+      addExpoTwoWayAudioEventListener("onAudioInterruption", (event) => {
+        console.log("[Voice] Audio interruption:", event.data);
+      })
+    );
 
-    addExpoTwoWayAudioEventListener("onRecordingChange", (event) => {
-      console.log("[Voice] Recording state changed:", event.data);
-    });
+    this.eventSubscriptions.push(
+      addExpoTwoWayAudioEventListener("onRecordingChange", (event) => {
+        console.log("[Voice] Recording state changed:", event.data);
+      })
+    );
 
     bypassVoiceProcessing(true);
 
@@ -353,6 +373,10 @@ export class VoiceSession {
       this.micSubscription.remove();
       this.micSubscription = null;
     }
+    for (const sub of this.eventSubscriptions) {
+      sub.remove();
+    }
+    this.eventSubscriptions = [];
   }
 
   // --- Audio Playback ---

@@ -9,7 +9,7 @@ import {
   Keyboard,
   Platform,
   ScrollView,
-  Animated,
+  AppState,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
@@ -212,27 +212,25 @@ export default function TerminalScreen() {
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const voiceSessionRef = useRef<VoiceSession | null>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  // Pulse animation for call button
-  useEffect(() => {
-    if (voiceActive) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [voiceActive]);
 
   // Cleanup voice on unmount
   useEffect(() => {
     return () => {
       voiceSessionRef.current?.stop();
     };
+  }, []);
+
+  // Stop voice when app goes to background
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active" && voiceSessionRef.current) {
+        voiceSessionRef.current.stop();
+        voiceSessionRef.current = null;
+        setVoiceState("idle");
+        setVoiceActive(false);
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   const startVoice = async () => {
@@ -467,18 +465,13 @@ export default function TerminalScreen() {
           style={[styles.callButton, voiceActive && styles.callButtonActive]}
           onPress={voiceActive ? stopVoice : startVoice}
         >
-          {voiceActive && (
-            <Animated.View
-              style={[styles.callPulse, { opacity: pulseAnim }]}
-            />
-          )}
           <Text
             style={[
               styles.callButtonText,
               voiceActive && styles.callButtonTextActive,
             ]}
           >
-            {voiceActive ? "End" : "Call"}
+            {voiceActive ? "End" : "\u{1F4DE}"}
           </Text>
         </TouchableOpacity>
 
@@ -518,15 +511,8 @@ export default function TerminalScreen() {
         </Text>
       </ScrollView>
 
-      {/* Shortcut bar / Voice call bar */}
-      {voiceActive ? (
-        <VoiceCallBar
-          state={voiceState}
-          onEnd={stopVoice}
-          onPttStart={() => voiceSessionRef.current?.pushToTalkStart()}
-          onPttEnd={() => voiceSessionRef.current?.pushToTalkEnd()}
-        />
-      ) : isKeyboardMode ? (
+      {/* Shortcut bar */}
+      {isKeyboardMode ? (
         <View style={styles.kbGrid}>
           <View style={styles.kbRow}>
             {KB_GRID_ROW1.map((key) => (
@@ -647,6 +633,17 @@ export default function TerminalScreen() {
           </TouchableOpacity>
         )}
       </View>
+      {/* Floating voice call overlay */}
+      {voiceActive && (
+        <View style={styles.voiceOverlayWrapper} pointerEvents="box-none">
+          <VoiceCallBar
+            state={voiceState}
+            onEnd={stopVoice}
+            onPttStart={() => voiceSessionRef.current?.pushToTalkStart()}
+            onPttEnd={() => voiceSessionRef.current?.pushToTalkEnd()}
+          />
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -677,30 +674,26 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   callButton: {
-    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: "#2a2a3e",
-    gap: 4,
+    backgroundColor: "#1a2e1a",
+    borderWidth: 1,
+    borderColor: "#4ade80",
   },
   callButtonActive: {
-    backgroundColor: "#4ade80",
-  },
-  callPulse: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#fff",
+    backgroundColor: "#3a1a1a",
+    borderColor: "#ef4444",
   },
   callButtonText: {
-    color: "#888",
-    fontSize: 13,
-    fontWeight: "600",
+    fontSize: 16,
   },
   callButtonTextActive: {
-    color: "#0f0f1a",
+    color: "#ef4444",
+    fontSize: 13,
+    fontWeight: "700",
   },
   widthSection: {
     flexDirection: "row",
@@ -890,5 +883,15 @@ const styles = StyleSheet.create({
   },
   segmentTextActive: {
     color: "#fff",
+  },
+  voiceOverlayWrapper: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingBottom: 160,
   },
 });
