@@ -19,8 +19,32 @@ struct ConfigReader {
 
         let hostname = ProcessInfo.processInfo.hostName
         let localIP = detectLocalIP() ?? "127.0.0.1"
+        let tailscaleIP = detectTailscaleIP()
 
-        return PairingInfo(hostname: hostname, localIP: localIP, port: port, token: token)
+        let geminiKey = extractValue(from: content, key: "gemini_api_key")
+
+        return PairingInfo(hostname: hostname, localIP: localIP, port: port, token: token, tailscaleIP: tailscaleIP, geminiApiKey: geminiKey)
+    }
+
+    static func setGeminiApiKey(_ key: String) {
+        let path = configPath
+        var content = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+
+        // Check if [voice] section exists
+        if content.contains("[voice]") {
+            // Replace or add gemini_api_key under [voice]
+            let pattern = #"(?m)^(\s*gemini_api_key\s*=\s*).*$"#
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               regex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)) != nil {
+                content = regex.stringByReplacingMatches(in: content, range: NSRange(content.startIndex..., in: content), withTemplate: "gemini_api_key = \"\(key)\"")
+            } else {
+                content = content.replacingOccurrences(of: "[voice]", with: "[voice]\ngemini_api_key = \"\(key)\"")
+            }
+        } else {
+            content += "\n\n[voice]\ngemini_api_key = \"\(key)\"\n"
+        }
+
+        try? content.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
     private static func extractValue(from content: String, key: String) -> String? {
@@ -66,5 +90,24 @@ struct ConfigReader {
         var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
         inet_ntop(AF_INET, &localAddr.sin_addr, &buffer, socklen_t(INET_ADDRSTRLEN))
         return String(cString: buffer)
+    }
+
+    private static func detectTailscaleIP() -> String? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        proc.arguments = ["tailscale", "ip", "-4"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let ip = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (ip?.isEmpty == false) ? ip : nil
+        } catch {
+            return nil
+        }
     }
 }

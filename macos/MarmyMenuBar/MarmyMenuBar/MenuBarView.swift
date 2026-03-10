@@ -13,13 +13,22 @@ struct MenuBarView: View {
 
         // Pairing info
         if let info = manager.pairingInfo {
-            Text("Address: \(info.address)")
+            Text("LAN: \(info.address)")
                 .font(.system(.body, design: .monospaced))
+            if let tsAddr = info.tailscaleAddress {
+                Text("Tailscale: \(tsAddr)")
+                    .font(.system(.body, design: .monospaced))
+            }
             Text("Token: \(info.token)")
                 .font(.system(.body, design: .monospaced))
 
-            Button("Copy Address") {
+            Button("Copy LAN Address") {
                 copyToClipboard(info.address)
+            }
+            if let tsAddr = info.tailscaleAddress {
+                Button("Copy Tailscale Address") {
+                    copyToClipboard(tsAddr)
+                }
             }
             Button("Copy Token") {
                 copyToClipboard(info.token)
@@ -45,6 +54,18 @@ struct MenuBarView: View {
 
         Divider()
 
+        // Voice mode
+        if let info = manager.pairingInfo, let key = info.geminiApiKey, !key.isEmpty {
+            Text("Voice Mode: Enabled")
+                .foregroundColor(.secondary)
+        } else {
+            Button("Set Up Voice Mode...") {
+                promptForGeminiKey()
+            }
+        }
+
+        Divider()
+
         Toggle("Launch at Login", isOn: $launchAtLogin)
             .onChange(of: launchAtLogin) { newValue in
                 setLaunchAtLogin(newValue)
@@ -52,13 +73,42 @@ struct MenuBarView: View {
 
         Divider()
 
-        Button("Quit Marmy") {
+        Button("Quit MacMarmy") {
             manager.stop()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 NSApplication.shared.terminate(nil)
             }
         }
         .keyboardShortcut("q")
+    }
+
+    private func promptForGeminiKey() {
+        let alert = NSAlert()
+        alert.messageText = "Set Up Voice Mode"
+        alert.informativeText = "Enter your Gemini API key to enable voice calls.\n\nYour key is stored locally on this machine in:\n~/Library/Application Support/marmy/config.toml\n\nIt is never sent anywhere except directly to Google's API.\n\nGet a key at: https://aistudio.google.com/apikey"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        input.placeholderString = "Paste Gemini API key here"
+        alert.accessoryView = input
+
+        // Bring app to front for the dialog
+        NSApp.activate(ignoringOtherApps: true)
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let key = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !key.isEmpty {
+                ConfigReader.setGeminiApiKey(key)
+                manager.stop()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    manager.reloadConfig()
+                    manager.start()
+                }
+            }
+        }
     }
 
     private func copyToClipboard(_ text: String) {

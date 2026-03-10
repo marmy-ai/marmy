@@ -1,0 +1,19 @@
+#!/bin/bash
+# Post-install script for MacMarmy.pkg
+
+# Check for tmux (required dependency)
+if ! command -v tmux >/dev/null 2>&1; then
+    echo "WARNING: tmux is not installed. MacMarmy requires tmux to manage sessions."
+    echo ""
+    echo "Install tmux with one of:"
+    echo "  brew install tmux"
+    echo "  sudo port install tmux"
+    echo ""
+fi
+
+# Open MacMarmy after install
+if [ -d "/Applications/MacMarmy.app" ]; then
+    sudo -u "$USER" open "/Applications/MacMarmy.app" 2>/dev/null || true
+fi
+
+exit 0

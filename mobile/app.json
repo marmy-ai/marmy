@@ -4,6 +4,7 @@
     "slug": "marmy",
     "version": "0.1.0",
     "orientation": "default",
+    "icon": "./assets/icon.png",
     "scheme": "marmy",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -21,7 +22,8 @@
     "android": {
       "package": "com.marmy.app",
       "adaptiveIcon": {
-        "backgroundColor": "#1a1a2e"
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#1E1E2E"
       }
     },
     "plugins": [

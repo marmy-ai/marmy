@@ -8,17 +8,13 @@ struct MarmyMenuBarApp: App {
         MenuBarExtra {
             MenuBarView(manager: manager)
         } label: {
-            Image(systemName: menuBarIcon)
+            if case .error = manager.status {
+                Image(systemName: "exclamationmark.triangle")
+            } else {
+                Image("MenuBarIcon")
+                    .renderingMode(.template)
+            }
         }
         .menuBarExtraStyle(.menu)
-    }
-
-    private var menuBarIcon: String {
-        switch manager.status {
-        case .running: return "terminal.fill"
-        case .starting: return "terminal"
-        case .stopped: return "terminal"
-        case .error: return "exclamationmark.triangle"
-        }
     }
 }

@@ -37,6 +37,9 @@ This downloads and runs the `.pkg` installer. Users can also download the `.pkg`
 - [ ] Create `install.sh` — detect arch, download `.pkg` from GitHub Releases or marmy.ai, run installer
 - [ ] Host `.pkg` on GitHub Releases (tagged per version)
 
+### Push notification delivery:
+- [ ] Replace direct APNs with a relay (Expo Push, FCM, or custom server) — current approach requires the `.p8` signing key on every user's machine, which is a non-starter for distribution
+
 ### MacMarmy app fixes:
 - [ ] Fix process race condition in AgentManager (H-7)
 - [ ] Detect and display Tailscale IP alongside LAN IP (H-12)
@@ -86,6 +89,7 @@ This downloads and runs the `.pkg` installer. Users can also download the `.pkg`
 - [ ] Unregister push tokens on disconnect (M-13)
 - [ ] Add offline detection with NetInfo (M-15)
 - [ ] Add accessibility labels to custom keyboard (M-18)
+- [ ] Keep keyboard open when switching between MSG and KB modes
 
 ## Deferred (Post-Launch)
 - [ ] Android support
