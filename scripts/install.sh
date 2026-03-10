@@ -11,8 +11,8 @@ set -euo pipefail
 #   4. Open MacMarmy
 
 APP_NAME="MacMarmy"
-REPO="mharajli/marmy"
-PKG_NAME="MacMarmy.pkg"
+REPO="harajlim/marmy"
+PKG_NAME="MacMarmy.*\\.pkg"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -82,7 +82,7 @@ info "Downloading $APP_NAME..."
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-PKG_PATH="$TMPDIR/$PKG_NAME"
+PKG_PATH="$TMPDIR/MacMarmy.pkg"
 curl -fSL --progress-bar "$DOWNLOAD_URL" -o "$PKG_PATH"
 info "Downloaded $(du -h "$PKG_PATH" | cut -f1)"
 
