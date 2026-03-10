@@ -241,42 +241,39 @@ export default function SessionsScreen() {
               autoFocus
             />
 
-            {/* Claude-only options */}
-            {sessionMode === "claude" && (
-              <>
-                {/* Working directory */}
-                <TouchableOpacity
-                  style={styles.dirSelector}
-                  onPress={() => setShowDirPicker(true)}
-                >
-                  <Text style={styles.dirLabel}>Working directory</Text>
-                  <Text
-                    style={[
-                      styles.dirValue,
-                      !selectedDir && styles.dirValuePlaceholder,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {selectedDir ? shortPath(selectedDir) : "No directory selected"}
-                  </Text>
-                </TouchableOpacity>
+            {/* Working directory */}
+            <TouchableOpacity
+              style={styles.dirSelector}
+              onPress={() => setShowDirPicker(true)}
+            >
+              <Text style={styles.dirLabel}>Working directory</Text>
+              <Text
+                style={[
+                  styles.dirValue,
+                  !selectedDir && styles.dirValuePlaceholder,
+                ]}
+                numberOfLines={1}
+              >
+                {selectedDir ? shortPath(selectedDir) : "No directory selected"}
+              </Text>
+            </TouchableOpacity>
 
-                {/* Skip permissions toggle */}
-                <View style={styles.toggleRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.toggleLabel}>Skip permissions</Text>
-                    <Text style={styles.toggleSubtext}>
-                      --dangerously-skip-permissions
-                    </Text>
-                  </View>
-                  <Switch
-                    value={skipPermissions}
-                    onValueChange={setSkipPermissions}
-                    trackColor={{ false: "#2a2a3e", true: "#7c3aed" }}
-                    thumbColor={skipPermissions ? "#fff" : "#888"}
-                  />
+            {/* Claude-only: skip permissions toggle */}
+            {sessionMode === "claude" && (
+              <View style={styles.toggleRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleLabel}>Skip permissions</Text>
+                  <Text style={styles.toggleSubtext}>
+                    --dangerously-skip-permissions
+                  </Text>
                 </View>
-              </>
+                <Switch
+                  value={skipPermissions}
+                  onValueChange={setSkipPermissions}
+                  trackColor={{ false: "#2a2a3e", true: "#7c3aed" }}
+                  thumbColor={skipPermissions ? "#fff" : "#888"}
+                />
+              </View>
             )}
 
             {/* Buttons */}

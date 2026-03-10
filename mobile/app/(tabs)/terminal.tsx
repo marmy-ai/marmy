@@ -23,6 +23,7 @@ import VoiceCallBar from "../../src/components/VoiceCallBar";
 
 const CHAT_SHORTCUT_KEYS = [
   { label: "Ctrl-C", value: "\x03" },
+  { label: "\u23CE", value: "\n" },
   { label: "Tab", value: "\t" },
   { label: "\u2191", value: "\x1b[A" },
   { label: "\u2193", value: "\x1b[B" },
@@ -30,8 +31,8 @@ const CHAT_SHORTCUT_KEYS = [
   { label: "n", value: "n\n" },
 ];
 
-// KB mode: 2-row fixed grid — arrows grouped as d-pad on the right
-const KB_GRID_ROW1 = [
+// KB mode page 1: 2-row fixed grid — arrows grouped as d-pad on the right
+const KB_P1_ROW1 = [
   { label: "Esc", value: "\x1b" },
   { label: "Tab", value: "\t" },
   { label: "Ctrl", value: "__CTRL__" },
@@ -39,12 +40,18 @@ const KB_GRID_ROW1 = [
   { label: "\u2191", value: "\x1b[A" },
 ];
 
-const KB_GRID_ROW2 = [
-  { label: "CR", value: "\n" },
+const KB_P1_ROW2 = [
+  { label: "\u23CE", value: "\n" },
   { label: "MSG", value: "__MSG__" },
   { label: "\u2190", value: "\x1b[D" },
   { label: "\u2192", value: "\x1b[C" },
   { label: "\u2193", value: "\x1b[B" },
+];
+
+// KB mode page 2: extra keys accessible by swiping
+const KB_P2_ROW1 = [
+  { label: "CR", value: "\n" },
+  { label: "S-Tab", value: "\x1b[Z" },
 ];
 
 const DEFAULT_COLS = 60;
@@ -202,6 +209,8 @@ export default function TerminalScreen() {
   const [inputText, setInputText] = useState("");
   const [isKeyboardMode, setIsKeyboardMode] = useState(false);
   const [ctrlActive, setCtrlActive] = useState(false);
+  const [kbPage, setKbPage] = useState(0);
+  const kbSwipeRef = useRef({ x: 0, y: 0 });
   const [inputHeight, setInputHeight] = useState(40);
   const scrollRef = useRef<ScrollView>(null);
   const isScrolledUp = useRef(false);
@@ -541,36 +550,70 @@ export default function TerminalScreen() {
 
       {/* Shortcut bar */}
       {isKeyboardMode ? (
-        <View style={styles.kbGrid}>
-          <View style={styles.kbRow}>
-            {KB_GRID_ROW1.map((key) => (
-              <TouchableOpacity
-                key={key.label}
-                style={[
-                  styles.kbBtn,
-                  key.value === "__CTRL__" && ctrlActive && styles.kbBtnActive,
-                ]}
-                onPress={() => handleShortcut(key.value)}
-              >
-                <Text style={[
-                  styles.kbBtnText,
-                  key.value === "__CTRL__" && ctrlActive && styles.kbBtnTextActive,
-                ]}>
-                  {key.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.kbRow}>
-            {KB_GRID_ROW2.map((key) => (
-              <TouchableOpacity
-                key={key.label}
-                style={styles.kbBtn}
-                onPress={() => handleShortcut(key.value)}
-              >
-                <Text style={styles.kbBtnText}>{key.label}</Text>
-              </TouchableOpacity>
-            ))}
+        <View
+          style={styles.kbGrid}
+          onTouchStart={(e) => {
+            kbSwipeRef.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+          }}
+          onTouchEnd={(e) => {
+            const dx = e.nativeEvent.pageX - kbSwipeRef.current.x;
+            const dy = e.nativeEvent.pageY - kbSwipeRef.current.y;
+            if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+              if (dx < 0 && kbPage === 0) setKbPage(1);
+              else if (dx > 0 && kbPage === 1) setKbPage(0);
+            }
+          }}
+        >
+          {kbPage === 0 ? (
+            <>
+              <View style={styles.kbRow}>
+                {KB_P1_ROW1.map((key) => (
+                  <TouchableOpacity
+                    key={key.label}
+                    style={[
+                      styles.kbBtn,
+                      key.value === "__CTRL__" && ctrlActive && styles.kbBtnActive,
+                    ]}
+                    onPress={() => handleShortcut(key.value)}
+                  >
+                    <Text style={[
+                      styles.kbBtnText,
+                      key.value === "__CTRL__" && ctrlActive && styles.kbBtnTextActive,
+                    ]}>
+                      {key.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.kbRow}>
+                {KB_P1_ROW2.map((key) => (
+                  <TouchableOpacity
+                    key={key.label}
+                    style={styles.kbBtn}
+                    onPress={() => handleShortcut(key.value)}
+                  >
+                    <Text style={styles.kbBtnText}>{key.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          ) : (
+            <View style={styles.kbRow}>
+              {KB_P2_ROW1.map((key) => (
+                <TouchableOpacity
+                  key={key.label}
+                  style={styles.kbBtn}
+                  onPress={() => handleShortcut(key.value)}
+                >
+                  <Text style={styles.kbBtnText}>{key.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {/* Page indicator */}
+          <View style={styles.kbPageDots}>
+            <View style={[styles.kbDot, kbPage === 0 && styles.kbDotActive]} />
+            <View style={[styles.kbDot, kbPage === 1 && styles.kbDotActive]} />
           </View>
         </View>
       ) : (
@@ -836,6 +879,22 @@ const styles = StyleSheet.create({
   },
   kbBtnTextActive: {
     color: "#fff",
+  },
+  kbPageDots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 6,
+    paddingTop: 4,
+    paddingBottom: 2,
+  },
+  kbDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#2a2a3e",
+  },
+  kbDotActive: {
+    backgroundColor: "#7c3aed",
   },
   toggleTrack: {
     width: 36,

@@ -22,7 +22,7 @@ const GEMINI_WS_URL =
 function buildSystemPrompt(sessionName: string): string {
   return `You are Marmy, an expert communicator acting as a middle man between a manager and their engineer. The manager is talking to you by voice — they're hands-free and can't type. The engineer is an AI coding agent called Claude Code, working on session "${sessionName}".
 
-Your job is simple: when the manager gives an instruction, relay it to the engineer using your write_to_shell tool. When the manager has a question, check the conversation history and answer if you can — otherwise, ask the engineer.
+Your job is simple: when the manager gives an instruction, relay it to the engineer using your send_instruction tool. When the manager has a question, check the conversation history and answer if you can — otherwise, ask the engineer.
 
 You receive periodic updates showing what the engineer is doing. If something needs the manager's attention — an error, a finished task, a question from the engineer — speak up right away.
 
@@ -50,15 +50,15 @@ function buildSetupMessage(sessionName: string) {
         {
           functionDeclarations: [
             {
-              name: "write_to_shell",
+              name: "send_instruction",
               description:
-                "Send text input to the active terminal session. Appends a newline to submit the command. Only call this when the user has confirmed or clearly asked you to execute something.",
+                "Relay an instruction to the engineer. Only call this when the user has confirmed or clearly asked you to send something.",
               parameters: {
                 type: "object",
                 properties: {
                   text: {
                     type: "string",
-                    description: "The text/command to type into the terminal",
+                    description: "The instruction to send to the engineer",
                   },
                 },
                 required: ["text"],
@@ -138,6 +138,7 @@ export class VoiceSession {
   private contextInterval: ReturnType<typeof setInterval> | null = null;
   private lastPaneContent = "";
   private modelSpeaking = false;
+  private userSpeaking = false;
 
   // State
   private active = false;
@@ -196,19 +197,27 @@ export class VoiceSession {
     return this.active;
   }
 
-  /** Call when user unmutes */
-  pushToTalkStart() {
+  /** Call when user starts talking */
+  async pushToTalkStart() {
     if (!this.ws || !this.setupComplete) return;
+    this.userSpeaking = true;
+
+    // Flush any buffered model audio by resetting the native audio engine
+    tearDown();
+    await initialize();
+    bypassVoiceProcessing(false);
+
     toggleRecording(true);
     this.ws.send(JSON.stringify({
       realtimeInput: { activityStart: {} },
     }));
-    console.log("[Voice] Mic unmuted");
+    console.log("[Voice] Talk started (player flushed)");
   }
 
   /** Call when user mutes */
   pushToTalkEnd() {
     if (!this.ws || !this.setupComplete) return;
+    this.userSpeaking = false;
     this.ws.send(JSON.stringify({
       realtimeInput: { activityEnd: {} },
     }));
@@ -340,7 +349,8 @@ export class VoiceSession {
       })
     );
 
-    bypassVoiceProcessing(true);
+    // Keep voice processing (AEC) active so speaker output doesn't loop back through mic
+    bypassVoiceProcessing(false);
 
     // Subscribe to mic data events — delivers 16kHz 16-bit mono PCM as Uint8Array
     this.micSubscription = addExpoTwoWayAudioEventListener(
@@ -379,6 +389,8 @@ export class VoiceSession {
   // --- Audio Playback ---
 
   private handleAudioData(base64Pcm: string) {
+    // Drop model audio while the user is speaking so the assistant shuts up immediately
+    if (this.userSpeaking) return;
     // Gemini sends 24kHz 16-bit mono PCM, expo-two-way-audio plays 16kHz
     const raw24k = base64ToBytes(base64Pcm);
     const resampled16k = resample24kTo16k(raw24k);
@@ -414,7 +426,7 @@ export class VoiceSession {
                 role: "user",
                 parts: [
                   {
-                    text: `--- TERMINAL UPDATE ---\n${trimmed}\n--- END TERMINAL ---`,
+                    text: `--- ENGINEER UPDATE ---\n${trimmed}\n--- END UPDATE ---`,
                   },
                 ],
               },
@@ -430,7 +442,7 @@ export class VoiceSession {
 
   private handleToolCall(toolCall: any) {
     for (const fn of toolCall.functionCalls) {
-      if (fn.name === "write_to_shell") {
+      if (fn.name === "send_instruction") {
         this.config.api
           .sendInput(this.config.paneId, fn.args.text + "\n")
           .catch(() => {});

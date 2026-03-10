@@ -104,12 +104,12 @@ export default function VoiceCallBar({ state, onEnd, onMicOn, onMicOff }: VoiceC
             style={[styles.dot, { backgroundColor: color, opacity: pulseAnim }]}
           />
           <Text style={[styles.statusText, { color }]}>
-            {micActive ? "Recording..." : text}
+            {micActive ? "Listening..." : text}
           </Text>
         </View>
       </View>
 
-      {/* Mute/Unmute toggle */}
+      {/* Talk / Done toggle */}
       <TouchableOpacity
         style={[
           styles.micButton,
@@ -131,7 +131,7 @@ export default function VoiceCallBar({ state, onEnd, onMicOn, onMicOff }: VoiceC
         }}
       >
         <Text style={[styles.micText, micActive && styles.micTextActive]}>
-          {micActive ? "Mute" : "Unmute"}
+          {micActive ? "Done" : "Talk"}
         </Text>
       </TouchableOpacity>
 
