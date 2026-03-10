@@ -332,6 +332,7 @@ After=default.target
 
 [Service]
 Type=simple
+KillMode=process
 ExecStart=/path/to/marmy-agent serve
 Restart=on-failure
 RestartSec=5
@@ -360,6 +361,7 @@ After=network.target
 
 [Service]
 Type=simple
+KillMode=process
 User=your-username
 ExecStart=/home/your-username/.local/bin/marmy-agent serve
 Restart=always
