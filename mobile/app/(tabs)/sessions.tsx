@@ -241,39 +241,42 @@ export default function SessionsScreen() {
               autoFocus
             />
 
-            {/* Working directory */}
-            <TouchableOpacity
-              style={styles.dirSelector}
-              onPress={() => setShowDirPicker(true)}
-            >
-              <Text style={styles.dirLabel}>Working directory</Text>
-              <Text
-                style={[
-                  styles.dirValue,
-                  !selectedDir && styles.dirValuePlaceholder,
-                ]}
-                numberOfLines={1}
-              >
-                {selectedDir ? shortPath(selectedDir) : "No directory selected"}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Claude-only: skip permissions toggle */}
+            {/* Claude-only options */}
             {sessionMode === "claude" && (
-              <View style={styles.toggleRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.toggleLabel}>Skip permissions</Text>
-                  <Text style={styles.toggleSubtext}>
-                    --dangerously-skip-permissions
+              <>
+                {/* Working directory */}
+                <TouchableOpacity
+                  style={styles.dirSelector}
+                  onPress={() => setShowDirPicker(true)}
+                >
+                  <Text style={styles.dirLabel}>Working directory</Text>
+                  <Text
+                    style={[
+                      styles.dirValue,
+                      !selectedDir && styles.dirValuePlaceholder,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {selectedDir ? shortPath(selectedDir) : "No directory selected"}
                   </Text>
+                </TouchableOpacity>
+
+                {/* Skip permissions toggle */}
+                <View style={styles.toggleRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.toggleLabel}>Skip permissions</Text>
+                    <Text style={styles.toggleSubtext}>
+                      --dangerously-skip-permissions
+                    </Text>
+                  </View>
+                  <Switch
+                    value={skipPermissions}
+                    onValueChange={setSkipPermissions}
+                    trackColor={{ false: "#2a2a3e", true: "#7c3aed" }}
+                    thumbColor={skipPermissions ? "#fff" : "#888"}
+                  />
                 </View>
-                <Switch
-                  value={skipPermissions}
-                  onValueChange={setSkipPermissions}
-                  trackColor={{ false: "#2a2a3e", true: "#7c3aed" }}
-                  thumbColor={skipPermissions ? "#fff" : "#888"}
-                />
-              </View>
+              </>
             )}
 
             {/* Buttons */}

@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A10000060000000000000001"
-               BuildableName = "MarmyMenuBar.app"
+               BuildableName = "MacMarmy.app"
                BlueprintName = "MarmyMenuBar"
                ReferencedContainer = "container:MarmyMenuBar.xcodeproj">
             </BuildableReference>
@@ -45,7 +45,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A10000060000000000000001"
-            BuildableName = "MarmyMenuBar.app"
+            BuildableName = "MacMarmy.app"
             BlueprintName = "MarmyMenuBar"
             ReferencedContainer = "container:MarmyMenuBar.xcodeproj">
          </BuildableReference>
@@ -62,7 +62,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A10000060000000000000001"
-            BuildableName = "MarmyMenuBar.app"
+            BuildableName = "MacMarmy.app"
             BlueprintName = "MarmyMenuBar"
             ReferencedContainer = "container:MarmyMenuBar.xcodeproj">
          </BuildableReference>

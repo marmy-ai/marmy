@@ -33,6 +33,7 @@ final class AgentManager: ObservableObject {
 
     private var process: Process?
     private var healthTimer: Timer?
+    private var isStopping = false
 
     init() {
         reloadConfig()
@@ -48,6 +49,7 @@ final class AgentManager: ObservableObject {
     func start() {
         guard status == .stopped || isError else { return }
         status = .starting
+        isStopping = false
 
         let agentPath = agentBinaryPath()
         guard FileManager.default.fileExists(atPath: agentPath) else {
@@ -65,7 +67,7 @@ final class AgentManager: ObservableObject {
             kill.arguments = ["-f", "marmy-agent serve"]
             try? kill.run()
             kill.waitUntilExit()
-            Thread.sleep(forTimeInterval: 0.5)
+            Thread.sleep(forTimeInterval: 1.0)
 
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: path)
@@ -84,7 +86,9 @@ final class AgentManager: ObservableObject {
                 Task { @MainActor [weak self] in
                     guard let self = self else { return }
                     self.stopHealthCheck()
-                    if p.terminationStatus != 0 && self.status != .stopped {
+                    if self.isStopping {
+                        self.status = .stopped
+                    } else if p.terminationStatus != 0 {
                         self.status = .error("Exit code \(p.terminationStatus)")
                     } else {
                         self.status = .stopped
@@ -112,6 +116,7 @@ final class AgentManager: ObservableObject {
             status = .stopped
             return
         }
+        isStopping = true
         status = .stopped
         stopHealthCheck()
         proc.terminate()
