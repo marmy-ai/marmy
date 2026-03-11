@@ -67,7 +67,15 @@ This downloads and runs the `.pkg` installer. Users can also download the `.pkg`
 - [x] Switch terminal from 500ms REST polling to WebSocket (H-1)
 - [ ] Bump version to 1.0.0 (M-29)
 
-## Phase 5: README + Docs
+## Phase 5: README + Docs + Open-Source Hygiene
+- [ ] Add LICENSE file (MIT)
+- [ ] Remove dead `api/` directory (replaced by Rust agent)
+- [ ] Remove `api/.env` from git history (`git filter-repo` or BFG)
+- [ ] Add `.env` to `.gitignore`
+- [ ] Add CODE_OF_CONDUCT.md
+- [ ] Add GitHub Actions CI (cargo build + clippy, TypeScript type-check)
+- [ ] Add issue and PR templates (`.github/`)
+- [ ] Add linting/formatting config (rustfmt, eslint/prettier)
 - [ ] Rewrite README for MacMarmy distribution model (C-7, C-8)
 - [ ] Add Tailscale setup instructions to README
 - [ ] Move dev setup to CONTRIBUTING.md
