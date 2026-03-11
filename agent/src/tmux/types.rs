@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 /// Unique tmux identifiers use prefix conventions: $session, @window, %pane.
@@ -43,6 +45,39 @@ pub struct TmuxTopology {
     pub panes: Vec<TmuxPane>,
 }
 
+/// A session enriched with ephemeral state (e.g. unread flag).
+#[derive(Debug, Clone, Serialize)]
+pub struct EnrichedSession {
+    #[serde(flatten)]
+    pub session: TmuxSession,
+    pub unread: bool,
+}
+
+/// Enriched topology sent over the wire (REST + WebSocket).
+#[derive(Debug, Clone, Serialize)]
+pub struct EnrichedTopology {
+    pub sessions: Vec<EnrichedSession>,
+    pub windows: Vec<TmuxWindow>,
+    pub panes: Vec<TmuxPane>,
+}
+
+impl EnrichedTopology {
+    pub fn from(topology: &TmuxTopology, unread_set: &HashSet<String>) -> Self {
+        Self {
+            sessions: topology
+                .sessions
+                .iter()
+                .map(|s| EnrichedSession {
+                    unread: unread_set.contains(&s.name),
+                    session: s.clone(),
+                })
+                .collect(),
+            windows: topology.windows.clone(),
+            panes: topology.panes.clone(),
+        }
+    }
+}
+
 /// Messages sent from WebSocket clients to the agent.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
@@ -64,7 +99,7 @@ pub enum ClientMessage {
 #[serde(tag = "type")]
 pub enum ServerMessage {
     #[serde(rename = "topology")]
-    Topology(TmuxTopology),
+    Topology(EnrichedTopology),
     #[serde(rename = "pane_output")]
     PaneOutput { pane_id: String, data: String },
     #[serde(rename = "pong")]

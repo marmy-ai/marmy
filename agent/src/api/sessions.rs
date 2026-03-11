@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::state::AppState;
-use crate::tmux::TmuxTopology;
+use crate::tmux::types::EnrichedTopology;
 
 #[derive(Deserialize)]
 pub struct CreateSessionRequest {
@@ -25,10 +25,10 @@ pub struct CreateSessionResponse {
     pub session_name: String,
 }
 
-/// GET /api/sessions — full topology with sessions, windows, and panes.
+/// GET /api/sessions — full topology with sessions, windows, and panes (enriched with unread state).
 pub async fn list_sessions(
     State(state): State<AppState>,
-) -> Result<Json<TmuxTopology>, (StatusCode, String)> {
+) -> Result<Json<EnrichedTopology>, (StatusCode, String)> {
     state
         .refresh_topology()
         .await
@@ -39,9 +39,12 @@ pub async fn list_sessions(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    info!(sessions = topology.sessions.len(), windows = topology.windows.len(), panes = topology.panes.len(), "GET /api/sessions");
+    let unread = state.get_unread_sessions().await;
+    let enriched = EnrichedTopology::from(&topology, &unread);
 
-    Ok(Json(topology))
+    info!(sessions = enriched.sessions.len(), windows = enriched.windows.len(), panes = enriched.panes.len(), "GET /api/sessions");
+
+    Ok(Json(enriched))
 }
 
 /// POST /api/sessions — create a new tmux session.
@@ -165,6 +168,16 @@ pub async fn recent_dirs(
     Ok(Json(dirs))
 }
 
+/// POST /api/sessions/:name/read — mark a session as read.
+pub async fn mark_session_read(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> StatusCode {
+    state.mark_session_read(&name).await;
+    info!("marked session '{}' as read", name);
+    StatusCode::OK
+}
+
 /// DELETE /api/sessions/:name — kill a tmux session.
 pub async fn delete_session(
     State(state): State<AppState>,
@@ -175,6 +188,9 @@ pub async fn delete_session(
         .kill_session(&name)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Clean up unread state for the deleted session
+    state.mark_session_read(&name).await;
 
     Ok(StatusCode::NO_CONTENT)
 }

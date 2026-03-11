@@ -106,6 +106,10 @@ export default function SessionsScreen() {
     if (!topology) return;
     const pane = topology.panes.find((p) => p.session_id === session.id);
     if (pane) {
+      // Dismiss unread indicator (fire-and-forget)
+      if (session.unread && api) {
+        api.markSessionRead(session.name).catch(() => {});
+      }
       setActivePane(pane.id);
       setActiveSession(session.id);
       setActiveSessionName(session.name);
@@ -302,22 +306,27 @@ export default function SessionsScreen() {
 
   const renderSessionPill = (session: TmuxSession, isManager = false) => {
     const path = getSessionPath(session);
+    const isUnread = !!session.unread;
     return (
       <TouchableOpacity
         key={session.id}
         style={[
           styles.sessionPill,
           isManager && styles.managerPill,
+          isUnread && styles.unreadPill,
         ]}
         onPress={() => handleSessionPress(session)}
         onLongPress={() => handleDeleteSession(session.name)}
       >
-        <Text
-          style={[styles.sessionName, isManager && styles.managerName]}
-          numberOfLines={1}
-        >
-          {session.name}
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+          {isUnread && <View style={styles.unreadDot} />}
+          <Text
+            style={[styles.sessionName, isManager && styles.managerName]}
+            numberOfLines={1}
+          >
+            {session.name}
+          </Text>
+        </View>
         {path ? (
           <Text style={styles.sessionPath} numberOfLines={1}>
             {shortPath(path)}
@@ -418,6 +427,16 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 13,
     marginLeft: 12,
+  },
+  unreadPill: {
+    borderColor: "#7c3aed",
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#7c3aed",
+    marginRight: 8,
   },
 
   // Manager-specific

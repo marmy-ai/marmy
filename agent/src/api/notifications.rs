@@ -84,6 +84,11 @@ pub async fn send_notification(
         None => ("Session".to_string(), "Task complete".to_string()),
     };
 
+    // Mark session as unread (reliable fallback — works without APNs)
+    if !session.is_empty() && session != "Session" {
+        state.mark_session_unread(session.clone()).await;
+    }
+
     state.sender.send(&tokens, &session, &msg, "", &session, "task_complete").await;
     info!("sent push notification for session '{}'", session);
     Ok(StatusCode::OK)
