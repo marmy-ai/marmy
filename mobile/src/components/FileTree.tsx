@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
+import { theme } from "../theme";
 import type { DirEntry } from "../types";
 
 interface FileTreeProps {
@@ -95,7 +96,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#1a1a2e",
   },
   dirIcon: {
-    color: "#7c3aed",
+    color: theme.primary,
     fontSize: 14,
     fontWeight: "700",
     width: 24,
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
     width: 24,
     fontFamily: "monospace",
   },
-  dirName: { color: "#7c3aed", fontSize: 15, flex: 1 },
+  dirName: { color: theme.primary, fontSize: 15, flex: 1 },
   fileName: { color: "#d0d0d0", fontSize: 15, flex: 1 },
   fileSize: { color: "#555", fontSize: 12, fontFamily: "monospace" },
 });

@@ -1,5 +1,6 @@
 import React, { useRef, useCallback, useEffect } from "react";
 import { View, StyleSheet } from "react-native";
+import { theme } from "../theme";
 import { WebView } from "react-native-webview";
 
 interface TerminalViewProps {
@@ -44,8 +45,8 @@ const TERMINAL_HTML = `<!DOCTYPE html>
       theme: {
         background: '#0f0f1a',
         foreground: '#e0e0e0',
-        cursor: '#7c3aed',
-        selectionBackground: 'rgba(124, 58, 237, 0.3)',
+        cursor: '${theme.primary}',
+        selectionBackground: 'rgba(232, 97, 60, 0.3)',
         black: '#1a1a2e',
         red: '#ff6b6b',
         green: '#51cf66',

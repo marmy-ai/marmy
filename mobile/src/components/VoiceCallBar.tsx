@@ -9,6 +9,7 @@ import {
   PanResponder,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import { theme } from "../theme";
 import type { VoiceState } from "../services/voiceSession";
 
 interface VoiceCallBarProps {
@@ -25,7 +26,7 @@ const STATE_CONFIG: Record<VoiceState, { color: string; text: string }> = {
   idle: { color: "#888", text: "Idle" },
   connecting: { color: "#888", text: "Connecting..." },
   listening: { color: "#4ade80", text: "Ready" },
-  model_speaking: { color: "#7c3aed", text: "Speaking..." },
+  model_speaking: { color: theme.primary, text: "Speaking..." },
   error: { color: "#ef4444", text: "Error" },
 };
 

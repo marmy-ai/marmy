@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,16 +8,17 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { useConnectionStore } from "../../src/stores/connectionStore";
-import FileTree from "../../src/components/FileTree";
-import CodeViewer from "../../src/components/CodeViewer";
-import ImageViewer, { isImageFile } from "../../src/components/ImageViewer";
-import MarkdownViewer from "../../src/components/MarkdownViewer";
-import PdfViewer from "../../src/components/PdfViewer";
-import type { DirEntry, SessionRoot, TmuxSession } from "../../src/types";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useConnectionStore } from "../src/stores/connectionStore";
+import { theme } from "../src/theme";
+import FileTree from "../src/components/FileTree";
+import CodeViewer from "../src/components/CodeViewer";
+import ImageViewer, { isImageFile } from "../src/components/ImageViewer";
+import MarkdownViewer from "../src/components/MarkdownViewer";
+import PdfViewer from "../src/components/PdfViewer";
+import type { DirEntry, SessionRoot } from "../src/types";
 
 type Phase =
-  | { kind: "sessions" }
   | { kind: "roots"; sessionId: string; sessionName: string }
   | { kind: "browse"; sessionId: string }
   | { kind: "file"; path: string; content: string }
@@ -26,12 +27,36 @@ type Phase =
   | { kind: "pdf"; path: string };
 
 export default function FilesScreen() {
-  const { api, connected, activeMachine, topology } = useConnectionStore();
-  const [phase, setPhase] = useState<Phase>({ kind: "sessions" });
+  const { sessionId, sessionName } = useLocalSearchParams<{ sessionId: string; sessionName: string }>();
+  const router = useRouter();
+  const { api, connected, activeMachine } = useConnectionStore();
+  const [phase, setPhase] = useState<Phase>({ kind: "roots", sessionId: sessionId || "", sessionName: sessionName || "" });
   const [roots, setRoots] = useState<SessionRoot[]>([]);
   const [currentPath, setCurrentPath] = useState("");
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Auto-load session roots on mount
+  useEffect(() => {
+    if (!api || !sessionId) return;
+    setLoading(true);
+    api.getSessionRoots(sessionId).then(async (sessionRoots) => {
+      if (sessionRoots.length === 1) {
+        const listing = await api.listDir(sessionRoots[0].path);
+        setEntries(listing.entries);
+        setCurrentPath(listing.path);
+        setRoots(sessionRoots);
+        setPhase({ kind: "browse", sessionId });
+      } else {
+        setRoots(sessionRoots);
+        setPhase({ kind: "roots", sessionId, sessionName: sessionName || "" });
+      }
+    }).catch((e: any) => {
+      Alert.alert("Error", e.message);
+    }).finally(() => {
+      setLoading(false);
+    });
+  }, [api, sessionId]);
 
   const loadDirectory = useCallback(
     async (path: string) => {
@@ -41,32 +66,6 @@ export default function FilesScreen() {
         const listing = await api.listDir(path);
         setEntries(listing.entries);
         setCurrentPath(listing.path);
-      } catch (e: any) {
-        Alert.alert("Error", e.message);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [api]
-  );
-
-  const selectSession = useCallback(
-    async (session: TmuxSession) => {
-      if (!api) return;
-      setLoading(true);
-      try {
-        const sessionRoots = await api.getSessionRoots(session.id);
-        if (sessionRoots.length === 1) {
-          // Single root — skip root picker, go straight to browsing
-          const listing = await api.listDir(sessionRoots[0].path);
-          setEntries(listing.entries);
-          setCurrentPath(listing.path);
-          setRoots(sessionRoots);
-          setPhase({ kind: "browse", sessionId: session.id });
-        } else {
-          setRoots(sessionRoots);
-          setPhase({ kind: "roots", sessionId: session.id, sessionName: session.name });
-        }
       } catch (e: any) {
         Alert.alert("Error", e.message);
       } finally {
@@ -133,13 +132,13 @@ export default function FilesScreen() {
   const goBack = useCallback(() => {
     switch (phase.kind) {
       case "roots":
-        setPhase({ kind: "sessions" });
+        router.back();
         break;
       case "browse":
         if (roots.length > 1) {
-          setPhase({ kind: "roots", sessionId: phase.sessionId, sessionName: "" });
+          setPhase({ kind: "roots", sessionId: phase.sessionId, sessionName: sessionName || "" });
         } else {
-          setPhase({ kind: "sessions" });
+          router.back();
         }
         break;
       case "file":
@@ -147,10 +146,10 @@ export default function FilesScreen() {
       case "markdown":
       case "pdf":
         // Go back to browse — entries/currentPath are still in state
-        setPhase({ kind: "browse", sessionId: "" });
+        setPhase({ kind: "browse", sessionId: sessionId || "" });
         break;
     }
-  }, [phase, roots.length]);
+  }, [phase, roots.length, router, sessionId, sessionName]);
 
   if (!connected || !activeMachine) {
     return (
@@ -163,7 +162,7 @@ export default function FilesScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#7c3aed" />
+        <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
   }
@@ -233,7 +232,7 @@ export default function FilesScreen() {
     return (
       <View style={styles.container}>
         <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <Text style={styles.backBtnText}>Back to sessions</Text>
+          <Text style={styles.backBtnText}>Back</Text>
         </TouchableOpacity>
         <FileTree
           entries={entries}
@@ -246,79 +245,35 @@ export default function FilesScreen() {
   }
 
   // Phase: Root picker (multiple working directories)
-  if (phase.kind === "roots") {
-    return (
-      <View style={styles.container}>
-        <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <Text style={styles.backBtnText}>Back to sessions</Text>
-        </TouchableOpacity>
-        <View style={styles.listHeader}>
-          <Text style={styles.listTitle}>Working Directories</Text>
-        </View>
-        <FlatList
-          data={roots}
-          keyExtractor={(item) => item.pane_id}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.entry}
-              onPress={() => selectRoot(item)}
-            >
-              <View style={styles.entryContent}>
-                <Text style={styles.entryTitle} numberOfLines={1}>
-                  {item.path}
-                </Text>
-                <Text style={styles.entrySubtitle} numberOfLines={1}>
-                  {item.window_name} — {item.current_command}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
-          ListEmptyComponent={
-            <View style={styles.center}>
-              <Text style={styles.emptyText}>No working directories found</Text>
-            </View>
-          }
-        />
-      </View>
-    );
-  }
-
-  // Phase: Session picker (default)
-  const sessions = topology?.sessions ?? [];
-
   return (
     <View style={styles.container}>
+      <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+        <Text style={styles.backBtnText}>Back</Text>
+      </TouchableOpacity>
       <View style={styles.listHeader}>
-        <Text style={styles.listTitle}>Select Session</Text>
+        <Text style={styles.listTitle}>Working Directories</Text>
       </View>
       <FlatList
-        data={sessions}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => {
-          const windowCount = topology?.windows.filter(
-            (w) => w.session_id === item.id
-          ).length ?? 0;
-          const paneCount = topology?.panes.filter(
-            (p) => p.session_id === item.id
-          ).length ?? 0;
-          return (
-            <TouchableOpacity
-              style={styles.entry}
-              onPress={() => selectSession(item)}
-            >
-              <View style={styles.entryContent}>
-                <Text style={styles.entryTitle}>{item.name}</Text>
-                <Text style={styles.entrySubtitle}>
-                  {windowCount} window{windowCount !== 1 ? "s" : ""},{" "}
-                  {paneCount} pane{paneCount !== 1 ? "s" : ""}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          );
-        }}
+        data={roots}
+        keyExtractor={(item) => item.pane_id}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.entry}
+            onPress={() => selectRoot(item)}
+          >
+            <View style={styles.entryContent}>
+              <Text style={styles.entryTitle} numberOfLines={1}>
+                {item.path}
+              </Text>
+              <Text style={styles.entrySubtitle} numberOfLines={1}>
+                {item.window_name} — {item.current_command}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
         ListEmptyComponent={
           <View style={styles.center}>
-            <Text style={styles.emptyText}>No sessions found</Text>
+            <Text style={styles.emptyText}>No working directories found</Text>
           </View>
         }
       />
@@ -335,34 +290,34 @@ function isPdfFile(name: string): boolean {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
+  container: { flex: 1, backgroundColor: theme.bgDeep },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#0f0f1a",
+    backgroundColor: theme.bgDeep,
     padding: 32,
   },
-  emptyText: { color: "#888", fontSize: 18 },
+  emptyText: { color: theme.textSecondary, fontSize: 18 },
   backBtn: {
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#2a2a3e",
-    backgroundColor: "#1a1a2e",
+    borderBottomColor: theme.border,
+    backgroundColor: theme.bgCard,
     zIndex: 10,
     minHeight: 48,
     justifyContent: "center",
   },
-  backBtnText: { color: "#7c3aed", fontSize: 15 },
+  backBtnText: { color: theme.primary, fontSize: 15 },
   listHeader: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#2a2a3e",
-    backgroundColor: "#1a1a2e",
+    borderBottomColor: theme.border,
+    backgroundColor: theme.bgCard,
   },
   listTitle: {
-    color: "#e0e0e0",
+    color: theme.textPrimary,
     fontSize: 18,
     fontWeight: "600",
   },
@@ -370,17 +325,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#1a1a2e",
+    borderBottomColor: theme.bgCard,
   },
   entryContent: {
     gap: 4,
   },
   entryTitle: {
-    color: "#e0e0e0",
+    color: theme.textPrimary,
     fontSize: 16,
   },
   entrySubtitle: {
-    color: "#888",
+    color: theme.textSecondary,
     fontSize: 13,
   },
 });

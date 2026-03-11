@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { WebView } from "react-native-webview";
 import { marked } from "marked";
+import { theme } from "../theme";
 
 interface MarkdownViewerProps {
   content: string;
@@ -33,7 +34,7 @@ export default function MarkdownViewer({ content, filename }: MarkdownViewerProp
   }
   h1 { font-size: 1.6em; border-bottom: 1px solid #2a2a3e; padding-bottom: 8px; }
   h2 { font-size: 1.4em; border-bottom: 1px solid #2a2a3e; padding-bottom: 6px; }
-  a { color: #7c3aed; text-decoration: none; }
+  a { color: ${theme.primary}; text-decoration: none; }
   code {
     background: #1a1a2e;
     padding: 2px 6px;
@@ -50,7 +51,7 @@ export default function MarkdownViewer({ content, filename }: MarkdownViewerProp
   }
   pre code { background: none; padding: 0; }
   blockquote {
-    border-left: 3px solid #7c3aed;
+    border-left: 3px solid ${theme.primary};
     margin-left: 0;
     padding-left: 12px;
     color: #999;

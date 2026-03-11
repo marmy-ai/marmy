@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
+import { theme } from "../theme";
 
 interface ImageViewerProps {
   uri: string;
@@ -39,7 +40,7 @@ export default function ImageViewer({ uri, headers, filename }: ImageViewerProps
         {loading && !error && (
           <ActivityIndicator
             size="large"
-            color="#7c3aed"
+            color={theme.primary}
             style={styles.spinner}
           />
         )}

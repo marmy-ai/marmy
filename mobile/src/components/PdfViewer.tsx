@@ -6,6 +6,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { WebView } from "react-native-webview";
+import { theme } from "../theme";
 
 interface PdfViewerProps {
   uri: string;
@@ -29,7 +30,7 @@ export default function PdfViewer({ uri, headers, filename }: PdfViewerProps) {
         {loading && !error && (
           <ActivityIndicator
             size="large"
-            color="#7c3aed"
+            color={theme.primary}
             style={styles.spinner}
           />
         )}
