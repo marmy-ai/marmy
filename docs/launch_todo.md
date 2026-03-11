@@ -58,6 +58,8 @@ This downloads and runs the `.pkg` installer. Users can also download the `.pkg`
 - [ ] Set up deployment — Vercel/Netlify + domain (B-7)
 
 ## Phase 4: iOS App Polish
+- [ ] Add "Files" link from chat view to jump to file browser
+- [ ] Fix worker card sizing — ensure consistent box sizes with odd number of workers
 - [ ] Scope `NSAllowsArbitraryLoads` — use `NSAllowsLocalNetworking` + exception domains (C-5)
 - [ ] Add `privacyPolicyUrl` to app.json + create `PrivacyInfo.xcprivacy` (B-3)
 - [ ] Add API client timeout via AbortController (H-2)
