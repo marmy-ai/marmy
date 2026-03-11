@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
-import { useNavigation } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { Ionicons } from "@expo/vector-icons";
@@ -201,8 +201,9 @@ function renderContent(content: string) {
 
 export default function TerminalScreen() {
   const { api, socket, connected } = useConnectionStore();
-  const { activePaneId, activeSessionName, notifyOnDone, setNotifyOnDone } = useSessionStore();
+  const { activePaneId, activeSessionId, activeSessionName, notifyOnDone, setNotifyOnDone } = useSessionStore();
   const navigation = useNavigation();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
 
@@ -297,6 +298,14 @@ export default function TerminalScreen() {
     voiceSessionRef.current = null;
     setVoiceState("idle");
     setVoiceActive(false);
+  };
+
+  const handleFiles = () => {
+    if (!activeSessionId || !activeSessionName) return;
+    router.push({
+      pathname: "/files",
+      params: { sessionId: activeSessionId, sessionName: activeSessionName },
+    });
   };
 
   // Resize the tmux window whenever pane or cols changes
@@ -477,6 +486,18 @@ export default function TerminalScreen() {
     >
       {/* Toolbar */}
       <View style={styles.toolbar}>
+        <TouchableOpacity
+          style={styles.filesButton}
+          onPress={handleFiles}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name="folder-outline"
+            size={22}
+            color={theme.textSecondary}
+          />
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.callButton}
           onPress={voiceActive ? stopVoice : startVoice}
@@ -779,6 +800,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.primary,
   },
   callButton: {
+    padding: 4,
+  },
+  filesButton: {
     padding: 4,
   },
   settingsPanel: {
