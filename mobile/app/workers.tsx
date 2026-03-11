@@ -10,6 +10,8 @@ import {
   Switch,
   StyleSheet,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useConnectionStore } from "../src/stores/connectionStore";
@@ -237,8 +239,16 @@ export default function WorkersScreen() {
           onCancel={() => setShowDirPicker(false)}
         />
       ) : (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ScrollView
+            contentContainerStyle={styles.modalScrollContent}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>New Session</Text>
 
             <View style={styles.modeToggle}>
@@ -338,7 +348,8 @@ export default function WorkersScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       )}
     </Modal>
   );
@@ -637,14 +648,16 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  modalScrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
-    alignItems: "center",
   },
   modalCard: {
     backgroundColor: theme.bgCard,
     borderRadius: 12,
     padding: 20,
-    width: "85%",
+    marginHorizontal: "7.5%",
     borderWidth: 1,
     borderColor: theme.border,
   },

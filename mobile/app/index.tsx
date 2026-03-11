@@ -3,6 +3,7 @@ import {
   View,
   Text,
   FlatList,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   Modal,
@@ -170,8 +171,16 @@ export default function HomeScreen() {
         animationType="fade"
         onRequestClose={() => setEditMachine(null)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ScrollView
+            contentContainerStyle={styles.modalScrollContent}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Edit Machine</Text>
             <TextInput
               style={styles.input}
@@ -209,7 +218,8 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -288,14 +298,16 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  modalScrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
-    alignItems: "center",
   },
   modalCard: {
     backgroundColor: theme.bgCard,
     borderRadius: 12,
     padding: 20,
-    width: "85%",
+    marginHorizontal: "7.5%",
     borderWidth: 1,
     borderColor: theme.border,
   },

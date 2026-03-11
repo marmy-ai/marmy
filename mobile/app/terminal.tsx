@@ -478,23 +478,16 @@ export default function TerminalScreen() {
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <TouchableOpacity
-          style={[styles.callButton, voiceActive && styles.callButtonActive]}
+          style={styles.callButton}
           onPress={voiceActive ? stopVoice : startVoice}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons
-            name={voiceActive ? "call" : "call"}
-            size={16}
-            color={voiceActive ? "#fff" : theme.bgDeep}
-            style={voiceActive && { transform: [{ rotate: "135deg" }] }}
+            name="call-outline"
+            size={22}
+            color={voiceActive ? theme.error : theme.textSecondary}
+            style={voiceActive ? { transform: [{ rotate: "135deg" }] } : undefined}
           />
-          <Text
-            style={[
-              styles.callButtonText,
-              voiceActive && styles.callButtonTextActive,
-            ]}
-          >
-            {voiceActive ? "End" : "Call"}
-          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -786,24 +779,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.primary,
   },
   callButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: theme.voice,
-  },
-  callButtonActive: {
-    backgroundColor: theme.error,
-  },
-  callButtonText: {
-    color: theme.bgDeep,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  callButtonTextActive: {
-    color: "#fff",
+    padding: 4,
   },
   settingsPanel: {
     borderBottomWidth: 1,
