@@ -18,14 +18,24 @@ import { theme } from "../src/theme";
 import DirPicker from "../src/components/DirPicker";
 import type { TmuxSession } from "../src/types";
 
-/** Small glasses icon drawn with Views */
-function MarmyGlasses({ teal }: { teal?: boolean }) {
+/** Round glasses with eyes — matches the app icon */
+function MarmyGlasses({ teal, size = 16 }: { teal?: boolean; size?: number }) {
   const color = teal ? theme.manager : theme.primary;
+  const eyeSize = size * 0.4;
+  const pupilSize = eyeSize * 0.55;
   return (
     <View style={glassesStyles.row}>
-      <View style={[glassesStyles.lens, { borderColor: color }]} />
-      <View style={[glassesStyles.bridge, { backgroundColor: color }]} />
-      <View style={[glassesStyles.lens, { borderColor: color }]} />
+      <View style={[glassesStyles.lens, { width: size, height: size, borderRadius: size / 2, borderColor: color }]}>
+        <View style={[glassesStyles.eye, { width: eyeSize, height: eyeSize, borderRadius: eyeSize / 2 }]}>
+          <View style={[glassesStyles.pupil, { width: pupilSize, height: pupilSize, borderRadius: pupilSize / 2 }]} />
+        </View>
+      </View>
+      <View style={[glassesStyles.bridge, { width: size * 0.25, backgroundColor: color }]} />
+      <View style={[glassesStyles.lens, { width: size, height: size, borderRadius: size / 2, borderColor: color }]}>
+        <View style={[glassesStyles.eye, { width: eyeSize, height: eyeSize, borderRadius: eyeSize / 2 }]}>
+          <View style={[glassesStyles.pupil, { width: pupilSize, height: pupilSize, borderRadius: pupilSize / 2 }]} />
+        </View>
+      </View>
     </View>
   );
 }
@@ -33,14 +43,20 @@ function MarmyGlasses({ teal }: { teal?: boolean }) {
 const glassesStyles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
   lens: {
-    width: 14,
-    height: 10,
-    borderRadius: 3,
     borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
   },
   bridge: {
-    width: 4,
     height: 2,
+  },
+  eye: {
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pupil: {
+    backgroundColor: "#1a1a2e",
   },
 });
 

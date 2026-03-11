@@ -15,6 +15,7 @@ import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { Ionicons } from "@expo/vector-icons";
 import { useConnectionStore } from "../src/stores/connectionStore";
 import { useSessionStore } from "../src/stores/sessionStore";
@@ -203,6 +204,7 @@ export default function TerminalScreen() {
   const { activePaneId, activeSessionName, notifyOnDone, setNotifyOnDone } = useSessionStore();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
 
   // Set the nav header title to the session name
   useEffect(() => {
@@ -463,7 +465,7 @@ export default function TerminalScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 56 : 0}
+      keyboardVerticalOffset={headerHeight}
     >
       {/* Toolbar */}
       <View style={styles.toolbar}>

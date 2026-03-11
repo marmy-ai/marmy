@@ -8,13 +8,26 @@ interface RetroComputerProps {
   onLongPress: () => void;
 }
 
-/** Small glasses icon drawn with Views */
-function MarmyGlasses() {
+/** Round glasses with eyes — matches the app icon */
+function MarmyGlasses({ size = 24 }: { size?: number }) {
+  const eyeSize = size * 0.4;
+  const pupilSize = eyeSize * 0.55;
   return (
     <View style={glassesStyles.row}>
-      <View style={glassesStyles.lens} />
-      <View style={glassesStyles.bridge} />
-      <View style={glassesStyles.lens} />
+      {/* Left lens */}
+      <View style={[glassesStyles.lens, { width: size, height: size, borderRadius: size / 2 }]}>
+        <View style={[glassesStyles.eye, { width: eyeSize, height: eyeSize, borderRadius: eyeSize / 2 }]}>
+          <View style={[glassesStyles.pupil, { width: pupilSize, height: pupilSize, borderRadius: pupilSize / 2 }]} />
+        </View>
+      </View>
+      {/* Bridge */}
+      <View style={[glassesStyles.bridge, { width: size * 0.3 }]} />
+      {/* Right lens */}
+      <View style={[glassesStyles.lens, { width: size, height: size, borderRadius: size / 2 }]}>
+        <View style={[glassesStyles.eye, { width: eyeSize, height: eyeSize, borderRadius: eyeSize / 2 }]}>
+          <View style={[glassesStyles.pupil, { width: pupilSize, height: pupilSize, borderRadius: pupilSize / 2 }]} />
+        </View>
+      </View>
     </View>
   );
 }
@@ -22,16 +35,22 @@ function MarmyGlasses() {
 const glassesStyles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
   lens: {
-    width: 18,
-    height: 14,
-    borderRadius: 4,
     borderWidth: 2.5,
     borderColor: theme.primary,
+    alignItems: "center",
+    justifyContent: "center",
   },
   bridge: {
-    width: 6,
     height: 2.5,
     backgroundColor: theme.primary,
+  },
+  eye: {
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pupil: {
+    backgroundColor: "#1a1a2e",
   },
 });
 
@@ -51,7 +70,7 @@ export default function RetroComputer({
       <View style={styles.monitor}>
         {/* Screen — shows logo glasses + terminal cursor */}
         <View style={styles.screen}>
-          <MarmyGlasses />
+          <MarmyGlasses size={26} />
           <Text style={styles.cursor}>{">_"}</Text>
         </View>
         {/* Machine name below screen */}

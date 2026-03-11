@@ -82,7 +82,7 @@ export default function HomeScreen() {
         data={machines}
         keyExtractor={(item) => item.id}
         numColumns={2}
-        contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom }]}
+        contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom, flexGrow: 1, justifyContent: "center" }]}
         ListEmptyComponent={
           <View style={styles.empty}>
             {/* Powered-off retro computer */}
