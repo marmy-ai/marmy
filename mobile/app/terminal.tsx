@@ -14,12 +14,15 @@ import {
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { Ionicons } from "@expo/vector-icons";
-import { useConnectionStore } from "../../src/stores/connectionStore";
-import { useSessionStore } from "../../src/stores/sessionStore";
-import { VoiceSession } from "../../src/services/voiceSession";
-import type { VoiceState } from "../../src/services/voiceSession";
-import VoiceCallBar from "../../src/components/VoiceCallBar";
+import { useConnectionStore } from "../src/stores/connectionStore";
+import { useSessionStore } from "../src/stores/sessionStore";
+import { VoiceSession } from "../src/services/voiceSession";
+import { theme } from "../src/theme";
+import type { VoiceState } from "../src/services/voiceSession";
+import VoiceCallBar from "../src/components/VoiceCallBar";
 
 const CHAT_SHORTCUT_KEYS = [
   { label: "Ctrl-C", value: "\x03" },
@@ -200,6 +203,8 @@ export default function TerminalScreen() {
   const { api, socket, connected } = useConnectionStore();
   const { activePaneId, activeSessionName, notifyOnDone, setNotifyOnDone } = useSessionStore();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
 
   // Set the nav header title to the session name
   useEffect(() => {
@@ -218,6 +223,14 @@ export default function TerminalScreen() {
   const lastContentRef = useRef("");
   const [termCols, setTermCols] = useState(DEFAULT_COLS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Track keyboard visibility to conditionally apply bottom safe area
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   // Voice mode
   const [voiceActive, setVoiceActive] = useState(false);
@@ -450,7 +463,7 @@ export default function TerminalScreen() {
       <View style={styles.center}>
         <Text style={styles.emptyText}>No pane selected.</Text>
         <Text style={styles.emptySubtext}>
-          Go to Sessions and tap a pane to view.
+          Go to Workers and tap Chat to view.
         </Text>
       </View>
     );
@@ -460,28 +473,21 @@ export default function TerminalScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={100}
+      keyboardVerticalOffset={headerHeight}
     >
       {/* Toolbar */}
       <View style={styles.toolbar}>
         <TouchableOpacity
-          style={[styles.callButton, voiceActive && styles.callButtonActive]}
+          style={styles.callButton}
           onPress={voiceActive ? stopVoice : startVoice}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons
-            name={voiceActive ? "call" : "call"}
-            size={16}
-            color={voiceActive ? "#fff" : "#0f0f1a"}
-            style={voiceActive && { transform: [{ rotate: "135deg" }] }}
+            name="call-outline"
+            size={22}
+            color={voiceActive ? theme.error : theme.textSecondary}
+            style={voiceActive ? { transform: [{ rotate: "135deg" }] } : undefined}
           />
-          <Text
-            style={[
-              styles.callButtonText,
-              voiceActive && styles.callButtonTextActive,
-            ]}
-          >
-            {voiceActive ? "End" : "Call"}
-          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -495,7 +501,7 @@ export default function TerminalScreen() {
           <Ionicons
             name={settingsOpen ? "settings" : "settings-outline"}
             size={20}
-            color={settingsOpen ? "#fff" : "#888"}
+            color={settingsOpen ? "#fff" : theme.textSecondary}
           />
         </TouchableOpacity>
       </View>
@@ -530,9 +536,9 @@ export default function TerminalScreen() {
               step={COLS_STEP}
               value={termCols}
               onValueChange={(v) => setTermCols(v)}
-              minimumTrackTintColor="#7c3aed"
-              maximumTrackTintColor="#2a2a3e"
-              thumbImage={require("../../assets/slider-thumb.png")}
+              minimumTrackTintColor={theme.primary}
+              maximumTrackTintColor={theme.border}
+              thumbImage={require("../assets/slider-thumb.png")}
             />
             <Text style={styles.settingsValue}>{termCols}</Text>
           </View>
@@ -647,7 +653,7 @@ export default function TerminalScreen() {
       )}
 
       {/* Input bar */}
-      <View style={styles.inputBar}>
+      <View style={[styles.inputBar, !keyboardVisible && { paddingBottom: Math.max(8, insets.bottom) }]}>
         {/* Segmented mode toggle */}
         <View style={styles.segmentedToggle}>
           <TouchableOpacity
@@ -699,7 +705,7 @@ export default function TerminalScreen() {
             }
           }}
           placeholder={voiceActive ? "Voice mode active..." : isKeyboardMode ? "Keys sent live..." : "Type command..."}
-          placeholderTextColor="#555"
+          placeholderTextColor={theme.textTertiary}
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="off"
@@ -742,15 +748,15 @@ export default function TerminalScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
+  container: { flex: 1, backgroundColor: theme.bgDeep },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#0f0f1a",
+    backgroundColor: theme.bgDeep,
   },
-  emptyText: { color: "#888", fontSize: 18, marginBottom: 8 },
-  emptySubtext: { color: "#555", fontSize: 14 },
+  emptyText: { color: theme.textSecondary, fontSize: 18, marginBottom: 8 },
+  emptySubtext: { color: theme.textTertiary, fontSize: 14 },
   toolbar: {
     flexDirection: "row",
     alignItems: "center",
@@ -758,44 +764,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 44,
     borderBottomWidth: 1,
-    borderBottomColor: "#2a2a3e",
-    backgroundColor: "#0f0f1a",
+    borderBottomColor: theme.border,
+    backgroundColor: theme.bgDeep,
   },
   settingsButton: {
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: "#2a2a3e",
+    backgroundColor: theme.border,
     alignItems: "center",
     justifyContent: "center",
   },
   settingsButtonActive: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
   },
   callButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: "#4ade80",
-  },
-  callButtonActive: {
-    backgroundColor: "#ef4444",
-  },
-  callButtonText: {
-    color: "#0f0f1a",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  callButtonTextActive: {
-    color: "#fff",
+    padding: 4,
   },
   settingsPanel: {
     borderBottomWidth: 1,
-    borderBottomColor: "#2a2a3e",
-    backgroundColor: "#131322",
+    borderBottomColor: theme.border,
+    backgroundColor: theme.bgElevated,
     paddingHorizontal: 16,
     paddingVertical: 10,
     gap: 12,
@@ -815,7 +804,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
   },
   settingsValue: {
-    color: "#888",
+    color: theme.textSecondary,
     fontSize: 13,
     fontFamily: "monospace",
     width: 28,
@@ -823,19 +812,19 @@ const styles = StyleSheet.create({
   },
   terminalScroll: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: theme.bgDeep,
   },
   terminalContent: {
     padding: 8,
   },
   terminalTextContainer: {
-    color: "#e0e0e0",
+    color: theme.textPrimary,
     fontSize: 11,
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     lineHeight: 16,
   },
   terminalText: {
-    color: "#e0e0e0",
+    color: theme.textPrimary,
     fontSize: 11,
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     lineHeight: 16,
@@ -845,7 +834,7 @@ const styles = StyleSheet.create({
   },
   promptSeparator: {
     borderTopWidth: 1,
-    borderTopColor: "#2a2a3e",
+    borderTopColor: theme.border,
     marginTop: 6,
     paddingTop: 4,
   },
@@ -853,8 +842,8 @@ const styles = StyleSheet.create({
   shortcutBar: {
     maxHeight: 40,
     borderTopWidth: 1,
-    borderTopColor: "#2a2a3e",
-    backgroundColor: "#1a1a2e",
+    borderTopColor: theme.border,
+    backgroundColor: theme.bgCard,
   },
   shortcutContent: {
     alignItems: "center",
@@ -865,14 +854,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 4,
-    backgroundColor: "#2a2a3e",
+    backgroundColor: theme.border,
   },
   shortcutBtnText: { color: "#ccc", fontSize: 13, fontFamily: "monospace" },
   // KB mode fixed grid
   kbGrid: {
     borderTopWidth: 1,
-    borderTopColor: "#2a2a3e",
-    backgroundColor: "#1a1a2e",
+    borderTopColor: theme.border,
+    backgroundColor: theme.bgCard,
     paddingVertical: 4,
     paddingHorizontal: 4,
   },
@@ -886,12 +875,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
     paddingVertical: 8,
     borderRadius: 4,
-    backgroundColor: "#2a2a3e",
+    backgroundColor: theme.border,
     alignItems: "center",
     justifyContent: "center",
   },
   kbBtnActive: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
   },
   kbBtnText: {
     color: "#ccc",
@@ -913,27 +902,27 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#2a2a3e",
+    backgroundColor: theme.border,
   },
   kbDotActive: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
   },
   toggleTrack: {
     width: 36,
     height: 20,
     borderRadius: 10,
-    backgroundColor: "#2a2a3e",
+    backgroundColor: theme.border,
     justifyContent: "center",
     paddingHorizontal: 2,
   },
   toggleTrackActive: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
   },
   toggleThumb: {
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: "#555",
+    backgroundColor: theme.textTertiary,
   },
   toggleThumbActive: {
     backgroundColor: "#fff",
@@ -945,23 +934,23 @@ const styles = StyleSheet.create({
     padding: 8,
     gap: 8,
     borderTopWidth: 1,
-    borderTopColor: "#2a2a3e",
-    backgroundColor: "#1a1a2e",
+    borderTopColor: theme.border,
+    backgroundColor: theme.bgCard,
     alignItems: "flex-end",
   },
   textInput: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: theme.bgDeep,
     borderWidth: 1,
-    borderColor: "#2a2a3e",
+    borderColor: theme.border,
     borderRadius: 8,
     padding: 10,
-    color: "#e0e0e0",
+    color: theme.textPrimary,
     fontSize: 15,
     fontFamily: "monospace",
   },
   sendBtn: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
     paddingHorizontal: 16,
     borderRadius: 8,
     justifyContent: "center",
@@ -979,7 +968,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#2a2a3e",
+    backgroundColor: theme.border,
   },
   segmentLeft: {
     borderTopLeftRadius: 8,
@@ -990,10 +979,10 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 8,
   },
   segmentActive: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
   },
   segmentText: {
-    color: "#888",
+    color: theme.textSecondary,
     fontSize: 13,
     fontWeight: "700",
     fontFamily: "monospace",

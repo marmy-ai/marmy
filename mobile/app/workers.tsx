@@ -1,23 +1,68 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   ScrollView,
+  FlatList,
   TouchableOpacity,
-  Pressable,
   TextInput,
   Modal,
   Switch,
   StyleSheet,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { useConnectionStore } from "../../src/stores/connectionStore";
-import { useSessionStore } from "../../src/stores/sessionStore";
-import DirPicker from "../../src/components/DirPicker";
-import type { TmuxPane, TmuxSession } from "../../src/types";
+import { useConnectionStore } from "../src/stores/connectionStore";
+import { useSessionStore } from "../src/stores/sessionStore";
+import { theme } from "../src/theme";
+import DirPicker from "../src/components/DirPicker";
+import type { TmuxSession } from "../src/types";
 
-export default function SessionsScreen() {
+/** Round glasses with eyes — matches the app icon */
+function MarmyGlasses({ teal, size = 16 }: { teal?: boolean; size?: number }) {
+  const color = teal ? theme.manager : theme.primary;
+  const eyeSize = size * 0.4;
+  const pupilSize = eyeSize * 0.55;
+  return (
+    <View style={glassesStyles.row}>
+      <View style={[glassesStyles.lens, { width: size, height: size, borderRadius: size / 2, borderColor: color }]}>
+        <View style={[glassesStyles.eye, { width: eyeSize, height: eyeSize, borderRadius: eyeSize / 2 }]}>
+          <View style={[glassesStyles.pupil, { width: pupilSize, height: pupilSize, borderRadius: pupilSize / 2 }]} />
+        </View>
+      </View>
+      <View style={[glassesStyles.bridge, { width: size * 0.25, backgroundColor: color }]} />
+      <View style={[glassesStyles.lens, { width: size, height: size, borderRadius: size / 2, borderColor: color }]}>
+        <View style={[glassesStyles.eye, { width: eyeSize, height: eyeSize, borderRadius: eyeSize / 2 }]}>
+          <View style={[glassesStyles.pupil, { width: pupilSize, height: pupilSize, borderRadius: pupilSize / 2 }]} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const glassesStyles = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
+  lens: {
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bridge: {
+    height: 2,
+  },
+  eye: {
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pupil: {
+    backgroundColor: "#1a1a2e",
+  },
+});
+
+export default function WorkersScreen() {
   const { api, topology, activeMachine, connected } = useConnectionStore();
   const { setActivePane, setActiveSession, setActiveSessionName } = useSessionStore();
   const router = useRouter();
@@ -32,7 +77,6 @@ export default function SessionsScreen() {
   const [creating, setCreating] = useState(false);
   const [showDirPicker, setShowDirPicker] = useState(false);
 
-  // Load recent dirs when modal opens
   useEffect(() => {
     if (showNewSession && api) {
       setLoadingDirs(true);
@@ -56,7 +100,7 @@ export default function SessionsScreen() {
     try {
       const result = await api.startDashboard();
       setActivePane(result.pane_id);
-      router.push("/(tabs)/terminal");
+      router.push("/terminal");
     } catch (e: any) {
       Alert.alert("Error", e.message);
     } finally {
@@ -77,7 +121,7 @@ export default function SessionsScreen() {
       setActivePane(result.pane_id);
       setActiveSessionName(result.session_name);
       resetModal();
-      router.push("/(tabs)/terminal");
+      router.push("/terminal");
     } catch (e: any) {
       Alert.alert("Error", e.message);
       setCreating(false);
@@ -101,30 +145,33 @@ export default function SessionsScreen() {
     ]);
   };
 
-  const handleSessionPress = (session: TmuxSession) => {
-    // Find the first pane in this session and open it
+  const handleChat = (session: TmuxSession) => {
     if (!topology) return;
     const pane = topology.panes.find((p) => p.session_id === session.id);
     if (pane) {
-      // Dismiss unread indicator (fire-and-forget)
       if (session.unread && api) {
         api.markSessionRead(session.name).catch(() => {});
       }
       setActivePane(pane.id);
       setActiveSession(session.id);
       setActiveSessionName(session.name);
-      router.push("/(tabs)/terminal");
+      router.push("/terminal");
     }
   };
 
-  /** Shorten a path to just the last directory name */
+  const handleFiles = (session: TmuxSession) => {
+    router.push({
+      pathname: "/files",
+      params: { sessionId: session.id, sessionName: session.name },
+    });
+  };
+
   const shortPath = (fullPath: string) => {
     if (!fullPath) return "";
     const parts = fullPath.split("/").filter(Boolean);
     return parts[parts.length - 1] || fullPath;
   };
 
-  /** Get the working directory for a session from its first pane */
   const getSessionPath = (session: TmuxSession): string => {
     if (!topology) return "";
     const pane = topology.panes.find((p) => p.session_id === session.id);
@@ -136,13 +183,12 @@ export default function SessionsScreen() {
       <View style={styles.center}>
         <Text style={styles.emptyText}>Not connected to any machine.</Text>
         <Text style={styles.emptySubtext}>
-          Go to the Machines tab and connect first.
+          Go back and connect to a machine first.
         </Text>
       </View>
     );
   }
 
-  // Split sessions into manager and the rest
   const managerSession = topology?.sessions.find(
     (s) => s.name === "sessions-manager"
   );
@@ -153,7 +199,7 @@ export default function SessionsScreen() {
   const renderHeader = () => (
     <View style={styles.header}>
       <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-        <View style={[styles.statusDot, { backgroundColor: "#22c55e" }]} />
+        <View style={[styles.statusDot, { backgroundColor: theme.success }]} />
         <Text style={styles.headerText}>{activeMachine.name}</Text>
       </View>
       <TouchableOpacity
@@ -193,11 +239,18 @@ export default function SessionsScreen() {
           onCancel={() => setShowDirPicker(false)}
         />
       ) : (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ScrollView
+            contentContainerStyle={styles.modalScrollContent}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>New Session</Text>
 
-            {/* Mode toggle */}
             <View style={styles.modeToggle}>
               <TouchableOpacity
                 style={[
@@ -233,19 +286,17 @@ export default function SessionsScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Session name */}
             <TextInput
               style={styles.modalInput}
               value={newSessionName}
               onChangeText={setNewSessionName}
               placeholder="Session name"
-              placeholderTextColor="#555"
+              placeholderTextColor={theme.textTertiary}
               autoCapitalize="none"
               autoCorrect={false}
               autoFocus
             />
 
-            {/* Working directory */}
             <TouchableOpacity
               style={styles.dirSelector}
               onPress={() => setShowDirPicker(true)}
@@ -262,7 +313,6 @@ export default function SessionsScreen() {
               </Text>
             </TouchableOpacity>
 
-            {/* Claude-only: skip permissions toggle */}
             {sessionMode === "claude" && (
               <View style={styles.toggleRow}>
                 <View style={{ flex: 1 }}>
@@ -274,13 +324,12 @@ export default function SessionsScreen() {
                 <Switch
                   value={skipPermissions}
                   onValueChange={setSkipPermissions}
-                  trackColor={{ false: "#2a2a3e", true: "#7c3aed" }}
-                  thumbColor={skipPermissions ? "#fff" : "#888"}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor={skipPermissions ? "#fff" : theme.textSecondary}
                 />
               </View>
             )}
 
-            {/* Buttons */}
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
@@ -299,39 +348,94 @@ export default function SessionsScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       )}
     </Modal>
   );
 
-  const renderSessionPill = (session: TmuxSession, isManager = false) => {
+  /** Manager card — full width at top, tap anywhere for Chat */
+  const renderManagerCard = (session: TmuxSession) => {
     const path = getSessionPath(session);
     const isUnread = !!session.unread;
     return (
       <TouchableOpacity
         key={session.id}
-        style={[
-          styles.sessionPill,
-          isManager && styles.managerPill,
-          isUnread && styles.unreadPill,
-        ]}
-        onPress={() => handleSessionPress(session)}
+        style={[styles.managerCard, isUnread && styles.unreadCard]}
+        activeOpacity={0.7}
+        onPress={() => handleChat(session)}
         onLongPress={() => handleDeleteSession(session.name)}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-          {isUnread && <View style={styles.unreadDot} />}
-          <Text
-            style={[styles.sessionName, isManager && styles.managerName]}
-            numberOfLines={1}
-          >
-            {session.name}
-          </Text>
+        <View style={styles.cardHeader}>
+          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+            <MarmyGlasses teal />
+            {isUnread && <View style={styles.unreadDot} />}
+            <Text style={styles.managerName} numberOfLines={1}>
+              {session.name}
+            </Text>
+          </View>
+          {path ? (
+            <Text style={styles.workerPath} numberOfLines={1}>
+              ~/{shortPath(path)}
+            </Text>
+          ) : null}
         </View>
-        {path ? (
-          <Text style={styles.sessionPath} numberOfLines={1}>
-            {shortPath(path)}
-          </Text>
-        ) : null}
+        <View style={styles.actionRow}>
+          <View style={[styles.actionBtn, styles.chatBtnManager]}>
+            <Text style={styles.actionBtnText}>Chat</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.filesBtn]}
+            onPress={() => handleFiles(session)}
+          >
+            <Text style={styles.filesBtnText}>Files</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  /** Worker card — used in 2-col grid, tap anywhere for Chat */
+  const renderWorkerGridItem = ({ item }: { item: TmuxSession }) => {
+    const path = getSessionPath(item);
+    const isUnread = !!item.unread;
+    return (
+      <TouchableOpacity
+        style={[styles.workerGridCard, isUnread && styles.unreadCard]}
+        activeOpacity={0.7}
+        onPress={() => handleChat(item)}
+        onLongPress={() => handleDeleteSession(item.name)}
+      >
+        {/* Glasses on top */}
+        <View style={styles.glassesHeader}>
+          <MarmyGlasses />
+        </View>
+
+        <View style={styles.gridCardBody}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            {isUnread && <View style={styles.unreadDot} />}
+            <Text style={styles.workerName} numberOfLines={1}>
+              {item.name}
+            </Text>
+          </View>
+          {path ? (
+            <Text style={styles.workerPathSmall} numberOfLines={1}>
+              ~/{shortPath(path)}
+            </Text>
+          ) : null}
+        </View>
+
+        <View style={styles.actionRow}>
+          <View style={[styles.actionBtn, styles.chatBtn]}>
+            <Text style={styles.actionBtnText}>Chat</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.filesBtn]}
+            onPress={() => handleFiles(item)}
+          >
+            <Text style={styles.filesBtnText}>Files</Text>
+          </TouchableOpacity>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -354,115 +458,161 @@ export default function SessionsScreen() {
       {renderHeader()}
       {renderModal()}
 
-      <ScrollView contentContainerStyle={styles.list}>
-        {/* Manager section */}
-        {managerSession && (
-          <View style={styles.managerSection}>
-            {renderSessionPill(managerSession, true)}
-
-            {/* Child sessions nested under manager */}
-            {otherSessions.length > 0 && (
-              <View style={styles.childSessions}>
-                <View style={styles.treeLine} />
-                <View style={styles.childList}>
-                  {otherSessions.map((session) =>
-                    renderSessionPill(session)
-                  )}
-                </View>
-              </View>
-            )}
-          </View>
-        )}
-
-        {/* If no manager, just show sessions flat */}
-        {!managerSession &&
-          otherSessions.map((session) => renderSessionPill(session))}
-      </ScrollView>
+      <FlatList
+        data={otherSessions}
+        keyExtractor={(item) => item.id}
+        numColumns={2}
+        contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          managerSession ? (
+            <View style={styles.managerSection}>
+              {renderManagerCard(managerSession)}
+            </View>
+          ) : null
+        }
+        renderItem={renderWorkerGridItem}
+        ListEmptyComponent={
+          !managerSession ? (
+            <View style={styles.emptyBody}>
+              <Text style={styles.emptySubtext}>No workers yet.</Text>
+            </View>
+          ) : null
+        }
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
+  container: { flex: 1, backgroundColor: theme.bgDeep },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#0f0f1a",
+    backgroundColor: theme.bgDeep,
   },
-  emptyBody: { flex: 1, alignItems: "center", justifyContent: "center" },
-  emptyText: { color: "#888", fontSize: 18, marginBottom: 8 },
-  emptySubtext: { color: "#555", fontSize: 14 },
+  emptyBody: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+  emptyText: { color: theme.textSecondary, fontSize: 18, marginBottom: 8 },
+  emptySubtext: { color: theme.textTertiary, fontSize: 14 },
   header: {
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#2a2a3e",
+    borderBottomColor: theme.border,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  headerText: { color: "#e0e0e0", fontSize: 16, fontWeight: "600" },
-  list: { padding: 16 },
+  headerText: { color: theme.textPrimary, fontSize: 16, fontWeight: "600" },
+  list: { padding: 10 },
 
-  // Session pills
-  sessionPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#1a1a2e",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+  // Manager card — full width
+  managerSection: {
     marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#2a2a3e",
   },
-  sessionName: {
-    color: "#e0e0e0",
+  managerCard: {
+    backgroundColor: theme.bgManagerCard,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: theme.manager,
+  },
+  managerName: {
+    color: theme.manager,
     fontSize: 15,
     fontWeight: "600",
     flexShrink: 1,
+    marginLeft: 8,
   },
-  sessionPath: {
-    color: "#666",
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+
+  // Worker grid card — half width
+  workerGridCard: {
+    flex: 1,
+    margin: 4,
+    backgroundColor: theme.bgCard,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.border,
+    overflow: "hidden",
+  },
+  glassesHeader: {
+    paddingTop: 10,
+    paddingBottom: 6,
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+    backgroundColor: theme.bgElevated,
+  },
+  gridCardBody: {
+    padding: 10,
+    paddingBottom: 8,
+  },
+  workerName: {
+    color: theme.textPrimary,
+    fontSize: 14,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
+  workerPath: {
+    color: theme.textDim,
     fontSize: 13,
     marginLeft: 12,
   },
-  unreadPill: {
-    borderColor: "#7c3aed",
+  workerPathSmall: {
+    color: theme.textDim,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  unreadCard: {
+    borderColor: theme.primary,
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#7c3aed",
-    marginRight: 8,
+    backgroundColor: theme.primary,
+    marginRight: 6,
   },
 
-  // Manager-specific
-  managerSection: {
-    marginBottom: 4,
-  },
-  managerPill: {
-    borderColor: "#14b8a6",
-    backgroundColor: "#0f1f1d",
-  },
-  managerName: {
-    color: "#14b8a6",
-  },
-  childSessions: {
+  // Action buttons
+  actionRow: {
     flexDirection: "row",
-    marginLeft: 12,
+    gap: 6,
+    padding: 8,
+    paddingTop: 0,
   },
-  treeLine: {
-    width: 2,
-    backgroundColor: "#2a2a3e",
-    borderRadius: 1,
-    marginRight: 12,
-  },
-  childList: {
+  actionBtn: {
     flex: 1,
-    paddingTop: 4,
+    height: 40,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  chatBtn: {
+    backgroundColor: theme.primary,
+  },
+  chatBtnManager: {
+    backgroundColor: theme.manager,
+  },
+  filesBtn: {
+    backgroundColor: theme.border,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+  },
+  actionBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  filesBtnText: {
+    color: theme.textPrimary,
+    fontSize: 14,
+    fontWeight: "600",
   },
 
   // Header buttons
@@ -471,11 +621,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#14b8a6",
+    borderColor: theme.manager,
     marginRight: 8,
   },
   managerBtnText: {
-    color: "#14b8a6",
+    color: theme.manager,
     fontSize: 13,
     fontWeight: "600",
   },
@@ -483,7 +633,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -498,30 +648,32 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  modalScrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
-    alignItems: "center",
   },
   modalCard: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: theme.bgCard,
     borderRadius: 12,
     padding: 20,
-    width: "85%",
+    marginHorizontal: "7.5%",
     borderWidth: 1,
-    borderColor: "#2a2a3e",
+    borderColor: theme.border,
   },
   modalTitle: {
-    color: "#e0e0e0",
+    color: theme.textPrimary,
     fontSize: 18,
     fontWeight: "600",
     marginBottom: 16,
   },
   modalInput: {
-    backgroundColor: "#0f0f1a",
+    backgroundColor: theme.bgDeep,
     borderWidth: 1,
-    borderColor: "#2a2a3e",
+    borderColor: theme.border,
     borderRadius: 8,
     padding: 12,
-    color: "#e0e0e0",
+    color: theme.textPrimary,
     fontSize: 15,
     marginBottom: 16,
   },
@@ -531,9 +683,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modalCancelBtn: { paddingHorizontal: 16, paddingVertical: 10 },
-  modalCancelText: { color: "#888", fontSize: 15 },
+  modalCancelText: { color: theme.textSecondary, fontSize: 15 },
   modalCreateBtn: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
@@ -543,7 +695,7 @@ const styles = StyleSheet.create({
   // Mode toggle
   modeToggle: {
     flexDirection: "row",
-    backgroundColor: "#0f0f1a",
+    backgroundColor: theme.bgDeep,
     borderRadius: 8,
     marginBottom: 16,
     padding: 3,
@@ -555,10 +707,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modeBtnActive: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
   },
   modeBtnText: {
-    color: "#888",
+    color: theme.textSecondary,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -568,24 +720,24 @@ const styles = StyleSheet.create({
 
   // Dir selector
   dirSelector: {
-    backgroundColor: "#0f0f1a",
+    backgroundColor: theme.bgDeep,
     borderWidth: 1,
-    borderColor: "#2a2a3e",
+    borderColor: theme.border,
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
   },
   dirLabel: {
-    color: "#888",
+    color: theme.textSecondary,
     fontSize: 12,
     marginBottom: 4,
   },
   dirValue: {
-    color: "#e0e0e0",
+    color: theme.textPrimary,
     fontSize: 15,
   },
   dirValuePlaceholder: {
-    color: "#555",
+    color: theme.textTertiary,
   },
 
   // Toggle row
@@ -595,12 +747,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   toggleLabel: {
-    color: "#e0e0e0",
+    color: theme.textPrimary,
     fontSize: 14,
     fontWeight: "500",
   },
   toggleSubtext: {
-    color: "#666",
+    color: theme.textDim,
     fontSize: 11,
     marginTop: 2,
   },

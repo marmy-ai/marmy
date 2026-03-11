@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import Constants from "expo-constants";
 import type { MarmyApi } from "../services/api";
+import { theme } from "../theme";
 import type { DirEntry } from "../types";
 
 interface DirPickerProps {
@@ -143,7 +144,7 @@ export default function DirPicker({ api, recentDirs, onSelect, onCancel }: DirPi
       {/* Directory listing */}
       <ScrollView style={styles.listArea}>
         {loading && (
-          <ActivityIndicator color="#7c3aed" style={{ marginTop: 20 }} />
+          <ActivityIndicator color={theme.primary} style={{ marginTop: 20 }} />
         )}
         {error && <Text style={styles.errorText}>{error}</Text>}
         {!loading && !error && (
@@ -210,7 +211,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#2a2a3e",
   },
-  cancelText: { color: "#7c3aed", fontSize: 15 },
+  cancelText: { color: theme.primary, fontSize: 15 },
   title: { color: "#e0e0e0", fontSize: 17, fontWeight: "600" },
   content: { padding: 16 },
   sectionLabel: {
@@ -243,7 +244,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#2a2a3e",
   },
-  browseBtnText: { color: "#7c3aed", fontSize: 15, fontWeight: "500" },
+  browseBtnText: { color: theme.primary, fontSize: 15, fontWeight: "500" },
   breadcrumbBar: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -251,7 +252,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#2a2a3e",
     maxHeight: 44,
   },
-  breadcrumbText: { color: "#7c3aed", fontSize: 14 },
+  breadcrumbText: { color: theme.primary, fontSize: 14 },
   listArea: { flex: 1 },
   dirRow: {
     flexDirection: "row",
@@ -271,7 +272,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#2a2a3e",
   },
   selectBtn: {
-    backgroundColor: "#7c3aed",
+    backgroundColor: theme.primary,
     borderRadius: 10,
     paddingVertical: 14,
     paddingHorizontal: 16,

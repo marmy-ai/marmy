@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
 } from "react-native";
+import { theme } from "../theme";
 
 interface RichViewProps {
   content: string;
@@ -143,7 +144,7 @@ const styles = StyleSheet.create({
     borderColor: "#2a2a3e",
   },
   codeLang: {
-    color: "#7c3aed",
+    color: theme.primary,
     fontSize: 11,
     fontWeight: "600",
     marginBottom: 6,
