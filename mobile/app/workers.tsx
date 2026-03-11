@@ -343,19 +343,19 @@ export default function WorkersScreen() {
     </Modal>
   );
 
-  /** Manager card — full width at top */
+  /** Manager card — full width at top, tap anywhere for Chat */
   const renderManagerCard = (session: TmuxSession) => {
     const path = getSessionPath(session);
     const isUnread = !!session.unread;
     return (
-      <View
+      <TouchableOpacity
         key={session.id}
         style={[styles.managerCard, isUnread && styles.unreadCard]}
+        activeOpacity={0.7}
+        onPress={() => handleChat(session)}
+        onLongPress={() => handleDeleteSession(session.name)}
       >
-        <TouchableOpacity
-          style={styles.cardHeader}
-          onLongPress={() => handleDeleteSession(session.name)}
-        >
+        <View style={styles.cardHeader}>
           <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
             <MarmyGlasses teal />
             {isUnread && <View style={styles.unreadDot} />}
@@ -368,14 +368,11 @@ export default function WorkersScreen() {
               ~/{shortPath(path)}
             </Text>
           ) : null}
-        </TouchableOpacity>
+        </View>
         <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.chatBtnManager]}
-            onPress={() => handleChat(session)}
-          >
+          <View style={[styles.actionBtn, styles.chatBtnManager]}>
             <Text style={styles.actionBtnText}>Chat</Text>
-          </TouchableOpacity>
+          </View>
           <TouchableOpacity
             style={[styles.actionBtn, styles.filesBtn]}
             onPress={() => handleFiles(session)}
@@ -383,26 +380,27 @@ export default function WorkersScreen() {
             <Text style={styles.filesBtnText}>Files</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
-  /** Worker card — used in 2-col grid */
+  /** Worker card — used in 2-col grid, tap anywhere for Chat */
   const renderWorkerGridItem = ({ item }: { item: TmuxSession }) => {
     const path = getSessionPath(item);
     const isUnread = !!item.unread;
     return (
-      <View style={[styles.workerGridCard, isUnread && styles.unreadCard]}>
+      <TouchableOpacity
+        style={[styles.workerGridCard, isUnread && styles.unreadCard]}
+        activeOpacity={0.7}
+        onPress={() => handleChat(item)}
+        onLongPress={() => handleDeleteSession(item.name)}
+      >
         {/* Glasses on top */}
         <View style={styles.glassesHeader}>
           <MarmyGlasses />
         </View>
 
-        <TouchableOpacity
-          style={styles.gridCardBody}
-          onLongPress={() => handleDeleteSession(item.name)}
-          activeOpacity={1}
-        >
+        <View style={styles.gridCardBody}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             {isUnread && <View style={styles.unreadDot} />}
             <Text style={styles.workerName} numberOfLines={1}>
@@ -414,15 +412,12 @@ export default function WorkersScreen() {
               ~/{shortPath(path)}
             </Text>
           ) : null}
-        </TouchableOpacity>
+        </View>
 
         <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.chatBtn]}
-            onPress={() => handleChat(item)}
-          >
+          <View style={[styles.actionBtn, styles.chatBtn]}>
             <Text style={styles.actionBtnText}>Chat</Text>
-          </TouchableOpacity>
+          </View>
           <TouchableOpacity
             style={[styles.actionBtn, styles.filesBtn]}
             onPress={() => handleFiles(item)}
@@ -430,7 +425,7 @@ export default function WorkersScreen() {
             <Text style={styles.filesBtnText}>Files</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 

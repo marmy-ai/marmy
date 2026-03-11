@@ -223,6 +223,14 @@ export default function TerminalScreen() {
   const lastContentRef = useRef("");
   const [termCols, setTermCols] = useState(DEFAULT_COLS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Track keyboard visibility to conditionally apply bottom safe area
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   // Voice mode
   const [voiceActive, setVoiceActive] = useState(false);
@@ -652,7 +660,7 @@ export default function TerminalScreen() {
       )}
 
       {/* Input bar */}
-      <View style={[styles.inputBar, { paddingBottom: Math.max(8, insets.bottom) }]}>
+      <View style={[styles.inputBar, !keyboardVisible && { paddingBottom: Math.max(8, insets.bottom) }]}>
         {/* Segmented mode toggle */}
         <View style={styles.segmentedToggle}>
           <TouchableOpacity
