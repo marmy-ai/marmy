@@ -95,6 +95,7 @@ This downloads and runs the `.pkg` installer. Users can also download the `.pkg`
 - [ ] Add connecting/loading spinners (M-10, M-17)
 - [x] Add WebSocket heartbeat/keepalive (M-11)
 - [ ] Wire push notification deep linking (M-19)
+- [ ] Show worker name in push notifications instead of root directory
 - [ ] Handle push token refresh (M-12)
 - [ ] Unregister push tokens on disconnect (M-13)
 - [ ] Add offline detection with NetInfo (M-15)
