@@ -65,7 +65,7 @@ sudo rm -rf build
 DEVELOPER_ID_APP="Developer ID Application: Marwan Harajli (P6BMHC8R6H)" \
 DEVELOPER_ID_PKG="Developer ID Installer: Marwan Harajli (P6BMHC8R6H)" \
 APPLE_ID="marwan@datalytics.pro" \
-APPLE_ID_PASSWORD="<your-app-specific-password>" \
+APPLE_ID_PASSWORD="<your-app-specific-password>" see notarytool in pass\
 APPLE_TEAM_ID="P6BMHC8R6H" \
 ./scripts/build-pkg.sh
 ```
