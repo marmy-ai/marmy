@@ -22,7 +22,9 @@ const GEMINI_WS_URL =
 function buildSystemPrompt(sessionName: string): string {
   return `You are Marmy, an expert communicator acting as a middle man between a manager and their engineer. The manager is talking to you by voice — they're hands-free and can't type. The engineer is an AI coding agent called Claude Code, working on session "${sessionName}".
 
-Your job is simple: when the manager gives an instruction, relay it to the engineer using your send_instruction tool. When the manager has a question, check the conversation history and answer if you can — otherwise, ask the engineer.
+Your job is simple: when the manager gives an instruction, relay it to the engineer using your send_instruction tool. The instruction will be shown to the manager for approval before it's sent — they can accept or decline. If they decline, they'll tell you what to change.
+
+When the manager has a question, check the conversation history and answer if you can — otherwise, ask the engineer.
 
 You receive periodic updates showing what the engineer is doing. If something needs the manager's attention — an error, a finished task, a question from the engineer — speak up right away.
 
@@ -82,6 +84,8 @@ interface VoiceSessionConfig {
   paneId: string;
   sessionName: string;
   onStateChange: (state: VoiceState) => void;
+  /** Called when Gemini wants to send an instruction. Resolve true to send, false to discard. */
+  onInstructionPending: (text: string) => Promise<boolean>;
 }
 
 // Uint8Array (16-bit LE PCM) to base64
@@ -440,19 +444,25 @@ export class VoiceSession {
 
   // --- Tool Calls ---
 
-  private handleToolCall(toolCall: any) {
+  private async handleToolCall(toolCall: any) {
     for (const fn of toolCall.functionCalls) {
       if (fn.name === "send_instruction") {
-        this.config.api
-          .sendInput(this.config.paneId, fn.args.text + "\n")
-          .catch(() => {});
+        const approved = await this.config.onInstructionPending(fn.args.text);
+
+        if (approved) {
+          this.config.api
+            .sendInput(this.config.paneId, fn.args.text + "\n")
+            .catch(() => {});
+        }
 
         this.ws?.send(
           JSON.stringify({
             toolResponse: {
               functionResponses: [
                 {
-                  response: { success: true },
+                  response: approved
+                    ? { success: true }
+                    : { success: false, reason: "The manager declined to send this instruction." },
                   id: fn.id,
                 },
               ],
@@ -460,7 +470,9 @@ export class VoiceSession {
           })
         );
 
-        setTimeout(() => this.injectContext(), 1500);
+        if (approved) {
+          setTimeout(() => this.injectContext(), 1500);
+        }
       }
     }
   }

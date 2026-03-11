@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  ScrollView,
   StyleSheet,
   Animated,
   PanResponder,
@@ -15,6 +16,9 @@ interface VoiceCallBarProps {
   onEnd: () => void;
   onMicOn: () => void;
   onMicOff: () => void;
+  pendingInstruction?: string | null;
+  onApprove?: () => void;
+  onDecline?: () => void;
 }
 
 const STATE_CONFIG: Record<VoiceState, { color: string; text: string }> = {
@@ -31,7 +35,7 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VoiceCallBar({ state, onEnd, onMicOn, onMicOff }: VoiceCallBarProps) {
+export default function VoiceCallBar({ state, onEnd, onMicOn, onMicOff, pendingInstruction, onApprove, onDecline }: VoiceCallBarProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [micActive, setMicActive] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -88,7 +92,7 @@ export default function VoiceCallBar({ state, onEnd, onMicOn, onMicOff }: VoiceC
 
   return (
     <Animated.View
-      style={[styles.overlay, { transform: pan.getTranslateTransform() }]}
+      style={[styles.overlay, pendingInstruction != null && styles.overlayExpanded, { transform: pan.getTranslateTransform() }]}
       {...panResponder.panHandlers}
     >
       {/* Drag indicator */}
@@ -146,6 +150,38 @@ export default function VoiceCallBar({ state, onEnd, onMicOn, onMicOff }: VoiceC
       >
         <Text style={styles.endButtonText}>End</Text>
       </TouchableOpacity>
+
+      {/* Instruction approval card */}
+      {pendingInstruction != null && (
+        <View style={styles.approvalCard}>
+          <Text style={styles.approvalLabel}>Send to engineer?</Text>
+          <ScrollView style={styles.approvalScroll} nestedScrollEnabled>
+            <Text style={styles.approvalText}>{pendingInstruction}</Text>
+          </ScrollView>
+          <View style={styles.approvalButtons}>
+            <TouchableOpacity
+              style={styles.declineBtn}
+              activeOpacity={0.7}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onDecline?.();
+              }}
+            >
+              <Text style={styles.declineBtnText}>Decline</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.approveBtn}
+              activeOpacity={0.7}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                onApprove?.();
+              }}
+            >
+              <Text style={styles.approveBtnText}>Send</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -163,6 +199,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.6,
     shadowRadius: 16,
     elevation: 12,
+  },
+  overlayExpanded: {
+    width: 280,
   },
   dragHandle: {
     alignItems: "center",
@@ -240,6 +279,63 @@ const styles = StyleSheet.create({
   },
   endButtonText: {
     color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  // Approval card
+  approvalCard: {
+    marginTop: 10,
+    marginHorizontal: 10,
+    backgroundColor: "#1e1e34",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#2a2a3e",
+  },
+  approvalLabel: {
+    color: "#888",
+    fontSize: 11,
+    fontWeight: "600",
+    marginBottom: 6,
+    fontFamily: "monospace",
+  },
+  approvalScroll: {
+    maxHeight: 120,
+    marginBottom: 10,
+  },
+  approvalText: {
+    color: "#e0e0e0",
+    fontSize: 13,
+    fontFamily: "monospace",
+    lineHeight: 18,
+  },
+  approvalButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  declineBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: "#2a2a3e",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  declineBtnText: {
+    color: "#888",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  approveBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: "#4ade80",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  approveBtnText: {
+    color: "#0f0f1a",
     fontSize: 13,
     fontWeight: "700",
   },
