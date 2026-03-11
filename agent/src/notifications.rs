@@ -198,6 +198,48 @@ fn expand_tilde(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
+// --- Unread session persistence ---
+
+fn unread_sessions_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("~"))
+        .join(".marmy")
+        .join("unread_sessions.json")
+}
+
+pub fn load_unread_sessions() -> std::collections::HashSet<String> {
+    let path = unread_sessions_path();
+    if !path.exists() {
+        return std::collections::HashSet::new();
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            let val: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+            val.get("sessions")
+                .and_then(|t| t.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        Err(_) => std::collections::HashSet::new(),
+    }
+}
+
+pub fn save_unread_sessions(sessions: &std::collections::HashSet<String>) {
+    let path = unread_sessions_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let list: Vec<&String> = sessions.iter().collect();
+    let val = serde_json::json!({ "sessions": list });
+    if let Ok(content) = serde_json::to_string_pretty(&val) {
+        let _ = std::fs::write(&path, content);
+    }
+}
+
 // --- Push token persistence ---
 
 fn tokens_path() -> PathBuf {

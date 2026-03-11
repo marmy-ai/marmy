@@ -13,7 +13,7 @@ use serde::Deserialize;
 use tracing::{debug, info};
 
 use crate::state::AppState;
-use crate::tmux::types::{ClientMessage, ServerMessage};
+use crate::tmux::types::{ClientMessage, EnrichedTopology, ServerMessage};
 
 #[derive(Deserialize)]
 pub struct WsAuthQuery {
@@ -50,10 +50,12 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let mut last_content: HashMap<String, String> = HashMap::new();
     let mut pane_tick = tokio::time::interval(std::time::Duration::from_millis(300));
 
-    // Send initial topology snapshot
+    // Send initial topology snapshot (enriched with unread state)
     match state.get_topology().await {
         Ok(topology) => {
-            let msg = ServerMessage::Topology(topology);
+            let unread = state.get_unread_sessions().await;
+            let enriched = EnrichedTopology::from(&topology, &unread);
+            let msg = ServerMessage::Topology(enriched);
             if let Ok(json) = serde_json::to_string(&msg) {
                 let _ = ws_tx.send(Message::Text(json.into())).await;
             }
@@ -79,7 +81,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 }
                 let topology = topo_rx.borrow_and_update().clone();
                 if let Some(topology) = topology {
-                    let msg = ServerMessage::Topology(topology);
+                    let unread = state.get_unread_sessions().await;
+                    let enriched = EnrichedTopology::from(&topology, &unread);
+                    let msg = ServerMessage::Topology(enriched);
                     if let Ok(json) = serde_json::to_string(&msg) {
                         if ws_tx.send(Message::Text(json.into())).await.is_err() {
                             break;

@@ -80,6 +80,13 @@ export class MarmyApi {
     });
   }
 
+  /** Mark a session as read (dismiss unread indicator). */
+  async markSessionRead(name: string): Promise<void> {
+    await this.fetch(`/api/sessions/${encodeURIComponent(name)}/read`, {
+      method: "POST",
+    });
+  }
+
   /** Get current pane content (visible screen). */
   async getPaneContent(paneId: string): Promise<PaneContent> {
     const id = paneId.replace("%", "");

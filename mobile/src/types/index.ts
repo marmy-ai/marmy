@@ -13,6 +13,7 @@ export interface TmuxSession {
   name: string;
   windows: string[];
   attached: boolean;
+  unread?: boolean;
 }
 
 export interface TmuxWindow {
