@@ -223,6 +223,8 @@ export default function TerminalScreen() {
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const voiceSessionRef = useRef<VoiceSession | null>(null);
+  const [pendingInstruction, setPendingInstruction] = useState<string | null>(null);
+  const pendingResolveRef = useRef<((approved: boolean) => void) | null>(null);
 
   // Cleanup voice on unmount
   useEffect(() => {
@@ -258,6 +260,11 @@ export default function TerminalScreen() {
         paneId: activePaneId,
         sessionName: activeSessionName || "default",
         onStateChange: setVoiceState,
+        onInstructionPending: (text: string) =>
+          new Promise<boolean>((resolve) => {
+            setPendingInstruction(text);
+            pendingResolveRef.current = resolve;
+          }),
       });
       voiceSessionRef.current = session;
       await session.start();
@@ -269,6 +276,10 @@ export default function TerminalScreen() {
 
   const stopVoice = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Decline any pending instruction on stop
+    pendingResolveRef.current?.(false);
+    pendingResolveRef.current = null;
+    setPendingInstruction(null);
     await voiceSessionRef.current?.stop();
     voiceSessionRef.current = null;
     setVoiceState("idle");
@@ -712,6 +723,17 @@ export default function TerminalScreen() {
             onEnd={stopVoice}
             onMicOn={() => voiceSessionRef.current?.pushToTalkStart()}
             onMicOff={() => voiceSessionRef.current?.pushToTalkEnd()}
+            pendingInstruction={pendingInstruction}
+            onApprove={() => {
+              pendingResolveRef.current?.(true);
+              pendingResolveRef.current = null;
+              setPendingInstruction(null);
+            }}
+            onDecline={() => {
+              pendingResolveRef.current?.(false);
+              pendingResolveRef.current = null;
+              setPendingInstruction(null);
+            }}
           />
         </View>
       )}
