@@ -533,6 +533,7 @@ const styles = StyleSheet.create({
   // Worker grid card — half width
   workerGridCard: {
     flex: 1,
+    maxWidth: '50%',
     margin: 4,
     backgroundColor: theme.bgCard,
     borderRadius: 12,

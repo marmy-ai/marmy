@@ -231,9 +231,11 @@ export default function FilesScreen() {
   if (phase.kind === "browse") {
     return (
       <View style={styles.container}>
-        <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <Text style={styles.backBtnText}>Back</Text>
-        </TouchableOpacity>
+        {roots.length > 1 && (
+          <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+            <Text style={styles.backBtnText}>Back to roots</Text>
+          </TouchableOpacity>
+        )}
         <FileTree
           entries={entries}
           currentPath={currentPath}
@@ -247,9 +249,6 @@ export default function FilesScreen() {
   // Phase: Root picker (multiple working directories)
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-        <Text style={styles.backBtnText}>Back</Text>
-      </TouchableOpacity>
       <View style={styles.listHeader}>
         <Text style={styles.listTitle}>Working Directories</Text>
       </View>
