@@ -24,18 +24,8 @@ import { theme } from "../src/theme";
 import type { VoiceState } from "../src/services/voiceSession";
 import VoiceCallBar from "../src/components/VoiceCallBar";
 
-const CHAT_SHORTCUT_KEYS = [
-  { label: "Ctrl-C", value: "\x03" },
-  { label: "\u23CE", value: "\n" },
-  { label: "Tab", value: "\t" },
-  { label: "\u2191", value: "\x1b[A" },
-  { label: "\u2193", value: "\x1b[B" },
-  { label: "y", value: "y\n" },
-  { label: "n", value: "n\n" },
-];
-
-// KB mode page 1: 2-row fixed grid — arrows grouped as d-pad on the right
-const KB_P1_ROW1 = [
+// Unified shortcut grid — shared by both MSG and KB modes
+const SHORTCUT_P1_ROW1 = [
   { label: "Esc", value: "\x1b" },
   { label: "Tab", value: "\t" },
   { label: "Ctrl", value: "__CTRL__" },
@@ -43,18 +33,28 @@ const KB_P1_ROW1 = [
   { label: "\u2191", value: "\x1b[A" },
 ];
 
-const KB_P1_ROW2 = [
+const SHORTCUT_P1_ROW2 = [
   { label: "\u23CE", value: "\n" },
-  { label: "MSG", value: "__MSG__" },
+  { label: "Ctrl-C", value: "\x03" },
   { label: "\u2190", value: "\x1b[D" },
   { label: "\u2192", value: "\x1b[C" },
   { label: "\u2193", value: "\x1b[B" },
 ];
 
-// KB mode page 2: extra keys accessible by swiping
-const KB_P2_ROW1 = [
-  { label: "CR", value: "\n" },
+const SHORTCUT_P2_ROW1 = [
+  { label: ":q", value: ":q\n" },
+  { label: ":wq", value: ":wq\n" },
   { label: "S-Tab", value: "\x1b[Z" },
+  { label: "|", value: "|" },
+  { label: "~", value: "~" },
+];
+
+const SHORTCUT_P2_ROW2 = [
+  { label: "/", value: "/" },
+  { label: ">", value: ">" },
+  { label: ">>", value: ">>" },
+  { label: "&&", value: "&&" },
+  { label: "!!", value: "!!\n" },
 ];
 
 const DEFAULT_COLS = 60;
@@ -387,12 +387,6 @@ export default function TerminalScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       return;
     }
-    if (value === "__MSG__") {
-      setIsKeyboardMode(false);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      return;
-    }
-
     if (!socket || !activePaneId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     socket.sendInput(activePaneId, value);
@@ -586,58 +580,44 @@ export default function TerminalScreen() {
         </Text>
       </ScrollView>
 
-      {/* Shortcut bar */}
-      {isKeyboardMode ? (
-        <View
-          style={styles.kbGrid}
-          onTouchStart={(e) => {
-            kbSwipeRef.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
-          }}
-          onTouchEnd={(e) => {
-            const dx = e.nativeEvent.pageX - kbSwipeRef.current.x;
-            const dy = e.nativeEvent.pageY - kbSwipeRef.current.y;
-            if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
-              if (dx < 0 && kbPage === 0) setKbPage(1);
-              else if (dx > 0 && kbPage === 1) setKbPage(0);
-            }
-          }}
-        >
-          {kbPage === 0 ? (
-            <>
-              <View style={styles.kbRow}>
-                {KB_P1_ROW1.map((key) => (
-                  <TouchableOpacity
-                    key={key.label}
-                    style={[
-                      styles.kbBtn,
-                      key.value === "__CTRL__" && ctrlActive && styles.kbBtnActive,
-                    ]}
-                    onPress={() => handleShortcut(key.value)}
-                  >
-                    <Text style={[
-                      styles.kbBtnText,
-                      key.value === "__CTRL__" && ctrlActive && styles.kbBtnTextActive,
-                    ]}>
-                      {key.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={styles.kbRow}>
-                {KB_P1_ROW2.map((key) => (
-                  <TouchableOpacity
-                    key={key.label}
-                    style={styles.kbBtn}
-                    onPress={() => handleShortcut(key.value)}
-                  >
-                    <Text style={styles.kbBtnText}>{key.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          ) : (
+      {/* Shortcut bar — unified paginated grid for both modes */}
+      <View
+        style={styles.kbGrid}
+        onTouchStart={(e) => {
+          kbSwipeRef.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+        }}
+        onTouchEnd={(e) => {
+          const dx = e.nativeEvent.pageX - kbSwipeRef.current.x;
+          const dy = e.nativeEvent.pageY - kbSwipeRef.current.y;
+          if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+            if (dx < 0 && kbPage === 0) setKbPage(1);
+            else if (dx > 0 && kbPage === 1) setKbPage(0);
+          }
+        }}
+      >
+        {kbPage === 0 ? (
+          <>
             <View style={styles.kbRow}>
-              {KB_P2_ROW1.map((key) => (
+              {SHORTCUT_P1_ROW1.map((key) => (
+                <TouchableOpacity
+                  key={key.label}
+                  style={[
+                    styles.kbBtn,
+                    key.value === "__CTRL__" && ctrlActive && styles.kbBtnActive,
+                  ]}
+                  onPress={() => handleShortcut(key.value)}
+                >
+                  <Text style={[
+                    styles.kbBtnText,
+                    key.value === "__CTRL__" && ctrlActive && styles.kbBtnTextActive,
+                  ]}>
+                    {key.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.kbRow}>
+              {SHORTCUT_P1_ROW2.map((key) => (
                 <TouchableOpacity
                   key={key.label}
                   style={styles.kbBtn}
@@ -647,31 +627,39 @@ export default function TerminalScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          )}
-          {/* Page indicator */}
-          <View style={styles.kbPageDots}>
-            <View style={[styles.kbDot, kbPage === 0 && styles.kbDotActive]} />
-            <View style={[styles.kbDot, kbPage === 1 && styles.kbDotActive]} />
-          </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.kbRow}>
+              {SHORTCUT_P2_ROW1.map((key) => (
+                <TouchableOpacity
+                  key={key.label}
+                  style={styles.kbBtn}
+                  onPress={() => handleShortcut(key.value)}
+                >
+                  <Text style={styles.kbBtnText}>{key.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.kbRow}>
+              {SHORTCUT_P2_ROW2.map((key) => (
+                <TouchableOpacity
+                  key={key.label}
+                  style={styles.kbBtn}
+                  onPress={() => handleShortcut(key.value)}
+                >
+                  <Text style={styles.kbBtnText}>{key.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+        {/* Page indicator */}
+        <View style={styles.kbPageDots}>
+          <View style={[styles.kbDot, kbPage === 0 && styles.kbDotActive]} />
+          <View style={[styles.kbDot, kbPage === 1 && styles.kbDotActive]} />
         </View>
-      ) : (
-        <ScrollView
-          horizontal
-          style={styles.shortcutBar}
-          contentContainerStyle={styles.shortcutContent}
-          showsHorizontalScrollIndicator={false}
-        >
-          {CHAT_SHORTCUT_KEYS.map((key) => (
-            <TouchableOpacity
-              key={key.label}
-              style={styles.shortcutBtn}
-              onPress={() => handleShortcut(key.value)}
-            >
-              <Text style={styles.shortcutBtnText}>{key.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
+      </View>
 
       {/* Input bar */}
       <View style={[styles.inputBar, !keyboardVisible && { paddingBottom: Math.max(8, insets.bottom) }]}>
@@ -862,26 +850,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     paddingTop: 4,
   },
-  // Chat mode shortcut bar (horizontal scroll)
-  shortcutBar: {
-    maxHeight: 40,
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    backgroundColor: theme.bgCard,
-  },
-  shortcutContent: {
-    alignItems: "center",
-    paddingHorizontal: 8,
-    gap: 6,
-  },
-  shortcutBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-    backgroundColor: theme.border,
-  },
-  shortcutBtnText: { color: "#ccc", fontSize: 13, fontFamily: "monospace" },
-  // KB mode fixed grid
+  // Shortcut grid (shared by MSG and KB modes)
   kbGrid: {
     borderTopWidth: 1,
     borderTopColor: theme.border,
