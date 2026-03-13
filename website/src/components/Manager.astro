@@ -1,0 +1,115 @@
+---
+import TerminalWindow from './TerminalWindow.astro';
+---
+
+<section class="py-24 sm:py-32 px-5 sm:px-8 section-divide relative overflow-hidden noise">
+  <!-- Background -->
+  <div class="absolute top-0 right-0 w-[600px] h-[400px] bg-accent/3 rounded-full blur-[120px] pointer-events-none"></div>
+
+  <div class="relative z-10 max-w-5xl mx-auto">
+    <p class="font-mono text-xs text-text-muted uppercase tracking-widest mb-4 reveal">Manager sessions</p>
+    <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl italic leading-tight mb-6 reveal stagger-1">
+      One agent to manage the rest.
+    </h2>
+    <p class="text-text-secondary text-lg max-w-2xl mb-16 reveal stagger-2">
+      A dedicated Claude Code session that supervises your other sessions. It reads their output, sends them instructions, and reports back to you. The mental model is a tech lead managing a team.
+    </p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-16">
+      <!-- Capabilities -->
+      <div class="space-y-4 reveal stagger-3">
+        <div class="flex gap-3 p-4 rounded-xl bg-bg-card border border-border">
+          <span class="text-accent font-mono text-xs mt-0.5">></span>
+          <div>
+            <p class="text-text-primary text-sm font-medium">Read any session's state</p>
+            <p class="text-text-muted text-xs mt-1">Terminal output, conversation history, working directory. Full visibility.</p>
+          </div>
+        </div>
+        <div class="flex gap-3 p-4 rounded-xl bg-bg-card border border-border">
+          <span class="text-accent font-mono text-xs mt-0.5">></span>
+          <div>
+            <p class="text-text-primary text-sm font-medium">Send instructions to any session</p>
+            <p class="text-text-muted text-xs mt-1">Coordinate work across agents. Unblock stalled sessions. Start new ones.</p>
+          </div>
+        </div>
+        <div class="flex gap-3 p-4 rounded-xl bg-bg-card border border-border">
+          <span class="text-accent font-mono text-xs mt-0.5">></span>
+          <div>
+            <p class="text-text-primary text-sm font-medium">Report status back to you</p>
+            <p class="text-text-muted text-xs mt-1">One summary instead of checking each session individually.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ralph loops -->
+      <div class="reveal stagger-4">
+        <div class="p-6 rounded-xl bg-bg-card border border-accent/20 h-full">
+          <div class="flex items-center gap-2 mb-4">
+            <div class="w-2 h-2 rounded-full bg-accent" style="animation: pulse-soft 2s infinite;"></div>
+            <span class="font-mono text-xs text-accent uppercase tracking-wider">Ralph Loops</span>
+          </div>
+          <p class="text-text-primary text-base font-medium mb-3">Agent cron for your fleet.</p>
+          <p class="text-text-muted text-sm leading-relaxed mb-4">
+            Set your manager on a loop. Define a cadence and a set of goals. The manager keeps checking on your fleet, nudging workers forward, and flagging anything that needs your decision.
+          </p>
+          <div class="font-mono text-xs text-text-muted bg-bg-deep rounded-lg p-3 border border-border-subtle">
+            <span class="text-accent">"Every 30 minutes</span>, check if any session has stalled. Restart with better context. Ping me if something needs a decision."
+          </div>
+          <p class="text-text-muted text-xs mt-4">
+            Set it. Go for a run. Come back to progress across all your projects instead of a pile of stalled sessions.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Terminal demo -->
+    <div class="reveal stagger-5">
+      <TerminalWindow title="manager-session" class="max-w-3xl mx-auto">
+        <div class="space-y-2 text-xs sm:text-sm">
+          <div>
+            <span class="text-accent font-bold">ralph:</span>
+            <span class="text-text-muted"> Running scheduled check — 3 active workers</span>
+          </div>
+
+          <div class="pt-2 border-t border-border mt-2"></div>
+
+          <div>
+            <span class="text-green">auth-refactor</span>
+            <span class="text-text-muted"> · </span>
+            <span class="text-green">running</span>
+          </div>
+          <div class="pl-4 text-text-muted">
+            Session token migration — 80% complete, on track
+          </div>
+
+          <div class="pt-1">
+            <span class="text-green">api-tests</span>
+            <span class="text-text-muted"> · </span>
+            <span class="text-green">running</span>
+          </div>
+          <div class="pl-4 text-text-muted">
+            Integration tests for /api/users — 12 passing, 2 in progress
+          </div>
+
+          <div class="pt-1">
+            <span class="text-amber">frontend-ui</span>
+            <span class="text-text-muted"> · </span>
+            <span class="text-amber">stalled 14m</span>
+          </div>
+          <div class="pl-4 text-text-muted">
+            Build error in dashboard component. Restarting with updated context...
+          </div>
+
+          <div class="pt-3 border-t border-border mt-2">
+            <span class="text-accent font-bold">ralph:</span>
+            <span class="text-text-muted"> Restarted frontend-ui with fix context from auth-refactor.</span>
+          </div>
+          <div class="pt-1">
+            <span class="text-accent font-bold">ralph:</span>
+            <span class="text-text-muted"> All workers progressing. Next check in 30 minutes.</span>
+          </div>
+        </div>
+      </TerminalWindow>
+    </div>
+  </div>
+</section>

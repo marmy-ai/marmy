@@ -1,0 +1,124 @@
+<section class="py-24 sm:py-32 px-5 sm:px-8 section-divide relative overflow-hidden noise">
+  <!-- Background accent -->
+  <div class="absolute top-1/2 left-0 -translate-y-1/2 w-[500px] h-[400px] bg-accent/4 rounded-full blur-[120px] pointer-events-none"></div>
+
+  <div class="relative z-10 max-w-5xl mx-auto">
+    <p class="font-mono text-xs text-text-muted uppercase tracking-widest mb-4 reveal">Voice agent</p>
+    <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl italic leading-tight mb-6 reveal stagger-1">
+      Check in through your earbuds.
+    </h2>
+    <p class="text-text-secondary text-lg max-w-2xl mb-16 reveal stagger-2">
+      Typing on a phone while walking is awkward. So don't. Start a voice call with any session. The assistant monitors what Claude is doing and relays status through your earbuds. You speak instructions back.
+    </p>
+
+    <div class="flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
+      <!-- Voice flow description -->
+      <div class="flex-1 space-y-8 reveal stagger-3">
+        <!-- Step 1 -->
+        <div class="flex gap-4">
+          <div class="flex-shrink-0 w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center">
+            <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728"/>
+            </svg>
+          </div>
+          <div>
+            <p class="text-text-primary text-sm font-medium mb-1">Agent reads the latest output</p>
+            <p class="text-text-muted text-sm italic">
+              "Claude finished the login form validation. It's asking whether you want email-only or also phone number support."
+            </p>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="flex gap-4">
+          <div class="flex-shrink-0 w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center">
+            <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+            </svg>
+          </div>
+          <div>
+            <p class="text-text-primary text-sm font-medium mb-1">You respond out loud</p>
+            <p class="text-text-muted text-sm italic">
+              "Email only for now, we'll add phone later."
+            </p>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="flex gap-4">
+          <div class="flex-shrink-0 w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center">
+            <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <div>
+            <p class="text-text-primary text-sm font-medium mb-1">Approve and continue</p>
+            <p class="text-text-muted text-sm">
+              The assistant rephrases your instruction and shows an approval card. Glance down, tap approve, keep moving.
+            </p>
+          </div>
+        </div>
+
+        <p class="text-text-muted text-sm border-l-2 border-accent/30 pl-4 mt-8">
+          The voice assistant doesn't offer opinions or try to be clever. It passes messages between you and your agents and reports status factually. A reliable messenger, not another AI trying to help.
+        </p>
+      </div>
+
+      <!-- Phone mockup - voice call UI -->
+      <div class="flex-shrink-0 reveal stagger-4">
+        <div class="relative">
+          <div class="absolute inset-0 scale-90 bg-accent/8 rounded-[3rem] blur-[40px]"></div>
+
+          <div class="relative w-[260px] sm:w-[280px] rounded-[2.5rem] border border-border bg-bg-card p-2.5 shadow-2xl">
+            <!-- Notch -->
+            <div class="flex items-center justify-between px-5 py-2">
+              <span class="text-[10px] text-text-muted font-mono">9:41</span>
+              <div class="w-20 h-5 rounded-full bg-bg-deep"></div>
+              <span class="text-[10px] text-accent font-mono">2:34</span>
+            </div>
+
+            <!-- Voice call screen -->
+            <div class="rounded-2xl bg-bg-deep overflow-hidden border border-border-subtle">
+              <div class="px-4 py-3 border-b border-border">
+                <div class="flex items-center gap-2">
+                  <div class="w-2 h-2 rounded-full bg-accent" style="animation: pulse-soft 1.5s infinite;"></div>
+                  <span class="text-xs font-mono text-accent">Voice Call</span>
+                </div>
+                <span class="text-[10px] font-mono text-text-muted mt-1 block">auth-refactor &middot; mbp-studio</span>
+              </div>
+
+              <!-- Transcript -->
+              <div class="p-3 space-y-3 text-[11px] font-mono min-h-[160px]">
+                <div>
+                  <span class="text-text-muted">assistant:</span>
+                  <p class="text-text-secondary mt-0.5 leading-relaxed">Claude finished migrating the session tokens. Asking if you want rollback support.</p>
+                </div>
+                <div>
+                  <span class="text-accent">you:</span>
+                  <p class="text-text-secondary mt-0.5 leading-relaxed">Yes, add rollback.</p>
+                </div>
+              </div>
+
+              <!-- Approval card -->
+              <div class="mx-3 mb-3 p-2.5 rounded-lg bg-accent/8 border border-accent/20">
+                <p class="text-[10px] text-text-muted mb-2">Send to Claude:</p>
+                <p class="text-[11px] text-text-primary font-mono mb-3">"Add rollback support for the session token migration."</p>
+                <div class="flex gap-2">
+                  <button class="flex-1 py-1.5 rounded-md bg-accent text-bg-deep text-[10px] font-bold">Approve</button>
+                  <button class="flex-1 py-1.5 rounded-md border border-border text-text-muted text-[10px]">Edit</button>
+                </div>
+              </div>
+
+              <!-- Waveform -->
+              <div class="px-4 py-3 border-t border-border flex items-center justify-center gap-[3px]">
+                {[3,5,8,12,8,14,10,7,12,16,10,8,5,9,13,8,5,3].map((h) => (
+                  <div class="w-[2px] rounded-full bg-accent/60" style={`height: ${h}px; animation: pulse-soft ${1 + Math.random()}s infinite;`}></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
