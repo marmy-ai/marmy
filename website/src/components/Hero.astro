@@ -5,9 +5,29 @@
   <div class="relative z-10 max-w-5xl mx-auto text-center">
     <!-- Headline -->
     <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-5 reveal">
-      Leave your desk.<br/>
-      <span class="text-primary">Keep supervising.</span>
+      Manage your agent swarm<br/>
+      while you <span class="text-primary" id="rotating-verb">run.</span>
     </h1>
+
+    <script>
+      const verbs = ["run.", "cook.", "walk.", "commute.", "touch grass."];
+      let idx = 0;
+      const el = document.getElementById("rotating-verb");
+      if (el) {
+        setInterval(() => {
+          el.style.opacity = "0";
+          el.style.transform = "translateY(6px)";
+          setTimeout(() => {
+            idx = (idx + 1) % verbs.length;
+            el.textContent = verbs[idx];
+            el.style.opacity = "1";
+            el.style.transform = "translateY(0)";
+          }, 250);
+        }, 2200);
+        el.style.transition = "opacity 0.25s, transform 0.25s";
+        el.style.display = "inline-block";
+      }
+    </script>
 
     <p class="text-base sm:text-lg text-text-secondary max-w-lg mx-auto mb-8 reveal stagger-1">
       A mobile remote control for Claude Code. See the actual work, check in by voice, manage multiple sessions — all from your phone.
