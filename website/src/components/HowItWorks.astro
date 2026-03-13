@@ -2,61 +2,19 @@
 import TerminalWindow from './TerminalWindow.astro';
 ---
 
-<section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
+<section class="py-20 sm:py-28 px-5 sm:px-8 border-t border-border">
   <div class="max-w-5xl mx-auto">
-    <p class="font-mono text-xs text-text-muted uppercase tracking-widest mb-4 reveal">Architecture</p>
-    <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl italic leading-tight mb-6 reveal stagger-1">
-      No cloud. Direct connection.
+    <h2 class="text-2xl sm:text-3xl font-bold text-center mb-10 reveal">
+      No cloud. <span class="text-primary">Direct connection.</span>
     </h2>
-    <p class="text-text-secondary text-lg max-w-2xl mb-16 reveal stagger-2">
-      A lightweight Rust agent on your Mac. An iOS app on your phone. Connected over your LAN or Tailscale. Your code never leaves your network.
-    </p>
 
-    <!-- Steps -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-8 mb-16">
-      <div class="reveal stagger-3">
-        <div class="flex items-center gap-3 mb-3">
-          <span class="w-7 h-7 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center font-mono text-xs text-accent">1</span>
-          <h3 class="text-sm font-semibold">Install on each machine</h3>
-        </div>
-        <p class="text-text-muted text-sm pl-10">
-          <code class="text-[11px] bg-bg-card px-1.5 py-0.5 rounded border border-border font-mono">pip install marmy</code> — a lightweight daemon connects your agents to the app.
-        </p>
-      </div>
-
-      <div class="reveal stagger-4">
-        <div class="flex items-center gap-3 mb-3">
-          <span class="w-7 h-7 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center font-mono text-xs text-accent">2</span>
-          <h3 class="text-sm font-semibold">Pair your phone</h3>
-        </div>
-        <p class="text-text-muted text-sm pl-10">
-          Scan the QR code or enter the pairing key. Each machine joins your fleet over LAN or Tailscale.
-        </p>
-      </div>
-
-      <div class="reveal stagger-5">
-        <div class="flex items-center gap-3 mb-3">
-          <span class="w-7 h-7 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center font-mono text-xs text-accent">3</span>
-          <h3 class="text-sm font-semibold">Sessions appear automatically</h3>
-        </div>
-        <p class="text-text-muted text-sm pl-10">
-          Start Claude Code like normal. Marmy picks it up. Monitor, message, browse files — all from your phone.
-        </p>
-      </div>
-    </div>
-
-    <!-- Architecture diagram -->
-    <div class="reveal stagger-6">
-      <TerminalWindow title="architecture" class="max-w-3xl mx-auto">
-        <pre class="text-[10px] sm:text-xs leading-relaxed"><span class="text-text-muted">┌──────────────┐</span>         <span class="text-text-muted">┌───────────────────┐</span>         <span class="text-text-muted">┌──────────────┐</span>
-<span class="text-text-muted">│</span>  <span class="text-accent">Your Phone</span>  <span class="text-text-muted">│</span>  <span class="text-text-muted">ws://</span>  <span class="text-text-muted">│</span>  <span class="text-green">marmy agent</span>      <span class="text-text-muted">│</span>  <span class="text-text-muted">stdin/</span>  <span class="text-text-muted">│</span>  <span class="text-text-primary">Claude Code</span> <span class="text-text-muted">│</span>
-<span class="text-text-muted">│</span>  iOS app      <span class="text-text-muted">│ ◄──────► │</span>  Rust daemon       <span class="text-text-muted">│ ◄──────► │</span>  (subprocess) <span class="text-text-muted">│</span>
-<span class="text-text-muted">│</span>              <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>                   <span class="text-text-muted">│</span>  <span class="text-text-muted">stdout</span>  <span class="text-text-muted">│</span>              <span class="text-text-muted">│</span>
-<span class="text-text-muted">│</span>  <span class="text-text-muted">Workers</span>     <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">One per machine</span>   <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">N sessions</span>  <span class="text-text-muted">│</span>
-<span class="text-text-muted">│</span>  <span class="text-text-muted">Terminal</span>    <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">LAN or Tailscale</span>  <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">per machine</span> <span class="text-text-muted">│</span>
-<span class="text-text-muted">│</span>  <span class="text-text-muted">Files</span>       <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>  <span class="text-text-muted">:8765</span>             <span class="text-text-muted">│</span>         <span class="text-text-muted">└──────────────┘</span>
-<span class="text-text-muted">│</span>  <span class="text-text-muted">Voice</span>       <span class="text-text-muted">│</span>         <span class="text-text-muted">│</span>                   <span class="text-text-muted">│</span>
-<span class="text-text-muted">└──────────────┘</span>         <span class="text-text-muted">└───────────────────┘</span></pre>
+    <div class="reveal stagger-1">
+      <TerminalWindow title="architecture" class="max-w-2xl mx-auto">
+        <pre class="text-[10px] sm:text-xs leading-relaxed"><span class="text-text-tertiary">┌──────────────┐</span>         <span class="text-text-tertiary">┌───────────────────┐</span>         <span class="text-text-tertiary">┌──────────────┐</span>
+<span class="text-text-tertiary">│</span>  <span class="text-primary">Your Phone</span>  <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">ws://</span>  <span class="text-text-tertiary">│</span>  <span class="text-success">marmy agent</span>      <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">stdin/</span>  <span class="text-text-tertiary">│</span>  <span class="text-text-primary">Claude Code</span> <span class="text-text-tertiary">│</span>
+<span class="text-text-tertiary">│</span>  iOS app      <span class="text-text-tertiary">│ ◄──────► │</span>  Rust daemon       <span class="text-text-tertiary">│ ◄──────► │</span>  (subprocess) <span class="text-text-tertiary">│</span>
+<span class="text-text-tertiary">│</span>              <span class="text-text-tertiary">│</span>         <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">LAN / Tailscale</span>   <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">stdout</span>  <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">N sessions</span>  <span class="text-text-tertiary">│</span>
+<span class="text-text-tertiary">└──────────────┘</span>         <span class="text-text-tertiary">└───────────────────┘</span>         <span class="text-text-tertiary">└──────────────┘</span></pre>
       </TerminalWindow>
     </div>
   </div>

@@ -1,64 +1,54 @@
-<section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
+<section class="py-20 sm:py-28 px-5 sm:px-8 border-t border-border">
   <div class="max-w-5xl mx-auto">
     <div class="flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
       <!-- Phone mockup -->
       <div class="flex-shrink-0 order-2 lg:order-1 reveal stagger-2">
-        <div class="relative">
-          <div class="absolute inset-0 scale-90 bg-accent/6 rounded-[3rem] blur-[40px]"></div>
-
-          <div class="relative w-[260px] sm:w-[280px] rounded-[2.5rem] border border-border bg-bg-card p-2.5 shadow-2xl">
-            <!-- Notch -->
-            <div class="flex items-center justify-between px-5 py-2">
-              <span class="text-[10px] text-text-muted font-mono">9:41</span>
+        <div class="relative" style="animation: float 6s ease-in-out infinite; animation-delay: 2s;">
+          <div class="absolute inset-0 scale-90 bg-secondary/5 rounded-[3rem] blur-[30px]"></div>
+          <div class="relative w-[250px] sm:w-[270px] rounded-[2.5rem] border border-border bg-bg-card p-2 shadow-2xl">
+            <div class="flex items-center justify-between px-5 py-1.5">
+              <span class="text-[10px] text-text-tertiary font-mono">9:41</span>
               <div class="w-20 h-5 rounded-full bg-bg-deep"></div>
               <div class="flex gap-1 items-center">
-                <div class="w-1.5 h-1.5 rounded-full bg-accent"></div>
-                <span class="text-[10px] text-text-muted">LAN</span>
+                <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
+                <span class="text-[10px] text-text-tertiary">LAN</span>
               </div>
             </div>
 
-            <!-- Screen -->
-            <div class="rounded-2xl bg-bg-deep overflow-hidden border border-border-subtle">
-              <!-- Header -->
+            <div class="rounded-2xl bg-bg-deep overflow-hidden">
               <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-                <span class="text-xs font-mono font-semibold text-text-primary">Files</span>
-                <span class="text-[10px] font-mono text-text-muted">auth-refactor</span>
+                <span class="text-xs font-mono font-bold text-text-primary">Files</span>
+                <span class="text-[10px] font-mono text-text-tertiary">auth-refactor</span>
               </div>
 
-              <!-- File tree -->
               <div class="p-2 font-mono text-[11px]">
                 <div class="space-y-0.5">
-                  <div class="px-2 py-1 text-text-muted">src/</div>
-                  <div class="px-2 py-1 pl-5 rounded-md bg-accent/8 border border-accent/20">
-                    <span class="text-accent">auth.ts</span>
-                    <span class="text-accent text-[9px] ml-1">modified</span>
+                  <div class="px-2 py-1 text-text-tertiary">src/</div>
+                  <div class="px-2 py-1 pl-5 rounded-md bg-primary/8 border border-primary/15">
+                    <span class="text-primary">auth.ts</span>
+                    <span class="text-primary text-[9px] ml-1">modified</span>
                   </div>
-                  <div class="px-2 py-1 pl-5 text-text-muted">index.ts</div>
-                  <div class="px-2 py-1 pl-5 text-text-muted">routes.ts</div>
-                  <div class="px-2 py-1 text-text-muted">docs/</div>
-                  <div class="px-2 py-1 pl-5 text-text-muted">API.md</div>
+                  <div class="px-2 py-1 pl-5 text-text-tertiary">index.ts</div>
+                  <div class="px-2 py-1 text-text-tertiary">docs/</div>
+                  <div class="px-2 py-1 pl-5 text-text-tertiary">API.md</div>
                 </div>
 
-                <!-- Code preview -->
-                <div class="mt-2 rounded-lg bg-bg-card border border-border p-2.5 text-[10px] leading-relaxed">
-                  <div class="text-text-muted mb-1.5 text-[9px]">auth.ts</div>
-                  <div><span class="text-accent">export</span> <span class="text-green">async function</span> <span class="text-text-primary">verifySession</span>(</div>
-                  <div class="pl-2"><span class="text-text-muted">token:</span> <span class="text-green">string</span>,</div>
-                  <div class="pl-2"><span class="text-text-muted">options?:</span> <span class="text-green">VerifyOpts</span></div>
+                <div class="mt-2 rounded-lg bg-bg-card border border-border p-2 text-[10px] leading-relaxed">
+                  <div class="text-text-tertiary mb-1 text-[9px]">auth.ts</div>
+                  <div><span class="text-primary">export</span> <span class="text-success">async function</span> <span class="text-text-primary">verify</span>(</div>
+                  <div class="pl-2"><span class="text-text-tertiary">token:</span> <span class="text-success">string</span></div>
                   <div>) {'{'}</div>
-                  <div class="pl-2"><span class="text-accent">const</span> decoded = jwt.decode(token)</div>
-                  <div class="pl-2"><span class="text-accent">if</span> (!decoded) <span class="text-accent">throw</span> <span class="text-red">AuthError</span></div>
-                  <div class="pl-2"><span class="text-accent">return</span> validated(decoded)</div>
+                  <div class="pl-2"><span class="text-primary">const</span> decoded = jwt.decode(token)</div>
+                  <div class="pl-2"><span class="text-primary">return</span> validated(decoded)</div>
                   <div>{'}'}</div>
                 </div>
               </div>
 
-              <!-- Bottom nav -->
               <div class="flex justify-around py-2 border-t border-border text-[10px] font-mono">
-                <span class="text-text-muted">Machines</span>
-                <span class="text-text-muted">Workers</span>
-                <span class="text-text-muted">Terminal</span>
-                <span class="text-accent">Files</span>
+                <span class="text-text-tertiary">Machines</span>
+                <span class="text-text-tertiary">Workers</span>
+                <span class="text-text-tertiary">Terminal</span>
+                <span class="text-primary">Files</span>
               </div>
             </div>
           </div>
@@ -67,47 +57,23 @@
 
       <!-- Copy -->
       <div class="flex-1 order-1 lg:order-2 text-center lg:text-left">
-        <p class="font-mono text-xs text-text-muted uppercase tracking-widest mb-4 reveal">Artifact browser</p>
-        <h2 class="font-display text-3xl sm:text-4xl lg:text-5xl italic leading-tight mb-6 reveal stagger-1">
-          See what your agent actually built.
+        <div class="font-mono text-xs text-secondary mb-3 reveal">ARTIFACTS</div>
+        <h2 class="text-2xl sm:text-3xl font-bold mb-4 reveal stagger-1">
+          See the actual work.
         </h2>
-        <p class="text-text-secondary text-lg mb-8 reveal stagger-2">
-          The value of a coding session isn't the conversation&mdash;it's the changes in the working directory. Marmy renders the real artifacts so you can supervise with your eyes, not just your words.
+        <p class="text-text-secondary mb-6 text-sm reveal stagger-2">
+          Syntax-highlighted code, rendered markdown, images, PDFs. Not raw terminal text.
         </p>
-        <ul class="space-y-3 text-sm text-text-muted text-left max-w-md mx-auto lg:mx-0 reveal stagger-3">
-          <li class="flex items-start gap-3">
-            <span class="text-accent mt-0.5 text-xs font-mono">></span>
-            <span>Syntax-highlighted code in any language</span>
-          </li>
-          <li class="flex items-start gap-3">
-            <span class="text-accent mt-0.5 text-xs font-mono">></span>
-            <span>Rendered markdown with full formatting</span>
-          </li>
-          <li class="flex items-start gap-3">
-            <span class="text-accent mt-0.5 text-xs font-mono">></span>
-            <span>Inline image previews&mdash;screenshots, diagrams, generated assets</span>
-          </li>
-          <li class="flex items-start gap-3">
-            <span class="text-accent mt-0.5 text-xs font-mono">></span>
-            <span>PDF documents with page navigation</span>
-          </li>
-        </ul>
 
-        <!-- Push notifications callout -->
-        <div class="mt-10 p-4 rounded-xl bg-bg-card border border-border reveal stagger-4">
-          <div class="flex items-start gap-3">
-            <div class="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <svg class="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-              </svg>
-            </div>
-            <div>
-              <p class="text-text-primary text-sm font-medium">Push notifications</p>
-              <p class="text-text-muted text-sm mt-1">
-                Your phone buzzes when Claude finishes a task or needs input. No polling, no wondering if something finished twenty minutes ago. Pull it out, respond, put it away.
-              </p>
-            </div>
+        <!-- Push notifications -->
+        <div class="p-4 rounded-xl bg-bg-card border border-border reveal stagger-3">
+          <div class="flex items-center gap-2 mb-1.5">
+            <div class="w-2 h-2 rounded-full bg-secondary"></div>
+            <span class="font-mono text-xs text-secondary">PUSH NOTIFICATIONS</span>
           </div>
+          <p class="text-text-secondary text-sm">
+            Phone buzzes when an agent finishes or needs input. No polling.
+          </p>
         </div>
       </div>
     </div>
