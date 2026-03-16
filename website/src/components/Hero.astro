@@ -1,118 +1,116 @@
-<section class="py-20 sm:py-28 px-4 sm:px-6">
-  <div class="max-w-6xl mx-auto flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
-    <!-- Copy -->
-    <div class="flex-1 text-center lg:text-left">
-      <h1 class="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6">
-        Manage your coding agents
-        <span class="rotating-text-wrapper">
-          <span id="rotating-text" class="text-accent inline-block transition-all duration-300">like a boss.</span>
-        </span>
-      </h1>
-      <p class="text-lg sm:text-xl text-text-muted max-w-xl mx-auto lg:mx-0 mb-8">
-        Marmy lets you monitor, message, and manage all your Claude Code sessions from a single mobile app. No cloud, no YAML, no complexity.
-      </p>
-      <div class="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start">
-        <a
-          href="#get-started"
-          class="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-accent hover:bg-accent-hover text-white font-medium transition-colors"
-        >
-          Get Started
-        </a>
-        <a
-          href="https://github.com/marmy-ai/marmy"
-          target="_blank"
-          rel="noopener"
-          class="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-border text-text-primary hover:bg-bg-card transition-colors"
-        >
-          View on GitHub
-        </a>
-      </div>
+<section class="relative pt-28 pb-24 sm:pt-40 sm:pb-32 px-5 sm:px-8 overflow-hidden">
+  <!-- Glow -->
+  <div class="absolute top-16 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-primary/6 rounded-full blur-[140px] pointer-events-none"></div>
+  <div class="absolute top-40 left-1/4 w-[300px] h-[200px] bg-manager/4 rounded-full blur-[100px] pointer-events-none"></div>
+
+  <div class="relative z-10 max-w-5xl mx-auto text-left sm:text-center">
+    <h1 class="text-4xl sm:text-5xl lg:text-[3.5rem] font-extrabold tracking-[-0.03em] leading-[1.08] mb-6 reveal">
+      Manage your Claude Code sessions<br/>
+      while you <span class="text-primary" id="rotating-verb">run.</span>
+    </h1>
+
+    <script>
+      const verbs = ["run.", "cook.", "walk.", "commute.", "touch grass."];
+      let idx = 0;
+      const el = document.getElementById("rotating-verb");
+      if (el) {
+        setInterval(() => {
+          el.style.opacity = "0";
+          el.style.transform = "translateY(6px)";
+          setTimeout(() => {
+            idx = (idx + 1) % verbs.length;
+            el.textContent = verbs[idx];
+            el.style.opacity = "1";
+            el.style.transform = "translateY(0)";
+          }, 250);
+        }, 2200);
+        el.style.transition = "opacity 0.25s, transform 0.25s";
+        el.style.display = "inline-block";
+      }
+    </script>
+
+    <p class="text-base sm:text-lg text-text-secondary max-w-lg sm:mx-auto mb-9 leading-relaxed reveal stagger-1">
+      A mobile app for supervising your Claude Code sessions on all your machines.
+    </p>
+
+    <!-- CTAs -->
+    <div class="flex flex-col sm:flex-row gap-3 sm:justify-center mb-20 reveal stagger-2">
+      <a href="#get-started"
+        class="inline-flex items-center justify-center gap-2 px-7 py-3 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold transition-all hover:shadow-lg hover:shadow-primary/20">
+        Get Started
+      </a>
+      <a href="https://github.com/marmy-ai/marmy" target="_blank" rel="noopener"
+        class="inline-flex items-center justify-center gap-2 px-7 py-3 rounded-lg border border-border text-text-primary hover:bg-bg-card hover:border-border-light transition-all">
+        View Source
+      </a>
     </div>
 
     <!-- Phone mockup -->
-    <div class="flex-shrink-0" style="perspective: 800px;">
-      <div class="phone-mockup" style="transform: rotateY(-5deg) rotateX(2deg);">
-        <!-- Phone frame -->
-        <div class="w-[280px] sm:w-[300px] rounded-[2rem] border-2 border-border bg-bg-card p-2 shadow-2xl shadow-accent/10">
-          <!-- Status bar -->
-          <div class="flex items-center justify-between px-5 py-2">
-            <span class="text-[10px] text-text-muted font-mono">9:41</span>
+    <div class="flex justify-center reveal stagger-3">
+      <div class="relative" style="animation: float 6s ease-in-out infinite;">
+        <div class="absolute inset-0 scale-90 bg-primary/8 rounded-[3rem] blur-[50px]"></div>
+        <div class="relative w-[270px] sm:w-[300px] rounded-[2.5rem] border border-border bg-bg-card p-2 shadow-2xl shadow-black/40">
+          <!-- Notch -->
+          <div class="flex items-center justify-between px-5 py-1.5">
+            <span class="text-[10px] text-text-tertiary font-mono">9:41</span>
             <div class="w-20 h-5 rounded-full bg-bg-deep"></div>
-            <div class="flex gap-1">
-              <div class="w-1 h-1 rounded-full bg-green"></div>
-              <span class="text-[10px] text-text-muted">●●●</span>
+            <div class="flex gap-1 items-center">
+              <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
+              <span class="text-[10px] text-text-tertiary">LAN</span>
             </div>
           </div>
 
-          <!-- Screen content -->
+          <!-- Screen -->
           <div class="rounded-2xl bg-bg-deep overflow-hidden">
-            <!-- App header -->
             <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-              <span class="text-xs font-mono font-semibold text-text-primary">Sessions</span>
-              <span class="text-[10px] font-mono text-text-muted">work-mbp</span>
+              <span class="text-xs font-mono font-bold text-text-primary">Workers</span>
+              <span class="text-[10px] font-mono text-text-tertiary">mbp-studio</span>
             </div>
 
-            <!-- Session list -->
             <div class="p-2 space-y-1.5 font-mono text-[11px]">
-              <!-- Session 1 -->
-              <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
+              <!-- Manager -->
+              <div class="px-2.5 py-2 rounded-lg bg-manager/8 border border-manager/20">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-1.5">
-                    <span class="text-accent">api-redesign</span>
+                    <span class="text-[9px] px-1 py-0.5 rounded bg-manager/20 text-manager font-bold">MGR</span>
+                    <span class="text-manager">ralph</span>
                   </div>
-                  <div class="w-1.5 h-1.5 rounded-full bg-green"></div>
+                  <div class="w-1.5 h-1.5 rounded-full bg-manager" style="animation: pulse-soft 2s infinite;"></div>
                 </div>
-                <div class="text-text-muted text-[10px] mt-0.5">Refactoring auth endpoints...</div>
+                <div class="text-text-tertiary text-[10px] mt-1">Monitoring 3 workers...</div>
               </div>
 
-              <!-- Session 2 -->
-              <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
+              <!-- Workers -->
+              <div class="px-2.5 py-2 rounded-lg bg-bg-card border border-border">
                 <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-green">test-suite</span>
-                  </div>
-                  <div class="w-1.5 h-1.5 rounded-full bg-green"></div>
+                  <span class="text-text-primary">auth-refactor</span>
+                  <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
                 </div>
-                <div class="text-text-muted text-[10px] mt-0.5">Writing integration tests</div>
+                <div class="text-text-tertiary text-[10px] mt-0.5">Migrating session tokens</div>
               </div>
 
-              <!-- Session 3 -->
-              <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
+              <div class="px-2.5 py-2 rounded-lg bg-bg-card border border-border">
                 <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-green">docs-update</span>
-                  </div>
-                  <div class="w-1.5 h-1.5 rounded-full bg-[#eab308]"></div>
+                  <span class="text-text-primary">api-tests</span>
+                  <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
                 </div>
-                <div class="text-text-muted text-[10px] mt-0.5">Waiting for approval</div>
+                <div class="text-text-tertiary text-[10px] mt-0.5">12 passing, 2 in progress</div>
               </div>
 
-              <!-- Session 4 -->
-              <div class="px-2 py-1.5 rounded-md bg-bg-card border border-border">
+              <div class="px-2.5 py-2 rounded-lg bg-bg-card border border-secondary/30">
                 <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-green">frontend-fix</span>
-                  </div>
-                  <div class="w-1.5 h-1.5 rounded-full bg-green"></div>
+                  <span class="text-text-primary">frontend-ui</span>
+                  <div class="w-1.5 h-1.5 rounded-full bg-secondary"></div>
                 </div>
-                <div class="text-text-muted text-[10px] mt-0.5">Updating dashboard components</div>
+                <div class="text-secondary text-[10px] mt-0.5">Needs your input</div>
               </div>
             </div>
 
-            <!-- Bottom nav -->
-            <div class="flex justify-around py-2 border-t border-border">
-              <div class="text-center">
-                <div class="text-[10px] text-text-muted">Machines</div>
-              </div>
-              <div class="text-center">
-                <div class="text-[10px] text-accent">Sessions</div>
-              </div>
-              <div class="text-center">
-                <div class="text-[10px] text-text-muted">Terminal</div>
-              </div>
-              <div class="text-center">
-                <div class="text-[10px] text-text-muted">Files</div>
-              </div>
+            <div class="flex justify-around py-2 border-t border-border text-[10px] font-mono">
+              <span class="text-text-tertiary">Machines</span>
+              <span class="text-primary">Workers</span>
+              <span class="text-text-tertiary">Terminal</span>
+              <span class="text-text-tertiary">Files</span>
             </div>
           </div>
         </div>
@@ -120,27 +118,3 @@
     </div>
   </div>
 </section>
-
-<script>
-  const phrases = [
-    "like a boss.",
-    "from your phone.",
-    "while you sleep.",
-    "from anywhere.",
-    "without the chaos.",
-  ];
-  let index = 0;
-  const el = document.getElementById("rotating-text");
-  if (el) {
-    setInterval(() => {
-      el.style.opacity = "0";
-      el.style.transform = "translateY(8px)";
-      setTimeout(() => {
-        index = (index + 1) % phrases.length;
-        el.textContent = phrases[index];
-        el.style.opacity = "1";
-        el.style.transform = "translateY(0)";
-      }, 300);
-    }, 2500);
-  }
-</script>

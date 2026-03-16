@@ -1,0 +1,68 @@
+<section id="get-started" class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
+  <div class="max-w-2xl mx-auto">
+    <h2 class="text-2xl sm:text-3xl font-bold sm:text-center mb-4 tracking-[-0.02em] reveal">
+      Open source.
+    </h2>
+    <p class="text-text-secondary text-[15px] leading-relaxed max-w-lg sm:mx-auto sm:text-center mb-10 reveal stagger-1">
+      Marmy is fully open source. The agent, the protocol, and the app are all available on GitHub. Run it on your own hardware, audit the code, and contribute.
+    </p>
+
+    <div class="flex flex-col sm:flex-row gap-3 sm:justify-center mb-14 reveal stagger-2">
+      <a href="https://github.com/marmy-ai/marmy" target="_blank" rel="noopener"
+        class="inline-flex items-center justify-center gap-2 px-7 py-3 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold transition-all hover:shadow-lg hover:shadow-primary/20">
+        View on GitHub
+      </a>
+      <a href="https://github.com/marmy-ai/marmy#readme" target="_blank" rel="noopener"
+        class="inline-flex items-center justify-center gap-2 px-7 py-3 rounded-lg border border-border text-text-primary hover:bg-bg-card hover:border-border-light transition-all">
+        Read the Docs
+      </a>
+    </div>
+
+    <!-- Quick start -->
+    <div class="space-y-3 reveal stagger-3">
+      <div class="rounded-xl border border-border bg-bg-card overflow-hidden hover:border-border-light transition-colors">
+        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
+          <span class="text-xs text-text-tertiary font-mono tracking-wider">1 · Install</span>
+          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="pip install marmy">copy</button>
+        </div>
+        <div class="px-4 py-3 font-mono text-sm">
+          <span class="text-text-tertiary">$</span> <span class="text-text-primary">pip install marmy</span>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-border bg-bg-card overflow-hidden hover:border-border-light transition-colors">
+        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
+          <span class="text-xs text-text-tertiary font-mono tracking-wider">2 · Start</span>
+          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="marmy start">copy</button>
+        </div>
+        <div class="px-4 py-3 font-mono text-sm">
+          <span class="text-text-tertiary">$</span> <span class="text-text-primary">marmy start</span>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-border bg-bg-card overflow-hidden hover:border-border-light transition-colors">
+        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
+          <span class="text-xs text-text-tertiary font-mono tracking-wider">3 · Pair</span>
+          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="marmy pair">copy</button>
+        </div>
+        <div class="px-4 py-3 font-mono text-sm">
+          <span class="text-text-tertiary">$</span> <span class="text-text-primary">marmy pair</span>
+          <div class="text-text-tertiary mt-1.5 text-xs">Pairing code: <span class="text-secondary">XXXX-XXXX</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const code = btn.getAttribute('data-code');
+      if (!code) return;
+      await navigator.clipboard.writeText(code);
+      const original = btn.textContent;
+      btn.textContent = 'copied!';
+      setTimeout(() => { btn.textContent = original; }, 2000);
+    });
+  });
+</script>

@@ -2,21 +2,25 @@
 import Layout from '../layouts/Layout.astro';
 import Nav from '../components/Nav.astro';
 import Hero from '../components/Hero.astro';
-import Problem from '../components/Problem.astro';
-import HowItWorks from '../components/HowItWorks.astro';
 import FileViewer from '../components/FileViewer.astro';
-import GetStarted from '../components/GetStarted.astro';
+import Voice from '../components/Voice.astro';
+import Manager from '../components/Manager.astro';
+import PushNotifications from '../components/PushNotifications.astro';
+import HowItWorks from '../components/HowItWorks.astro';
+import OpenSource from '../components/OpenSource.astro';
 import Footer from '../components/Footer.astro';
 ---
 
-<Layout title="marmy — Manage your coding agents">
+<Layout title="marmy — Manage Claude Code from your phone">
   <Nav />
   <main>
     <Hero />
-    <Problem />
-    <HowItWorks />
     <FileViewer />
-    <GetStarted />
+    <Voice />
+    <Manager />
+    <PushNotifications />
+    <HowItWorks />
+    <OpenSource />
   </main>
   <Footer />
 </Layout>

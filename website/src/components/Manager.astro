@@ -1,0 +1,30 @@
+---
+import TerminalWindow from './TerminalWindow.astro';
+---
+
+<section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
+  <div class="max-w-5xl mx-auto">
+    <div class="font-mono text-xs text-manager mb-3 sm:text-center tracking-widest reveal">MANAGER SESSIONS</div>
+    <h2 class="text-2xl sm:text-3xl font-bold sm:text-center mb-4 tracking-[-0.02em] reveal stagger-1">
+      One agent manages the rest.
+    </h2>
+    <p class="text-text-secondary sm:text-center text-[15px] leading-relaxed max-w-lg sm:mx-auto mb-12 reveal stagger-2">
+      A manager session is a Claude Code instance that monitors your other sessions, sends them instructions, and reports status back to you. Define a schedule and goals, and the manager keeps your fleet on track.
+    </p>
+
+    <!-- Terminal demo -->
+    <div class="reveal stagger-3">
+      <TerminalWindow title="manager" class="max-w-2xl mx-auto">
+        <div class="space-y-1.5 text-xs sm:text-sm">
+          <div><span class="text-manager font-bold">manager:</span> <span class="text-text-secondary">Scheduled check. 3 workers.</span></div>
+          <div class="pt-1.5 border-t border-border mt-1.5"></div>
+          <div><span class="text-success">auth-refactor</span> <span class="text-text-tertiary">·</span> <span class="text-success">running</span> <span class="text-text-tertiary">· 80% done</span></div>
+          <div><span class="text-success">api-tests</span> <span class="text-text-tertiary">·</span> <span class="text-success">running</span> <span class="text-text-tertiary">· 12 passing</span></div>
+          <div><span class="text-secondary">frontend-ui</span> <span class="text-text-tertiary">·</span> <span class="text-secondary">stalled 14m</span></div>
+          <div class="pt-1.5 border-t border-border mt-1.5"></div>
+          <div><span class="text-manager font-bold">manager:</span> <span class="text-text-secondary">Restarted frontend-ui with fix context. Next check in 30m.</span></div>
+        </div>
+      </TerminalWindow>
+    </div>
+  </div>
+</section>

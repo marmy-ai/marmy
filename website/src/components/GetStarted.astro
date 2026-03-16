@@ -1,73 +1,48 @@
-<section id="get-started" class="py-20 px-4 sm:px-6 border-t border-border">
-  <div class="max-w-3xl mx-auto">
-    <h2 class="text-3xl sm:text-4xl font-bold text-center mb-4">
-      Get started in 3 commands
+<section id="get-started" class="py-20 sm:py-28 px-5 sm:px-8 border-t border-border">
+  <div class="max-w-2xl mx-auto">
+    <h2 class="text-2xl sm:text-3xl font-bold text-center mb-8 reveal">
+      Three commands. <span class="text-primary">That's it.</span>
     </h2>
-    <p class="text-text-muted text-center max-w-2xl mx-auto mb-12">
-      From zero to a running fleet. Repeat for each machine.
-    </p>
 
-    <div class="space-y-4">
-      <!-- Step 1 -->
-      <div class="rounded-lg border border-border bg-bg-card overflow-hidden">
+    <div class="space-y-3 reveal stagger-1">
+      <div class="rounded-xl border border-border bg-bg-card overflow-hidden">
         <div class="flex items-center justify-between px-4 py-2 border-b border-border">
-          <span class="text-xs text-text-muted font-mono">1. Install marmy</span>
-          <button
-            class="copy-btn text-xs text-text-muted hover:text-text-primary transition-colors font-mono"
-            data-code="pip install marmy"
-          >
-            copy
-          </button>
+          <span class="text-xs text-text-tertiary font-mono">1 · Install</span>
+          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="pip install marmy">copy</button>
         </div>
-        <div class="px-4 py-3 font-mono text-sm">
-          <span class="text-text-muted">$</span> <span class="text-text-primary">pip install marmy</span>
+        <div class="px-4 py-2.5 font-mono text-sm">
+          <span class="text-text-tertiary">$</span> <span class="text-text-primary">pip install marmy</span>
         </div>
       </div>
 
-      <!-- Step 2 -->
-      <div class="rounded-lg border border-border bg-bg-card overflow-hidden">
+      <div class="rounded-xl border border-border bg-bg-card overflow-hidden">
         <div class="flex items-center justify-between px-4 py-2 border-b border-border">
-          <span class="text-xs text-text-muted font-mono">2. Start the agent</span>
-          <button
-            class="copy-btn text-xs text-text-muted hover:text-text-primary transition-colors font-mono"
-            data-code="marmy start"
-          >
-            copy
-          </button>
+          <span class="text-xs text-text-tertiary font-mono">2 · Start</span>
+          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="marmy start">copy</button>
         </div>
-        <div class="px-4 py-3 font-mono text-sm">
-          <span class="text-text-muted">$</span> <span class="text-text-primary">marmy start</span>
+        <div class="px-4 py-2.5 font-mono text-sm">
+          <span class="text-text-tertiary">$</span> <span class="text-text-primary">marmy start</span>
         </div>
       </div>
 
-      <!-- Step 3 -->
-      <div class="rounded-lg border border-border bg-bg-card overflow-hidden">
+      <div class="rounded-xl border border-border bg-bg-card overflow-hidden">
         <div class="flex items-center justify-between px-4 py-2 border-b border-border">
-          <span class="text-xs text-text-muted font-mono">3. Pair your phone</span>
-          <button
-            class="copy-btn text-xs text-text-muted hover:text-text-primary transition-colors font-mono"
-            data-code="marmy pair"
-          >
-            copy
-          </button>
+          <span class="text-xs text-text-tertiary font-mono">3 · Pair</span>
+          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="marmy pair">copy</button>
         </div>
-        <div class="px-4 py-3 font-mono text-sm">
-          <span class="text-text-muted">$</span> <span class="text-text-primary">marmy pair</span>
-          <div class="text-text-muted mt-1">Pairing code: <span class="text-accent">XXXX-XXXX</span></div>
-          <div class="text-text-muted">Scan the QR code in the marmy app, or enter the code manually.</div>
+        <div class="px-4 py-2.5 font-mono text-sm">
+          <span class="text-text-tertiary">$</span> <span class="text-text-primary">marmy pair</span>
+          <div class="text-text-tertiary mt-1 text-xs">Pairing code: <span class="text-secondary">XXXX-XXXX</span></div>
         </div>
       </div>
 
-      <!-- Step 4 -->
-      <div class="rounded-lg border border-border bg-bg-card overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-2 border-b border-border">
-          <span class="text-xs text-text-muted font-mono">4. Use Claude Code like normal</span>
+      <div class="rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
+        <div class="px-4 py-2 border-b border-primary/10">
+          <span class="text-xs text-primary font-mono">4 · Use Claude Code like normal</span>
         </div>
-        <div class="px-4 py-3 font-mono text-sm">
-          <span class="text-text-muted">$</span> <span class="text-text-primary">claude "refactor the auth module"</span>
-          <div class="text-text-muted mt-1">
-            <span class="text-green">●</span> marmy picks up the session automatically
-          </div>
+        <div class="px-4 py-2.5 font-mono text-sm">
+          <span class="text-text-tertiary">$</span> <span class="text-text-primary">claude "refactor the auth module"</span>
+          <div class="mt-1 text-xs"><span class="text-success">&#9679;</span> <span class="text-text-tertiary">marmy picks it up automatically</span></div>
         </div>
       </div>
     </div>
@@ -82,9 +57,7 @@
       await navigator.clipboard.writeText(code);
       const original = btn.textContent;
       btn.textContent = 'copied!';
-      setTimeout(() => {
-        btn.textContent = original;
-      }, 2000);
+      setTimeout(() => { btn.textContent = original; }, 2000);
     });
   });
 </script>
