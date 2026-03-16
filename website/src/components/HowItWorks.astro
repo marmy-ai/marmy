@@ -1,21 +1,30 @@
----
-import TerminalWindow from './TerminalWindow.astro';
----
-
-<section class="py-20 sm:py-28 px-5 sm:px-8 border-t border-border">
+<section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
   <div class="max-w-5xl mx-auto">
-    <h2 class="text-2xl sm:text-3xl font-bold text-center mb-10 reveal">
-      No cloud. <span class="text-primary">Direct connection.</span>
+    <h2 class="text-2xl sm:text-3xl font-bold sm:text-center mb-4 tracking-[-0.02em] reveal">
+      How it works
     </h2>
+    <p class="text-text-secondary sm:text-center text-[15px] leading-relaxed max-w-xl sm:mx-auto mb-12 reveal stagger-1">
+      The marmy agent runs on your machine alongside Claude Code. The mobile app connects directly over your local network or Tailscale. No cloud relay, no third-party servers.
+    </p>
 
-    <div class="reveal stagger-1">
-      <TerminalWindow title="architecture" class="max-w-2xl mx-auto">
-        <pre class="text-[10px] sm:text-xs leading-relaxed"><span class="text-text-tertiary">┌──────────────┐</span>         <span class="text-text-tertiary">┌───────────────────┐</span>         <span class="text-text-tertiary">┌──────────────┐</span>
-<span class="text-text-tertiary">│</span>  <span class="text-primary">Your Phone</span>  <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">ws://</span>  <span class="text-text-tertiary">│</span>  <span class="text-success">marmy agent</span>      <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">stdin/</span>  <span class="text-text-tertiary">│</span>  <span class="text-text-primary">Claude Code</span> <span class="text-text-tertiary">│</span>
-<span class="text-text-tertiary">│</span>  iOS app      <span class="text-text-tertiary">│ ◄──────► │</span>  Rust daemon       <span class="text-text-tertiary">│ ◄──────► │</span>  (subprocess) <span class="text-text-tertiary">│</span>
-<span class="text-text-tertiary">│</span>              <span class="text-text-tertiary">│</span>         <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">LAN / Tailscale</span>   <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">stdout</span>  <span class="text-text-tertiary">│</span>  <span class="text-text-tertiary">N sessions</span>  <span class="text-text-tertiary">│</span>
-<span class="text-text-tertiary">└──────────────┘</span>         <span class="text-text-tertiary">└───────────────────┘</span>         <span class="text-text-tertiary">└──────────────┘</span></pre>
-      </TerminalWindow>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 reveal stagger-2">
+      <div class="p-6 rounded-xl bg-bg-card border border-border hover:border-border-light transition-colors">
+        <div class="text-primary font-mono text-xs mb-3 tracking-wider">01</div>
+        <h3 class="font-semibold mb-2">Install the agent</h3>
+        <p class="text-text-secondary text-sm leading-relaxed">A lightweight Rust daemon that sits between your phone and Claude Code. Runs on any machine where you use Claude.</p>
+      </div>
+
+      <div class="p-6 rounded-xl bg-bg-card border border-border hover:border-border-light transition-colors">
+        <div class="text-primary font-mono text-xs mb-3 tracking-wider">02</div>
+        <h3 class="font-semibold mb-2">Connect over LAN or Tailscale</h3>
+        <p class="text-text-secondary text-sm leading-relaxed">If your phone and machine are on the same network, it just works. For remote access, connect through your Tailscale network.</p>
+      </div>
+
+      <div class="p-6 rounded-xl bg-bg-card border border-border hover:border-border-light transition-colors">
+        <div class="text-primary font-mono text-xs mb-3 tracking-wider">03</div>
+        <h3 class="font-semibold mb-2">Manage multiple machines</h3>
+        <p class="text-text-secondary text-sm leading-relaxed">Run the agent on as many machines as you want. The app shows all of them in one place, with all sessions across your fleet.</p>
+      </div>
     </div>
   </div>
 </section>

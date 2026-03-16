@@ -1,37 +1,40 @@
-<section class="py-20 sm:py-28 px-5 sm:px-8 border-t border-border">
+<section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
   <div class="max-w-5xl mx-auto">
-    <div class="flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
+    <div class="flex flex-col lg:flex-row items-center gap-14 lg:gap-20">
       <!-- Copy -->
-      <div class="flex-1 text-center lg:text-left">
-        <div class="font-mono text-xs text-secondary mb-3 reveal">VOICE AGENT</div>
-        <h2 class="text-2xl sm:text-3xl font-bold mb-4 reveal stagger-1">
-          Check in through your earbuds.
+      <div class="flex-1">
+        <div class="font-mono text-xs text-secondary mb-3 tracking-widest reveal">MARMY PHONE CALL</div>
+        <h2 class="text-2xl sm:text-3xl font-bold mb-5 tracking-[-0.02em] reveal stagger-1">
+          Call into any session.
         </h2>
-        <p class="text-text-secondary mb-6 text-sm reveal stagger-2">
-          Start a voice call with any session. The assistant tells you what Claude is doing. You speak instructions back. Tap to approve.
+        <p class="text-text-secondary mb-4 text-[15px] leading-relaxed reveal stagger-2">
+          Start a voice call with a running Claude Code session. A voice assistant summarizes what Claude has done, reads back key decisions, and relays your spoken instructions as text input to the agent.
+        </p>
+        <p class="text-text-secondary mb-8 text-[15px] leading-relaxed reveal stagger-3">
+          Useful when you are away from your desk and need to unblock an agent, adjust direction, or approve a pending action without typing.
         </p>
 
-        <div class="space-y-4 text-sm text-left reveal stagger-3">
+        <div class="space-y-4 text-[15px] reveal stagger-4">
           <div class="flex gap-3 items-start">
-            <span class="text-secondary font-mono text-xs mt-0.5">1</span>
-            <p class="text-text-secondary italic">"Claude finished the login form. Wants to know: email-only or also phone?"</p>
+            <span class="text-secondary font-mono text-xs mt-1 shrink-0">1</span>
+            <p class="text-text-secondary italic">"Claude finished the login form and is asking whether to support email-only or also phone number."</p>
           </div>
           <div class="flex gap-3 items-start">
-            <span class="text-secondary font-mono text-xs mt-0.5">2</span>
+            <span class="text-secondary font-mono text-xs mt-1 shrink-0">2</span>
             <p class="text-text-primary">"Email only for now."</p>
           </div>
           <div class="flex gap-3 items-start">
-            <span class="text-secondary font-mono text-xs mt-0.5">3</span>
-            <p class="text-text-secondary">Approval card appears. Tap approve. Keep walking.</p>
+            <span class="text-secondary font-mono text-xs mt-1 shrink-0">3</span>
+            <p class="text-text-secondary">An approval card appears on screen. Tap approve and the instruction is sent.</p>
           </div>
         </div>
       </div>
 
       <!-- Phone mockup -->
-      <div class="flex-shrink-0 reveal stagger-4">
+      <div class="flex-shrink-0 reveal stagger-5">
         <div class="relative" style="animation: float 6s ease-in-out infinite; animation-delay: 1s;">
-          <div class="absolute inset-0 scale-90 bg-primary/6 rounded-[3rem] blur-[30px]"></div>
-          <div class="relative w-[250px] sm:w-[270px] rounded-[2.5rem] border border-border bg-bg-card p-2 shadow-2xl">
+          <div class="absolute inset-0 scale-90 bg-primary/6 rounded-[3rem] blur-[40px]"></div>
+          <div class="relative w-[260px] sm:w-[280px] rounded-[2.5rem] border border-border bg-bg-card p-2 shadow-2xl shadow-black/40">
             <div class="flex items-center justify-between px-5 py-1.5">
               <span class="text-[10px] text-text-tertiary font-mono">9:41</span>
               <div class="w-20 h-5 rounded-full bg-bg-deep"></div>
@@ -44,25 +47,25 @@
                   <div class="w-2 h-2 rounded-full bg-voice" style="animation: pulse-soft 1.5s infinite;"></div>
                   <span class="text-xs font-mono text-voice">Voice Call</span>
                 </div>
-                <span class="text-[10px] font-mono text-text-tertiary mt-0.5 block">auth-refactor</span>
+                <span class="text-[10px] font-mono text-text-tertiary mt-0.5 block">frontend-ui</span>
               </div>
 
               <!-- Transcript -->
               <div class="p-3 space-y-2.5 text-[11px] font-mono min-h-[120px]">
                 <div>
                   <span class="text-text-tertiary">assistant:</span>
-                  <p class="text-text-secondary mt-0.5">Finished migrating tokens. Wants rollback support?</p>
+                  <p class="text-text-secondary mt-0.5">Finished the login form. Email-only or also phone number?</p>
                 </div>
                 <div>
                   <span class="text-voice">you:</span>
-                  <p class="text-text-primary mt-0.5">Yes, add rollback.</p>
+                  <p class="text-text-primary mt-0.5">Email only for now.</p>
                 </div>
               </div>
 
               <!-- Approval card -->
               <div class="mx-3 mb-3 p-2.5 rounded-lg bg-primary/8 border border-primary/20">
                 <p class="text-[10px] text-text-tertiary mb-1.5">Send to Claude:</p>
-                <p class="text-[11px] text-text-primary font-mono mb-2.5">"Add rollback support for token migration."</p>
+                <p class="text-[11px] text-text-primary font-mono mb-2.5">"Use email-only for the login form."</p>
                 <div class="flex gap-2">
                   <button class="flex-1 py-1.5 rounded-md bg-primary text-white text-[10px] font-bold">Approve</button>
                   <button class="flex-1 py-1.5 rounded-md border border-border text-text-secondary text-[10px]">Edit</button>
