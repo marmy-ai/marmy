@@ -15,7 +15,7 @@
     "api"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "@fastify/cors": "^8.5.0",
