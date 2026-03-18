@@ -14,8 +14,17 @@
     "agent",
     "api"
   ],
-  "author": "",
+  "author": "Marmy",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mharajli/marmy.git",
+    "directory": "api"
+  },
+  "homepage": "https://github.com/mharajli/marmy#readme",
+  "bugs": {
+    "url": "https://github.com/mharajli/marmy/issues"
+  },
   "type": "module",
   "dependencies": {
     "@fastify/cors": "^8.5.0",

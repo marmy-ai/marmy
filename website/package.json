@@ -7,6 +7,17 @@
     "build": "astro build",
     "preview": "astro preview"
   },
+  "author": "Marmy",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mharajli/marmy.git",
+    "directory": "website"
+  },
+  "homepage": "https://github.com/mharajli/marmy#readme",
+  "bugs": {
+    "url": "https://github.com/mharajli/marmy/issues"
+  },
   "dependencies": {
     "astro": "^5.5.0",
     "@tailwindcss/vite": "^4.0.0",
