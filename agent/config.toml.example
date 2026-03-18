@@ -1,0 +1,37 @@
+# Marmy Agent Configuration
+# Copy this file to ~/.config/marmy/config.toml and edit as needed.
+# A random auth token is auto-generated on first run if left empty.
+
+[server]
+bind = "0.0.0.0"
+port = 9876
+
+[auth]
+# Bearer token for API authentication (auto-generated if empty)
+token = ""
+
+[files]
+# Directories the mobile client is allowed to browse (empty = no file browsing)
+allowed_paths = []
+
+[tmux]
+# tmux socket name (-L flag). Empty = default socket.
+socket_name = ""
+
+[notifications]
+enabled = true
+cooldown_seconds = 120
+# Path to your APNs .p8 key file (from Apple Developer > Keys)
+apns_key_path = ""
+# APNs Key ID (10-char string from Apple Developer)
+apns_key_id = ""
+# Apple Developer Team ID
+apns_team_id = ""
+# APNs topic — your app's bundle identifier
+apns_topic = "com.marmy.app"
+# Use APNs sandbox (true for dev builds, false for production)
+apns_sandbox = true
+
+[voice]
+# Gemini API key for voice mode (optional)
+gemini_api_key = ""
