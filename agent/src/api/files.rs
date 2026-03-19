@@ -545,4 +545,91 @@ mod tests {
         // /usr is not under /tmp
         assert!(!is_path_allowed(Path::new("/usr"), &allowed));
     }
+
+    // --- is_path_allowed with tempfile ---
+
+    #[test]
+    fn path_allowed_subdir_of_allowed() {
+        let parent = tempfile::tempdir().unwrap();
+        let child = parent.path().join("sub");
+        std::fs::create_dir(&child).unwrap();
+
+        let allowed = vec![parent.path().to_string_lossy().to_string()];
+        assert!(is_path_allowed(&child, &allowed));
+    }
+
+    #[test]
+    fn path_allowed_parent_of_allowed_rejected() {
+        let parent = tempfile::tempdir().unwrap();
+        let child = parent.path().join("sub");
+        std::fs::create_dir(&child).unwrap();
+
+        let allowed = vec![child.to_string_lossy().to_string()];
+        assert!(!is_path_allowed(parent.path(), &allowed));
+    }
+
+    #[test]
+    fn path_allowed_symlink_resolved() {
+        // Create dir and a symlink to it — both should resolve to same canonical path
+        let real_dir = tempfile::tempdir().unwrap();
+        let link_parent = tempfile::tempdir().unwrap();
+        let link_path = link_parent.path().join("link");
+        std::os::unix::fs::symlink(real_dir.path(), &link_path).unwrap();
+
+        let allowed = vec![real_dir.path().to_string_lossy().to_string()];
+        assert!(is_path_allowed(&link_path, &allowed));
+    }
+
+    #[test]
+    fn path_allowed_multiple_allowed_paths() {
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+
+        let allowed = vec![
+            dir_a.path().to_string_lossy().to_string(),
+            dir_b.path().to_string_lossy().to_string(),
+        ];
+        assert!(is_path_allowed(dir_a.path(), &allowed));
+        assert!(is_path_allowed(dir_b.path(), &allowed));
+        assert!(!is_path_allowed(outside.path(), &allowed));
+    }
+
+    // --- is_pane_cwd_within_allowed ---
+
+    #[test]
+    fn pane_cwd_within_allowed_path() {
+        let parent = tempfile::tempdir().unwrap();
+        let pane_dir = parent.path().join("project");
+        std::fs::create_dir(&pane_dir).unwrap();
+
+        let allowed = vec![parent.path().to_string_lossy().to_string()];
+        let pane_canonical = pane_dir.canonicalize().unwrap();
+        assert!(is_pane_cwd_within_allowed(&pane_canonical, &allowed));
+    }
+
+    #[test]
+    fn pane_cwd_outside_allowed_path() {
+        let allowed_dir = tempfile::tempdir().unwrap();
+        let pane_dir = tempfile::tempdir().unwrap();
+
+        let allowed = vec![allowed_dir.path().to_string_lossy().to_string()];
+        let pane_canonical = pane_dir.path().canonicalize().unwrap();
+        assert!(!is_pane_cwd_within_allowed(&pane_canonical, &allowed));
+    }
+
+    #[test]
+    fn pane_cwd_empty_allowed_paths_rejects() {
+        let pane_dir = tempfile::tempdir().unwrap();
+        let pane_canonical = pane_dir.path().canonicalize().unwrap();
+        assert!(!is_pane_cwd_within_allowed(&pane_canonical, &[]));
+    }
+
+    #[test]
+    fn pane_cwd_exact_match_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        let allowed = vec![dir.path().to_string_lossy().to_string()];
+        let canonical = dir.path().canonicalize().unwrap();
+        assert!(is_pane_cwd_within_allowed(&canonical, &allowed));
+    }
 }
