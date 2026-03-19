@@ -232,3 +232,115 @@ fn generate_token() -> String {
     let bytes: Vec<u8> = (0..32).map(|_| rng.gen()).collect();
     base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, &bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- generate_token ---
+
+    #[test]
+    fn generate_token_is_nonempty() {
+        let token = generate_token();
+        assert!(!token.is_empty());
+    }
+
+    #[test]
+    fn generate_token_is_valid_base64url() {
+        let token = generate_token();
+        // base64url uses A-Z, a-z, 0-9, -, _ (no padding since URL_SAFE_NO_PAD)
+        assert!(token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    }
+
+    #[test]
+    fn generate_token_is_unique() {
+        let t1 = generate_token();
+        let t2 = generate_token();
+        assert_ne!(t1, t2);
+    }
+
+    #[test]
+    fn generate_token_length_from_32_bytes() {
+        // 32 bytes base64-encoded (no padding) = ceil(32*4/3) = 43 chars
+        let token = generate_token();
+        assert_eq!(token.len(), 43);
+    }
+
+    // --- Config defaults ---
+
+    #[test]
+    fn default_config_has_expected_values() {
+        let config = Config::default();
+        assert_eq!(config.server.bind, "0.0.0.0");
+        assert_eq!(config.server.port, 9876);
+        assert!(config.auth.token.is_empty());
+        assert!(config.files.allowed_paths.is_empty());
+        assert!(config.tmux.socket_name.is_empty());
+        assert!(config.notifications.enabled);
+        assert_eq!(config.notifications.cooldown_seconds, 120);
+        assert!(config.notifications.apns_sandbox);
+        assert_eq!(config.notifications.apns_topic, "com.marmy.app");
+        assert!(config.voice.gemini_api_key.is_empty());
+    }
+
+    // --- TOML serialization roundtrip ---
+
+    #[test]
+    fn config_toml_roundtrip() {
+        let mut config = Config::default();
+        config.auth.token = "test-token-123".to_string();
+        config.server.port = 8888;
+        config.files.allowed_paths = vec!["~/projects".to_string()];
+
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let loaded: Config = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(loaded.auth.token, "test-token-123");
+        assert_eq!(loaded.server.port, 8888);
+        assert_eq!(loaded.files.allowed_paths, vec!["~/projects"]);
+        // Defaults should survive the roundtrip
+        assert_eq!(loaded.server.bind, "0.0.0.0");
+        assert!(loaded.notifications.enabled);
+    }
+
+    #[test]
+    fn config_loads_from_partial_toml() {
+        // Users often have minimal configs — missing sections should use defaults
+        let partial = r#"
+[auth]
+token = "my-token"
+"#;
+        let config: Config = toml::from_str(partial).unwrap();
+        assert_eq!(config.auth.token, "my-token");
+        assert_eq!(config.server.port, 9876); // default
+        assert!(config.files.allowed_paths.is_empty()); // default
+    }
+
+    #[test]
+    fn config_save_and_read_from_temp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let mut config = Config::default();
+        config.auth.token = "save-test".to_string();
+        config.server.port = 7777;
+
+        // Save
+        let content = toml::to_string_pretty(&config).unwrap();
+        std::fs::write(&path, &content).unwrap();
+
+        // Read back
+        let read_content = std::fs::read_to_string(&path).unwrap();
+        let loaded: Config = toml::from_str(&read_content).unwrap();
+        assert_eq!(loaded.auth.token, "save-test");
+        assert_eq!(loaded.server.port, 7777);
+    }
+
+    // --- config_path ---
+
+    #[test]
+    fn config_path_ends_with_expected_components() {
+        let path = config_path();
+        assert!(path.ends_with("marmy/config.toml"));
+    }
+}
