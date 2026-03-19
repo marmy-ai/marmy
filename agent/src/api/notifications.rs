@@ -207,8 +207,10 @@ fn write_claude_hook(enabled: bool, port: u16, token: &str) -> Result<(), String
 }
 
 /// Match the hook's cwd against tmux pane working directories to find
-/// which session Claude is running in. Picks the longest matching prefix
-/// so `/projects/marmy/agent` matches a pane at `/projects/marmy`.
+/// which session Claude is running in. Uses multiple strategies:
+/// 1. Longest prefix match: pane path is a prefix of cwd (e.g. pane at /projects, cwd is /projects/marmy/src)
+/// 2. Reverse prefix: cwd is a prefix of pane path (e.g. cwd is /projects, pane at /projects/marmy)
+/// 3. Single-session fallback: if only one non-manager session exists, use it
 async fn resolve_session_name(state: &AppState, cwd: &str) -> Option<String> {
     let topology = state.get_topology().await.ok()?;
     let cwd_path = std::path::Path::new(cwd);
@@ -218,16 +220,42 @@ async fn resolve_session_name(state: &AppState, cwd: &str) -> Option<String> {
         .map(|s| s.id.as_str())
         .collect();
 
-    // Find the pane whose current_path is the longest prefix of cwd
-    let best = topology.panes.iter()
+    let visible_panes: Vec<_> = topology.panes.iter()
         .filter(|p| !p.current_path.is_empty())
         .filter(|p| session_ids.contains(p.session_id.as_str()))
-        .filter(|p| cwd_path.starts_with(&p.current_path))
-        .max_by_key(|p| p.current_path.len())?;
+        .collect();
 
-    topology.sessions.iter()
-        .find(|s| s.id == best.session_id)
-        .map(|s| s.name.clone())
+    // Strategy 1: pane path is a prefix of cwd (original behavior)
+    let best = visible_panes.iter()
+        .filter(|p| cwd_path.starts_with(&p.current_path))
+        .max_by_key(|p| p.current_path.len());
+
+    if let Some(pane) = best {
+        return topology.sessions.iter()
+            .find(|s| s.id == pane.session_id)
+            .map(|s| s.name.clone());
+    }
+
+    // Strategy 2: cwd is a prefix of a pane path (reverse match)
+    let reverse = visible_panes.iter()
+        .filter(|p| std::path::Path::new(&p.current_path).starts_with(cwd_path))
+        .max_by_key(|p| p.current_path.len());
+
+    if let Some(pane) = reverse {
+        return topology.sessions.iter()
+            .find(|s| s.id == pane.session_id)
+            .map(|s| s.name.clone());
+    }
+
+    // Strategy 3: if there's only one non-manager session, it's almost certainly the right one
+    let user_sessions: Vec<_> = topology.sessions.iter()
+        .filter(|s| s.name != "sessions-manager")
+        .collect();
+    if user_sessions.len() == 1 {
+        return Some(user_sessions[0].name.clone());
+    }
+
+    None
 }
 
 fn is_hook_enabled() -> bool {
