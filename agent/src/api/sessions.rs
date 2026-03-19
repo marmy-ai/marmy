@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use axum::{extract::{Path, State}, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -14,6 +16,46 @@ fn is_valid_session_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// Check if a working directory is within one of the configured allowed_paths.
+/// Rejects paths outside the allowed set to prevent pane-cwd-based file browsing bypass.
+fn is_working_dir_allowed(dir: &str, allowed_paths: &[String]) -> bool {
+    // Resolve ~ in the requested dir
+    let dir_path = if dir.starts_with('~') {
+        if let Some(home) = dirs::home_dir() {
+            home.join(dir[1..].trim_start_matches('/'))
+        } else {
+            PathBuf::from(dir)
+        }
+    } else {
+        PathBuf::from(dir)
+    };
+
+    let canonical = match dir_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    for allowed in allowed_paths {
+        let allowed_path = if allowed.starts_with('~') {
+            if let Some(home) = dirs::home_dir() {
+                home.join(allowed[1..].trim_start_matches('/'))
+            } else {
+                PathBuf::from(allowed)
+            }
+        } else {
+            PathBuf::from(allowed)
+        };
+
+        if let Ok(allowed_canonical) = allowed_path.canonicalize() {
+            if canonical.starts_with(&allowed_canonical) {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 #[derive(Deserialize)]
@@ -83,6 +125,14 @@ pub async fn create_session(
 
     // Create session — with optional working directory
     if let Some(ref dir) = req.working_dir {
+        if !state.config.files.allowed_paths.is_empty()
+            && !is_working_dir_allowed(dir, &state.config.files.allowed_paths)
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "working_dir is not within any configured allowed_paths".into(),
+            ));
+        }
         state
             .tmux
             .new_session_in_dir(&name, dir)
