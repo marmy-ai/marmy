@@ -1,3 +1,7 @@
+---
+import PhoneFrame from './PhoneFrame.astro';
+---
+
 <section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
   <div class="max-w-3xl mx-auto">
     <div class="font-mono text-xs text-secondary mb-3 sm:text-center tracking-widest reveal">PUSH NOTIFICATIONS</div>
@@ -5,30 +9,16 @@
       Your agents report to you.
     </h2>
     <p class="text-text-secondary text-[15px] leading-relaxed max-w-lg sm:mx-auto sm:text-center mb-10 reveal stagger-2">
-      Get notified when an agent finishes a task, hits an error, or needs a decision. No polling, no checking. Your team pages you when it matters.
+      Marmy hooks into Claude Code's event system. When a session finishes or needs input, you get a push notification. No polling, no checking. Your team pages you when it matters.
     </p>
 
-    <!-- Notification mockups -->
-    <div class="space-y-3 max-w-sm mx-auto reveal stagger-3">
-      <div class="p-4 rounded-xl bg-bg-card border border-border">
-        <div class="flex items-center gap-2 mb-1">
-          <div class="w-2 h-2 rounded-full bg-success"></div>
-          <span class="font-mono text-xs text-text-tertiary">marmy</span>
-          <span class="text-[10px] text-text-tertiary ml-auto">now</span>
-        </div>
-        <p class="text-sm text-text-primary font-medium">auth-refactor completed</p>
-        <p class="text-xs text-text-secondary mt-0.5">Session finished successfully. 4 files changed.</p>
-      </div>
-
-      <div class="p-4 rounded-xl bg-bg-card border border-secondary/30">
-        <div class="flex items-center gap-2 mb-1">
-          <div class="w-2 h-2 rounded-full bg-secondary"></div>
-          <span class="font-mono text-xs text-text-tertiary">marmy</span>
-          <span class="text-[10px] text-text-tertiary ml-auto">2m ago</span>
-        </div>
-        <p class="text-sm text-text-primary font-medium">frontend-ui needs input</p>
-        <p class="text-xs text-text-secondary mt-0.5">Waiting for approval to delete legacy components.</p>
-      </div>
+    <!-- Push notification screenshot -->
+    <div class="flex justify-center reveal stagger-3">
+      <PhoneFrame
+        src="/screenshots/push.png"
+        alt="iOS push notification from Marmy showing task complete"
+        class="w-[280px] sm:w-[320px]"
+      />
     </div>
   </div>
 </section>

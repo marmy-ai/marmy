@@ -1,3 +1,7 @@
+---
+import PhoneFrame from './PhoneFrame.astro';
+---
+
 <section class="relative pt-28 pb-24 sm:pt-40 sm:pb-32 px-5 sm:px-8 overflow-hidden">
   <!-- Glow -->
   <div class="absolute top-16 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-primary/6 rounded-full blur-[140px] pointer-events-none"></div>
@@ -32,90 +36,32 @@
     </script>
 
     <p class="text-base sm:text-lg text-text-secondary max-w-xl sm:mx-auto mb-9 leading-relaxed reveal stagger-2">
-      Development has shifted from writing code to managing agents. The tool for that is the device in your pocket. Marmy is your command center.
+      Manage your Claude Code sessions from your phone. Monitor progress, approve decisions, review files, and talk to your agents by voice. Built for Claude Code, works with any terminal agent.
     </p>
 
     <!-- CTAs -->
-    <div class="flex flex-col sm:flex-row gap-3 sm:justify-center mb-20 reveal stagger-3">
-      <a href="#get-started"
+    <div class="flex flex-col sm:flex-row gap-3 sm:justify-center mb-4 reveal stagger-3">
+      <a href="TESTFLIGHT_URL_PLACEHOLDER" target="_blank" rel="noopener"
         class="inline-flex items-center justify-center gap-2 px-7 py-3 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold transition-all hover:shadow-lg hover:shadow-primary/20">
-        Get Started
+        Join iOS Beta
       </a>
       <a href="https://github.com/marmy-ai/marmy" target="_blank" rel="noopener"
         class="inline-flex items-center justify-center gap-2 px-7 py-3 rounded-lg border border-border text-text-primary hover:bg-bg-card hover:border-border-light transition-all">
         View Source
       </a>
     </div>
+    <p class="text-text-tertiary text-xs sm:text-center mb-20 reveal stagger-3">
+      Download the app to get push notifications without configuring APNs yourself.
+    </p>
 
-    <!-- Phone mockup -->
+    <!-- Phone screenshot -->
     <div class="flex justify-center reveal stagger-4">
-      <div class="relative" style="animation: float 6s ease-in-out infinite;">
-        <div class="absolute inset-0 scale-90 bg-primary/8 rounded-[3rem] blur-[50px]"></div>
-        <div class="relative w-[270px] sm:w-[300px] rounded-[2.5rem] border border-border bg-bg-card p-2 shadow-2xl shadow-black/40">
-          <!-- Notch -->
-          <div class="flex items-center justify-between px-5 py-1.5">
-            <span class="text-[10px] text-text-tertiary font-mono">9:41</span>
-            <div class="w-20 h-5 rounded-full bg-bg-deep"></div>
-            <div class="flex gap-1 items-center">
-              <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
-              <span class="text-[10px] text-text-tertiary">LAN</span>
-            </div>
-          </div>
-
-          <!-- Screen -->
-          <div class="rounded-2xl bg-bg-deep overflow-hidden">
-            <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-              <span class="text-xs font-mono font-bold text-text-primary">Workers</span>
-              <span class="text-[10px] font-mono text-text-tertiary">mbp-studio</span>
-            </div>
-
-            <div class="p-2 space-y-1.5 font-mono text-[11px]">
-              <!-- Manager -->
-              <div class="px-2.5 py-2 rounded-lg bg-manager/8 border border-manager/20">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-[9px] px-1 py-0.5 rounded bg-manager/20 text-manager font-bold">MGR</span>
-                    <span class="text-manager">ralph</span>
-                  </div>
-                  <div class="w-1.5 h-1.5 rounded-full bg-manager" style="animation: pulse-soft 2s infinite;"></div>
-                </div>
-                <div class="text-text-tertiary text-[10px] mt-1">Coordinating 3 agents...</div>
-              </div>
-
-              <!-- Workers -->
-              <div class="px-2.5 py-2 rounded-lg bg-bg-card border border-border">
-                <div class="flex items-center justify-between">
-                  <span class="text-text-primary">auth-refactor</span>
-                  <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
-                </div>
-                <div class="text-text-tertiary text-[10px] mt-0.5">Migrating session tokens</div>
-              </div>
-
-              <div class="px-2.5 py-2 rounded-lg bg-bg-card border border-border">
-                <div class="flex items-center justify-between">
-                  <span class="text-text-primary">api-tests</span>
-                  <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
-                </div>
-                <div class="text-text-tertiary text-[10px] mt-0.5">12 passing, 2 in progress</div>
-              </div>
-
-              <div class="px-2.5 py-2 rounded-lg bg-bg-card border border-secondary/30">
-                <div class="flex items-center justify-between">
-                  <span class="text-text-primary">frontend-ui</span>
-                  <div class="w-1.5 h-1.5 rounded-full bg-secondary"></div>
-                </div>
-                <div class="text-secondary text-[10px] mt-0.5">Needs your input</div>
-              </div>
-            </div>
-
-            <div class="flex justify-around py-2 border-t border-border text-[10px] font-mono">
-              <span class="text-text-tertiary">Machines</span>
-              <span class="text-primary">Workers</span>
-              <span class="text-text-tertiary">Terminal</span>
-              <span class="text-text-tertiary">Files</span>
-            </div>
-          </div>
-        </div>
+      <div class="relative">
+        <PhoneFrame
+          src="/screenshots/workers.png"
+          alt="Marmy Workers screen showing active Claude Code sessions"
+          class="w-[270px] sm:w-[300px]"
+        />
       </div>
     </div>
   </div>

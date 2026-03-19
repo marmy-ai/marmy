@@ -1,0 +1,36 @@
+---
+interface Props {
+  src: string;
+  alt: string;
+  class?: string;
+}
+
+const { src, alt, class: className = "" } = Astro.props;
+---
+
+<div class:list={["phone-frame", className]}>
+  <div class="phone-body">
+    <img src={src} alt={alt} class="phone-screen" />
+  </div>
+</div>
+
+<style>
+  .phone-frame {
+    --bezel: 3px;
+    --radius-outer: 3rem;
+    --radius-inner: 2.8rem;
+  }
+
+  .phone-body {
+    background: #1a1a24;
+    border-radius: var(--radius-outer);
+    padding: var(--bezel);
+    border: 1.5px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .phone-screen {
+    display: block;
+    width: 100%;
+    border-radius: var(--radius-inner);
+  }
+</style>
