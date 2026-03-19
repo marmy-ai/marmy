@@ -13,6 +13,13 @@ use crate::state::AppState;
 #[derive(Deserialize)]
 pub struct TokenRequest {
     pub token: String,
+    /// "relay" = forward to hosted relay, "local" = direct APNs. Default: "local".
+    #[serde(default = "default_provider")]
+    pub push_provider: String,
+}
+
+fn default_provider() -> String {
+    "local".to_string()
 }
 
 #[derive(Deserialize)]
@@ -39,8 +46,8 @@ pub async fn register_token(
     State(state): State<AppState>,
     Json(body): Json<TokenRequest>,
 ) -> StatusCode {
-    info!("registering push token: {}...", &body.token[..body.token.len().min(20)]);
-    state.register_push_token(body.token).await;
+    info!("registering push token: {}... (provider: {})", &body.token[..body.token.len().min(20)], body.push_provider);
+    state.register_push_token(body.token, body.push_provider).await;
     StatusCode::OK
 }
 
@@ -207,8 +214,10 @@ fn write_claude_hook(enabled: bool, port: u16, token: &str) -> Result<(), String
 }
 
 /// Match the hook's cwd against tmux pane working directories to find
-/// which session Claude is running in. Picks the longest matching prefix
-/// so `/projects/marmy/agent` matches a pane at `/projects/marmy`.
+/// which session Claude is running in. Uses multiple strategies:
+/// 1. Longest prefix match: pane path is a prefix of cwd (e.g. pane at /projects, cwd is /projects/marmy/src)
+/// 2. Reverse prefix: cwd is a prefix of pane path (e.g. cwd is /projects, pane at /projects/marmy)
+/// 3. Single-session fallback: if only one non-manager session exists, use it
 async fn resolve_session_name(state: &AppState, cwd: &str) -> Option<String> {
     let topology = state.get_topology().await.ok()?;
     let cwd_path = std::path::Path::new(cwd);
@@ -218,16 +227,42 @@ async fn resolve_session_name(state: &AppState, cwd: &str) -> Option<String> {
         .map(|s| s.id.as_str())
         .collect();
 
-    // Find the pane whose current_path is the longest prefix of cwd
-    let best = topology.panes.iter()
+    let visible_panes: Vec<_> = topology.panes.iter()
         .filter(|p| !p.current_path.is_empty())
         .filter(|p| session_ids.contains(p.session_id.as_str()))
-        .filter(|p| cwd_path.starts_with(&p.current_path))
-        .max_by_key(|p| p.current_path.len())?;
+        .collect();
 
-    topology.sessions.iter()
-        .find(|s| s.id == best.session_id)
-        .map(|s| s.name.clone())
+    // Strategy 1: pane path is a prefix of cwd (original behavior)
+    let best = visible_panes.iter()
+        .filter(|p| cwd_path.starts_with(&p.current_path))
+        .max_by_key(|p| p.current_path.len());
+
+    if let Some(pane) = best {
+        return topology.sessions.iter()
+            .find(|s| s.id == pane.session_id)
+            .map(|s| s.name.clone());
+    }
+
+    // Strategy 2: cwd is a prefix of a pane path (reverse match)
+    let reverse = visible_panes.iter()
+        .filter(|p| std::path::Path::new(&p.current_path).starts_with(cwd_path))
+        .max_by_key(|p| p.current_path.len());
+
+    if let Some(pane) = reverse {
+        return topology.sessions.iter()
+            .find(|s| s.id == pane.session_id)
+            .map(|s| s.name.clone());
+    }
+
+    // Strategy 3: if there's only one non-manager session, it's almost certainly the right one
+    let user_sessions: Vec<_> = topology.sessions.iter()
+        .filter(|s| s.name != "sessions-manager")
+        .collect();
+    if user_sessions.len() == 1 {
+        return Some(user_sessions[0].name.clone());
+    }
+
+    None
 }
 
 fn is_hook_enabled() -> bool {
@@ -248,5 +283,128 @@ pub fn refresh_hook_if_enabled(port: u16, token: &str) {
         } else {
             tracing::info!("refreshed notification hook with current config");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Test the hook JSON structure construction without hitting the real filesystem.
+    // We replicate the JSON logic from write_claude_hook inline.
+
+    /// Build the hook JSON the same way write_claude_hook does.
+    fn build_hook_json(settings: &mut serde_json::Value, enabled: bool, port: u16, token: &str) {
+        if enabled {
+            let hook_entry = serde_json::json!([{
+                "hooks": [{
+                    "type": "command",
+                    "command": format!(
+                        "curl -sX POST http://localhost:{}/api/notifications/send -H 'Content-Type: application/json' -H 'Authorization: Bearer {}' -d @-",
+                        port, token
+                    ),
+                    "timeout": 5
+                }]
+            }]);
+            if settings.get("hooks").is_none() {
+                settings["hooks"] = serde_json::json!({});
+            }
+            settings["hooks"]["Stop"] = hook_entry;
+        } else {
+            if let Some(hooks) = settings.get_mut("hooks") {
+                if let Some(obj) = hooks.as_object_mut() {
+                    obj.remove("Stop");
+                    if obj.is_empty() {
+                        // Can't remove from root here without owning it,
+                        // so just mark for caller
+                    }
+                }
+            }
+        }
+    }
+
+    fn check_hook_enabled(settings: &serde_json::Value) -> bool {
+        settings.get("hooks")
+            .and_then(|h| h.get("Stop"))
+            .and_then(|s| s.as_array())
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn hook_enable_creates_stop_entry() {
+        let mut settings = serde_json::json!({});
+        build_hook_json(&mut settings, true, 9876, "test-token");
+
+        assert!(check_hook_enabled(&settings));
+        let cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(cmd.contains("9876"));
+        assert!(cmd.contains("test-token"));
+        assert!(cmd.contains("curl"));
+    }
+
+    #[test]
+    fn hook_enable_embeds_correct_port_and_token() {
+        let mut settings = serde_json::json!({});
+        build_hook_json(&mut settings, true, 4444, "my-secret");
+
+        let cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(cmd.contains("localhost:4444"));
+        assert!(cmd.contains("Bearer my-secret"));
+    }
+
+    #[test]
+    fn hook_disable_removes_stop_entry() {
+        let mut settings = serde_json::json!({});
+        build_hook_json(&mut settings, true, 9876, "tok");
+        assert!(check_hook_enabled(&settings));
+
+        build_hook_json(&mut settings, false, 9876, "tok");
+        assert!(!check_hook_enabled(&settings));
+    }
+
+    #[test]
+    fn hook_disable_on_empty_settings_is_noop() {
+        let mut settings = serde_json::json!({});
+        build_hook_json(&mut settings, false, 9876, "tok");
+        assert!(!check_hook_enabled(&settings));
+        // Should not have created a hooks key
+        assert!(settings.get("hooks").is_none());
+    }
+
+    #[test]
+    fn hook_enable_preserves_existing_settings() {
+        let mut settings = serde_json::json!({
+            "someOtherKey": true,
+            "hooks": {
+                "PreToolUse": [{"hooks": [{"type": "command", "command": "echo hi"}]}]
+            }
+        });
+        build_hook_json(&mut settings, true, 9876, "tok");
+
+        // Stop hook added
+        assert!(check_hook_enabled(&settings));
+        // Existing key preserved
+        assert_eq!(settings["someOtherKey"], true);
+        // Existing hook preserved
+        assert!(settings["hooks"]["PreToolUse"].is_array());
+    }
+
+    #[test]
+    fn hook_enable_then_re_enable_updates_token() {
+        let mut settings = serde_json::json!({});
+        build_hook_json(&mut settings, true, 9876, "old-token");
+        build_hook_json(&mut settings, true, 9876, "new-token");
+
+        let cmd = settings["hooks"]["Stop"][0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(cmd.contains("new-token"));
+        assert!(!cmd.contains("old-token"));
+    }
+
+    #[test]
+    fn hook_timeout_is_5_seconds() {
+        let mut settings = serde_json::json!({});
+        build_hook_json(&mut settings, true, 9876, "tok");
+
+        let timeout = settings["hooks"]["Stop"][0]["hooks"][0]["timeout"].as_u64().unwrap();
+        assert_eq!(timeout, 5);
     }
 }

@@ -8,6 +8,7 @@ use axum::{
 use serde::Serialize;
 use tracing::info;
 
+use crate::api::sessions::is_valid_session_name;
 use crate::state::AppState;
 
 // --- Types ---
@@ -344,6 +345,15 @@ pub async fn start_dashboard(
                 format!("failed to set env: {}", e),
             )
         })?;
+    // Guard: validate session_name before interpolating into a shell command.
+    // Currently hardcoded, but this prevents RCE if the value is ever refactored
+    // to come from user input.
+    if !is_valid_session_name(session_name) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "invalid session name".into(),
+        ));
+    }
     let launch_cmd = format!(
         "unset CLAUDECODE && eval $(tmux show-environment -t {} -s MARMY_TOKEN) && claude --dangerously-skip-permissions",
         session_name

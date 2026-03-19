@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{watch, RwLock};
 
 use crate::config::Config;
-use crate::notifications::{self, NotificationSender};
+use crate::notifications::{self, NotificationSender, PushToken};
 use crate::tmux::{TmuxController, TmuxTopology};
 
 /// Shared application state accessible from all API handlers.
@@ -23,8 +23,8 @@ pub struct AppState {
 pub struct AppStateInner {
     /// Cached topology, refreshed periodically.
     pub topology: Option<TmuxTopology>,
-    /// Registered device push tokens (raw APNs tokens).
-    pub push_tokens: Vec<String>,
+    /// Registered device push tokens with routing provider.
+    pub push_tokens: Vec<PushToken>,
     /// Sessions with unread activity (task completions).
     pub unread_sessions: HashSet<String>,
 }
@@ -80,24 +80,24 @@ impl AppState {
         }))
     }
 
-    /// Register a push token.
-    pub async fn register_push_token(&self, token: String) {
+    /// Register a push token with its provider.
+    pub async fn register_push_token(&self, token: String, provider: String) {
         let mut inner = self.inner.write().await;
-        if !inner.push_tokens.contains(&token) {
-            inner.push_tokens.push(token);
-            notifications::save_push_tokens(&inner.push_tokens);
-        }
+        // Remove any existing entry for this token (provider may have changed)
+        inner.push_tokens.retain(|pt| pt.token != token);
+        inner.push_tokens.push(PushToken { token, provider });
+        notifications::save_push_tokens(&inner.push_tokens);
     }
 
     /// Unregister a push token.
     pub async fn unregister_push_token(&self, token: &str) {
         let mut inner = self.inner.write().await;
-        inner.push_tokens.retain(|t| t != token);
+        inner.push_tokens.retain(|pt| pt.token != token);
         notifications::save_push_tokens(&inner.push_tokens);
     }
 
     /// Get all registered push tokens.
-    pub async fn get_push_tokens(&self) -> Vec<String> {
+    pub async fn get_push_tokens(&self) -> Vec<PushToken> {
         let inner = self.inner.read().await;
         inner.push_tokens.clone()
     }

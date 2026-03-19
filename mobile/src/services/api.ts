@@ -180,11 +180,14 @@ export class MarmyApi {
     });
   }
 
-  /** Register a push notification token with the agent. */
+  /** Register a push notification token with the agent.
+   *  Release builds (App Store) use "relay" so the hosted relay forwards to APNs.
+   *  Dev builds use "local" so the agent pushes directly with the local p8 key. */
   async registerPushToken(token: string): Promise<void> {
+    const push_provider = __DEV__ ? "local" : "relay";
     await this.fetch("/api/notifications/register", {
       method: "POST",
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, push_provider }),
     });
   }
 

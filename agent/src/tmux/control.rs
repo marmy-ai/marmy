@@ -362,4 +362,93 @@ mod tests {
         assert!(parse_window_line("").is_none());
         assert!(parse_pane_line("").is_none());
     }
+
+    #[test]
+    fn test_parse_session_non_numeric_attached_field() {
+        // Any non-"0" value means attached — tmux uses "1" but we shouldn't
+        // assume the exact truthy value.
+        let line = "$0|||dev|||3|||2";
+        assert!(parse_session_line(line).unwrap().attached);
+    }
+
+    #[test]
+    fn test_parse_session_preserves_hyphens_and_underscores() {
+        let line = "$2|||my-long_session-name|||1|||1";
+        let s = parse_session_line(line).unwrap();
+        assert_eq!(s.name, "my-long_session-name");
+    }
+
+    #[test]
+    fn test_parse_session_extra_fields_ignored() {
+        // tmux may add fields in future versions — parser should not choke
+        let line = "$0|||dev|||3|||1|||extra|||fields";
+        let s = parse_session_line(line).unwrap();
+        assert_eq!(s.name, "dev");
+    }
+
+    #[test]
+    fn test_parse_window_non_numeric_index_defaults_to_zero() {
+        let line = "@0|||$0|||notanumber|||bash|||1";
+        let w = parse_window_line(line).unwrap();
+        assert_eq!(w.index, 0);
+    }
+
+    #[test]
+    fn test_parse_window_extra_fields_ignored() {
+        let line = "@0|||$0|||0|||bash|||1|||extra";
+        let w = parse_window_line(line).unwrap();
+        assert_eq!(w.name, "bash");
+        assert!(w.active);
+    }
+
+    #[test]
+    fn test_parse_pane_non_numeric_dimensions_use_defaults() {
+        // If tmux returns unexpected values for width/height, should fallback
+        let line = "%0|||@0|||$0|||0|||wide|||tall|||1|||bash|||/home|||99";
+        let p = parse_pane_line(line).unwrap();
+        assert_eq!(p.width, 80);   // default
+        assert_eq!(p.height, 24);  // default
+    }
+
+    #[test]
+    fn test_parse_pane_non_numeric_pid_defaults_to_zero() {
+        let line = "%0|||@0|||$0|||0|||120|||40|||1|||bash|||/home|||notapid";
+        let p = parse_pane_line(line).unwrap();
+        assert_eq!(p.pid, 0);
+    }
+
+    #[test]
+    fn test_parse_pane_empty_path_and_command() {
+        // Claude Code sessions may briefly have empty path/command during startup
+        let line = "%5|||@2|||$1|||0|||200|||50|||0||||||||||7890";
+        let p = parse_pane_line(line).unwrap();
+        assert_eq!(p.current_command, "");
+        assert_eq!(p.current_path, "");
+        assert!(!p.active);
+    }
+
+    #[test]
+    fn test_parse_pane_path_with_spaces() {
+        let line = "%0|||@0|||$0|||0|||120|||40|||1|||zsh|||/home/user/my project|||555";
+        let p = parse_pane_line(line).unwrap();
+        assert_eq!(p.current_path, "/home/user/my project");
+    }
+
+    #[test]
+    fn test_parse_session_exactly_three_fields_rejected() {
+        // Needs 4 fields minimum: id, name, window_count, attached
+        assert!(parse_session_line("$0|||dev|||3").is_none());
+    }
+
+    #[test]
+    fn test_parse_window_exactly_four_fields_rejected() {
+        // Needs 5 fields minimum: id, session_id, index, name, active
+        assert!(parse_window_line("@0|||$0|||0|||bash").is_none());
+    }
+
+    #[test]
+    fn test_parse_pane_exactly_nine_fields_rejected() {
+        // Needs 10 fields minimum
+        assert!(parse_pane_line("%0|||@0|||$0|||0|||120|||40|||1|||bash|||/home").is_none());
+    }
 }

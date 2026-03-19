@@ -1,0 +1,12 @@
+name = "marmy-push-relay"
+main = "worker.mjs"
+compatibility_date = "2024-01-01"
+
+# Set these via `wrangler secret put <KEY>` — do NOT commit real values.
+# [vars]
+# APNS_KEY_BASE64 = ""
+# APNS_KEY_ID = ""
+# APNS_TEAM_ID = ""
+# APNS_TOPIC = "com.marmy.app"
+# APNS_SANDBOX = "false"
+# RELAY_SECRET = ""

@@ -40,5 +40,16 @@
   "overrides": {
     "react-dom": "19.1.0"
   },
-  "private": true
+  "private": true,
+  "author": "Marmy",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mharajli/marmy.git",
+    "directory": "mobile"
+  },
+  "homepage": "https://github.com/mharajli/marmy#readme",
+  "bugs": {
+    "url": "https://github.com/mharajli/marmy/issues"
+  }
 }

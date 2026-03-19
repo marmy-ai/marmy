@@ -275,14 +275,37 @@ fn is_path_allowed(path: &Path, allowed: &[String]) -> bool {
     false
 }
 
+/// Check if a pane's cwd is itself under one of the configured allowed_paths.
+/// Returns false if allowed_paths is empty (file browsing disabled).
+fn is_pane_cwd_within_allowed(pane_canonical: &std::path::Path, allowed_paths: &[String]) -> bool {
+    for allowed_path in allowed_paths {
+        let allowed = resolve_path(allowed_path);
+        if let Ok(allowed_canonical) = allowed.canonicalize() {
+            if pane_canonical.starts_with(&allowed_canonical) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Dynamic path validation: checks static allowed_paths first, then pane working directories.
+/// When allowed_paths is configured, pane cwds only count if they are themselves under an
+/// allowed_path. This prevents a pane cd'd to /home from making the entire /home tree browsable.
 async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
+    let allowed_paths = &state.config.files.allowed_paths;
+
     // Static config check first
-    if is_path_allowed(path, &state.config.files.allowed_paths) {
+    if is_path_allowed(path, allowed_paths) {
         return true;
     }
 
-    // Dynamic check: is this path under any pane's current_path?
+    // If no allowed_paths configured, file browsing is disabled — don't fall through to pane cwds
+    if allowed_paths.is_empty() {
+        return false;
+    }
+
+    // Dynamic check: is this path under a pane's cwd, but only if that cwd is itself under an allowed_path?
     let topology = match state.get_topology().await {
         Ok(t) => t,
         Err(_) => return false,
@@ -296,11 +319,12 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
     for pane in &topology.panes {
         let pane_path = PathBuf::from(&pane.current_path);
         if let Ok(pane_canonical) = pane_path.canonicalize() {
-            // Skip panes at filesystem root — too broad
             if pane_canonical == PathBuf::from("/") {
                 continue;
             }
-            if canonical.starts_with(&pane_canonical) {
+            if canonical.starts_with(&pane_canonical)
+                && is_pane_cwd_within_allowed(&pane_canonical, allowed_paths)
+            {
                 return true;
             }
         }
@@ -309,35 +333,42 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
     false
 }
 
-/// Like is_path_allowed_dynamic, but also allows ancestor directories of pane paths.
+/// Like is_path_allowed_dynamic, but also allows ancestor directories of allowed pane paths.
 /// Used for directory browsing (list_dir) so users can navigate down to pane working dirs.
 async fn is_path_allowed_for_browsing(path: &Path, state: &AppState) -> bool {
     if is_path_allowed_dynamic(path, state).await {
         return true;
     }
 
-    // Allow ancestors of pane working directories (for navigating down)
-    let topology = match state.get_topology().await {
-        Ok(t) => t,
-        Err(_) => return false,
-    };
+    let allowed_paths = &state.config.files.allowed_paths;
+    if allowed_paths.is_empty() {
+        return false;
+    }
 
     let canonical = match path.canonicalize() {
         Ok(p) => p,
         Err(_) => return false,
     };
 
+    // Allow ancestors of pane working directories, but only for panes under allowed_paths
+    let topology = match state.get_topology().await {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+
     for pane in &topology.panes {
         let pane_path = PathBuf::from(&pane.current_path);
         if let Ok(pane_canonical) = pane_path.canonicalize() {
-            if pane_canonical.starts_with(&canonical) {
+            if pane_canonical.starts_with(&canonical)
+                && is_pane_cwd_within_allowed(&pane_canonical, allowed_paths)
+            {
                 return true;
             }
         }
     }
 
     // Also allow ancestors of static allowed_paths
-    for allowed_path in &state.config.files.allowed_paths {
+    for allowed_path in allowed_paths {
         let allowed = resolve_path(allowed_path);
         if let Ok(allowed_canonical) = allowed.canonicalize() {
             if allowed_canonical.starts_with(&canonical) {
@@ -371,5 +402,234 @@ fn guess_content_type(path: &Path) -> &'static str {
         Some("html" | "htm") => "text/html",
         Some("txt" | "md" | "rs" | "toml" | "yaml" | "yml") => "text/plain",
         _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- resolve_path ---
+
+    #[test]
+    fn resolve_path_tilde_expands_to_home() {
+        let result = resolve_path("~/projects");
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(result, home.join("projects"));
+    }
+
+    #[test]
+    fn resolve_path_tilde_alone() {
+        let result = resolve_path("~");
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(result, home);
+    }
+
+    #[test]
+    fn resolve_path_absolute_unchanged() {
+        let result = resolve_path("/usr/local/bin");
+        assert_eq!(result, PathBuf::from("/usr/local/bin"));
+    }
+
+    #[test]
+    fn resolve_path_relative_unchanged() {
+        let result = resolve_path("relative/path");
+        assert_eq!(result, PathBuf::from("relative/path"));
+    }
+
+    // --- has_hidden_component ---
+
+    #[test]
+    fn hidden_component_dotfile_at_leaf() {
+        assert!(has_hidden_component(Path::new("/home/user/.bashrc")));
+    }
+
+    #[test]
+    fn hidden_component_dotdir_in_middle() {
+        assert!(has_hidden_component(Path::new("/home/user/.config/app/settings")));
+    }
+
+    #[test]
+    fn hidden_component_none() {
+        assert!(!has_hidden_component(Path::new("/home/user/projects/readme.md")));
+    }
+
+    #[test]
+    fn hidden_component_dot_in_filename_not_at_start() {
+        // "file.txt" has a dot but the component doesn't start with it
+        assert!(!has_hidden_component(Path::new("/home/user/file.txt")));
+    }
+
+    #[test]
+    fn hidden_component_at_root() {
+        assert!(has_hidden_component(Path::new("/.hidden/file")));
+    }
+
+    // --- guess_content_type ---
+
+    #[test]
+    fn content_type_images() {
+        assert_eq!(guess_content_type(Path::new("photo.png")), "image/png");
+        assert_eq!(guess_content_type(Path::new("photo.jpg")), "image/jpeg");
+        assert_eq!(guess_content_type(Path::new("photo.jpeg")), "image/jpeg");
+        assert_eq!(guess_content_type(Path::new("anim.gif")), "image/gif");
+        assert_eq!(guess_content_type(Path::new("photo.webp")), "image/webp");
+        assert_eq!(guess_content_type(Path::new("icon.svg")), "image/svg+xml");
+        assert_eq!(guess_content_type(Path::new("icon.bmp")), "image/bmp");
+        assert_eq!(guess_content_type(Path::new("icon.ico")), "image/x-icon");
+    }
+
+    #[test]
+    fn content_type_code_and_text() {
+        assert_eq!(guess_content_type(Path::new("app.js")), "text/javascript");
+        assert_eq!(guess_content_type(Path::new("lib.mjs")), "text/javascript");
+        assert_eq!(guess_content_type(Path::new("style.css")), "text/css");
+        assert_eq!(guess_content_type(Path::new("page.html")), "text/html");
+        assert_eq!(guess_content_type(Path::new("old.htm")), "text/html");
+        assert_eq!(guess_content_type(Path::new("README.md")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("main.rs")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("config.toml")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("data.yaml")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("data.yml")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("notes.txt")), "text/plain");
+    }
+
+    #[test]
+    fn content_type_structured() {
+        assert_eq!(guess_content_type(Path::new("data.json")), "application/json");
+        assert_eq!(guess_content_type(Path::new("doc.pdf")), "application/pdf");
+    }
+
+    #[test]
+    fn content_type_unknown_extension() {
+        assert_eq!(guess_content_type(Path::new("file.xyz")), "application/octet-stream");
+    }
+
+    #[test]
+    fn content_type_no_extension() {
+        assert_eq!(guess_content_type(Path::new("Makefile")), "application/octet-stream");
+    }
+
+    #[test]
+    fn content_type_case_insensitive() {
+        assert_eq!(guess_content_type(Path::new("PHOTO.PNG")), "image/png");
+        assert_eq!(guess_content_type(Path::new("data.JSON")), "application/json");
+        assert_eq!(guess_content_type(Path::new("page.Html")), "text/html");
+    }
+
+    // --- is_path_allowed ---
+
+    #[test]
+    fn path_allowed_empty_list_rejects_everything() {
+        let allowed: Vec<String> = vec![];
+        assert!(!is_path_allowed(Path::new("/tmp"), &allowed));
+    }
+
+    #[test]
+    fn path_allowed_nonexistent_path_rejected() {
+        // canonicalize will fail on a path that doesn't exist
+        let allowed = vec!["/tmp".to_string()];
+        assert!(!is_path_allowed(Path::new("/nonexistent/fake/path"), &allowed));
+    }
+
+    #[test]
+    fn path_allowed_within_allowed_dir() {
+        // Use /tmp itself — canonicalizes to /private/tmp on macOS
+        let allowed = vec!["/tmp".to_string()];
+        assert!(is_path_allowed(Path::new("/tmp"), &allowed));
+    }
+
+    #[test]
+    fn path_allowed_outside_allowed_dir() {
+        let allowed = vec!["/tmp".to_string()];
+        // /usr is not under /tmp
+        assert!(!is_path_allowed(Path::new("/usr"), &allowed));
+    }
+
+    // --- is_path_allowed with tempfile ---
+
+    #[test]
+    fn path_allowed_subdir_of_allowed() {
+        let parent = tempfile::tempdir().unwrap();
+        let child = parent.path().join("sub");
+        std::fs::create_dir(&child).unwrap();
+
+        let allowed = vec![parent.path().to_string_lossy().to_string()];
+        assert!(is_path_allowed(&child, &allowed));
+    }
+
+    #[test]
+    fn path_allowed_parent_of_allowed_rejected() {
+        let parent = tempfile::tempdir().unwrap();
+        let child = parent.path().join("sub");
+        std::fs::create_dir(&child).unwrap();
+
+        let allowed = vec![child.to_string_lossy().to_string()];
+        assert!(!is_path_allowed(parent.path(), &allowed));
+    }
+
+    #[test]
+    fn path_allowed_symlink_resolved() {
+        // Create dir and a symlink to it — both should resolve to same canonical path
+        let real_dir = tempfile::tempdir().unwrap();
+        let link_parent = tempfile::tempdir().unwrap();
+        let link_path = link_parent.path().join("link");
+        std::os::unix::fs::symlink(real_dir.path(), &link_path).unwrap();
+
+        let allowed = vec![real_dir.path().to_string_lossy().to_string()];
+        assert!(is_path_allowed(&link_path, &allowed));
+    }
+
+    #[test]
+    fn path_allowed_multiple_allowed_paths() {
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+
+        let allowed = vec![
+            dir_a.path().to_string_lossy().to_string(),
+            dir_b.path().to_string_lossy().to_string(),
+        ];
+        assert!(is_path_allowed(dir_a.path(), &allowed));
+        assert!(is_path_allowed(dir_b.path(), &allowed));
+        assert!(!is_path_allowed(outside.path(), &allowed));
+    }
+
+    // --- is_pane_cwd_within_allowed ---
+
+    #[test]
+    fn pane_cwd_within_allowed_path() {
+        let parent = tempfile::tempdir().unwrap();
+        let pane_dir = parent.path().join("project");
+        std::fs::create_dir(&pane_dir).unwrap();
+
+        let allowed = vec![parent.path().to_string_lossy().to_string()];
+        let pane_canonical = pane_dir.canonicalize().unwrap();
+        assert!(is_pane_cwd_within_allowed(&pane_canonical, &allowed));
+    }
+
+    #[test]
+    fn pane_cwd_outside_allowed_path() {
+        let allowed_dir = tempfile::tempdir().unwrap();
+        let pane_dir = tempfile::tempdir().unwrap();
+
+        let allowed = vec![allowed_dir.path().to_string_lossy().to_string()];
+        let pane_canonical = pane_dir.path().canonicalize().unwrap();
+        assert!(!is_pane_cwd_within_allowed(&pane_canonical, &allowed));
+    }
+
+    #[test]
+    fn pane_cwd_empty_allowed_paths_rejects() {
+        let pane_dir = tempfile::tempdir().unwrap();
+        let pane_canonical = pane_dir.path().canonicalize().unwrap();
+        assert!(!is_pane_cwd_within_allowed(&pane_canonical, &[]));
+    }
+
+    #[test]
+    fn pane_cwd_exact_match_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        let allowed = vec![dir.path().to_string_lossy().to_string()];
+        let canonical = dir.path().canonicalize().unwrap();
+        assert!(is_pane_cwd_within_allowed(&canonical, &allowed));
     }
 }

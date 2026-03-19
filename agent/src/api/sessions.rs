@@ -1,9 +1,62 @@
+use std::path::PathBuf;
+
 use axum::{extract::{Path, State}, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::state::AppState;
 use crate::tmux::types::EnrichedTopology;
+
+/// Validate that a session name contains only safe characters (alphanumeric, underscore, hyphen)
+/// and is between 1 and 64 characters. This prevents shell injection when session names are
+/// interpolated into commands sent to tmux panes.
+pub(crate) fn is_valid_session_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// Check if a working directory is within one of the configured allowed_paths.
+/// Rejects paths outside the allowed set to prevent pane-cwd-based file browsing bypass.
+fn is_working_dir_allowed(dir: &str, allowed_paths: &[String]) -> bool {
+    // Resolve ~ in the requested dir
+    let dir_path = if dir.starts_with('~') {
+        if let Some(home) = dirs::home_dir() {
+            home.join(dir[1..].trim_start_matches('/'))
+        } else {
+            PathBuf::from(dir)
+        }
+    } else {
+        PathBuf::from(dir)
+    };
+
+    let canonical = match dir_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    for allowed in allowed_paths {
+        let allowed_path = if allowed.starts_with('~') {
+            if let Some(home) = dirs::home_dir() {
+                home.join(allowed[1..].trim_start_matches('/'))
+            } else {
+                PathBuf::from(allowed)
+            }
+        } else {
+            PathBuf::from(allowed)
+        };
+
+        if let Ok(allowed_canonical) = allowed_path.canonicalize() {
+            if canonical.starts_with(&allowed_canonical) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
 
 #[derive(Deserialize)]
 pub struct CreateSessionRequest {
@@ -56,6 +109,12 @@ pub async fn create_session(
     if name.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "session name is required".into()));
     }
+    if !is_valid_session_name(&name) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "invalid session name: only alphanumeric characters, hyphens, and underscores are allowed (max 64 chars)".into(),
+        ));
+    }
 
     // Check for duplicate
     if let Ok(topo) = state.get_topology().await {
@@ -66,6 +125,14 @@ pub async fn create_session(
 
     // Create session — with optional working directory
     if let Some(ref dir) = req.working_dir {
+        if !state.config.files.allowed_paths.is_empty()
+            && !is_working_dir_allowed(dir, &state.config.files.allowed_paths)
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "working_dir is not within any configured allowed_paths".into(),
+            ));
+        }
         state
             .tmux
             .new_session_in_dir(&name, dir)
@@ -183,6 +250,9 @@ pub async fn delete_session(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    if !is_valid_session_name(&name) {
+        return Err((StatusCode::BAD_REQUEST, "invalid session name".into()));
+    }
     state
         .tmux
         .kill_session(&name)
@@ -193,4 +263,141 @@ pub async fn delete_session(
     state.mark_session_read(&name).await;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- is_valid_session_name ---
+
+    #[test]
+    fn valid_simple_names() {
+        assert!(is_valid_session_name("my-session"));
+        assert!(is_valid_session_name("test_123"));
+        assert!(is_valid_session_name("ProjectAlpha"));
+    }
+
+    #[test]
+    fn valid_single_char() {
+        assert!(is_valid_session_name("a"));
+        assert!(is_valid_session_name("Z"));
+        assert!(is_valid_session_name("0"));
+        assert!(is_valid_session_name("_"));
+        assert!(is_valid_session_name("-"));
+    }
+
+    #[test]
+    fn valid_at_length_boundary() {
+        let name_64 = "a".repeat(64);
+        assert!(is_valid_session_name(&name_64));
+    }
+
+    #[test]
+    fn rejects_empty() {
+        assert!(!is_valid_session_name(""));
+    }
+
+    #[test]
+    fn rejects_over_64_chars() {
+        let name_65 = "a".repeat(65);
+        assert!(!is_valid_session_name(&name_65));
+    }
+
+    #[test]
+    fn rejects_shell_injection_semicolon() {
+        assert!(!is_valid_session_name("x; rm -rf /"));
+    }
+
+    #[test]
+    fn rejects_shell_injection_subshell() {
+        assert!(!is_valid_session_name("$(whoami)"));
+    }
+
+    #[test]
+    fn rejects_shell_injection_backtick() {
+        assert!(!is_valid_session_name("`id`"));
+    }
+
+    #[test]
+    fn rejects_dots_and_special_chars() {
+        // Dots are valid in tmux session names but we reject them
+        // to keep the shell interpolation safe.
+        assert!(!is_valid_session_name("my.session"));
+        assert!(!is_valid_session_name("has spaces"));
+        assert!(!is_valid_session_name("has/slash"));
+        assert!(!is_valid_session_name("pipe|here"));
+        assert!(!is_valid_session_name("amp&ersand"));
+        assert!(!is_valid_session_name("quote'mark"));
+        assert!(!is_valid_session_name("double\"quote"));
+    }
+
+    #[test]
+    fn rejects_newlines_and_control_chars() {
+        assert!(!is_valid_session_name("line\nbreak"));
+        assert!(!is_valid_session_name("tab\there"));
+        assert!(!is_valid_session_name("null\0byte"));
+    }
+
+    // --- is_working_dir_allowed ---
+
+    #[test]
+    fn working_dir_allowed_inside_allowed_path() {
+        let parent = tempfile::tempdir().unwrap();
+        let child = parent.path().join("project");
+        std::fs::create_dir(&child).unwrap();
+
+        let allowed = vec![parent.path().to_string_lossy().to_string()];
+        assert!(is_working_dir_allowed(&child.to_string_lossy(), &allowed));
+    }
+
+    #[test]
+    fn working_dir_rejected_outside_allowed_path() {
+        let allowed_dir = tempfile::tempdir().unwrap();
+        let other_dir = tempfile::tempdir().unwrap();
+
+        let allowed = vec![allowed_dir.path().to_string_lossy().to_string()];
+        assert!(!is_working_dir_allowed(&other_dir.path().to_string_lossy(), &allowed));
+    }
+
+    #[test]
+    fn working_dir_rejected_nonexistent_path() {
+        let allowed = vec!["/tmp".to_string()];
+        assert!(!is_working_dir_allowed("/nonexistent/fake/path/xyz", &allowed));
+    }
+
+    #[test]
+    fn working_dir_exact_match_is_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        let allowed = vec![dir.path().to_string_lossy().to_string()];
+        assert!(is_working_dir_allowed(&dir.path().to_string_lossy(), &allowed));
+    }
+
+    #[test]
+    fn working_dir_parent_traversal_rejected() {
+        // allowed is /tmp/parent/child, request is /tmp/parent — should fail
+        let parent = tempfile::tempdir().unwrap();
+        let child = parent.path().join("child");
+        std::fs::create_dir(&child).unwrap();
+
+        let allowed = vec![child.to_string_lossy().to_string()];
+        assert!(!is_working_dir_allowed(&parent.path().to_string_lossy(), &allowed));
+    }
+
+    #[test]
+    fn working_dir_multiple_allowed_paths() {
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+        let dir_c = tempfile::tempdir().unwrap();
+
+        let allowed = vec![
+            dir_a.path().to_string_lossy().to_string(),
+            dir_b.path().to_string_lossy().to_string(),
+        ];
+
+        // dir_b is in allowed list
+        assert!(is_working_dir_allowed(&dir_b.path().to_string_lossy(), &allowed));
+        // dir_c is not
+        assert!(!is_working_dir_allowed(&dir_c.path().to_string_lossy(), &allowed));
+    }
 }
