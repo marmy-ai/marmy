@@ -104,6 +104,7 @@ export default function RetroComputer({
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
+    maxWidth: "50%",
     margin: 6,
     alignItems: "center",
   },

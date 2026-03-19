@@ -167,81 +167,86 @@ export default function FilesScreen() {
     );
   }
 
-  // Phase: Image viewer
-  if (phase.kind === "image") {
-    const filename = phase.path.split("/").pop() || phase.path;
-    return (
-      <View style={styles.container}>
-        <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <Text style={styles.backBtnText}>Back to files</Text>
-        </TouchableOpacity>
-        <ImageViewer
-          uri={api!.getRawFileUrl(phase.path)}
-          headers={api!.getAuthHeaders()}
-          filename={filename}
-        />
-      </View>
-    );
-  }
+  const isViewingFile = phase.kind === "file" || phase.kind === "image" || phase.kind === "markdown" || phase.kind === "pdf";
+  const isBrowsing = phase.kind === "browse";
 
-  // Phase: Markdown viewer
-  if (phase.kind === "markdown") {
-    const filename = phase.path.split("/").pop() || phase.path;
-    return (
-      <View style={styles.container}>
-        <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <Text style={styles.backBtnText}>Back to files</Text>
-        </TouchableOpacity>
-        <MarkdownViewer content={phase.content} filename={filename} />
-      </View>
-    );
-  }
-
-  // Phase: PDF viewer
-  if (phase.kind === "pdf") {
-    const filename = phase.path.split("/").pop() || phase.path;
-    return (
-      <View style={styles.container}>
-        <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <Text style={styles.backBtnText}>Back to files</Text>
-        </TouchableOpacity>
-        <PdfViewer
-          uri={api!.getRawFileUrl(phase.path)}
-          headers={api!.getAuthHeaders()}
-          filename={filename}
-        />
-      </View>
-    );
-  }
-
-  // Phase: Text file viewer
-  if (phase.kind === "file") {
-    const filename = phase.path.split("/").pop() || phase.path;
-    return (
-      <View style={styles.container}>
-        <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-          <Text style={styles.backBtnText}>Back to files</Text>
-        </TouchableOpacity>
-        <CodeViewer content={phase.content} filename={filename} />
-      </View>
-    );
-  }
-
-  // Phase: Directory browser
-  if (phase.kind === "browse") {
-    return (
-      <View style={styles.container}>
-        {roots.length > 1 && (
+  // Render file viewer overlay when viewing a file
+  const renderFileViewer = () => {
+    if (phase.kind === "image") {
+      const filename = phase.path.split("/").pop() || phase.path;
+      return (
+        <>
           <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-            <Text style={styles.backBtnText}>Back to roots</Text>
+            <Text style={styles.backBtnText}>Back to files</Text>
           </TouchableOpacity>
-        )}
-        <FileTree
-          entries={entries}
-          currentPath={currentPath}
-          onNavigate={loadDirectory}
-          onFileSelect={selectFile}
-        />
+          <ImageViewer
+            uri={api!.getRawFileUrl(phase.path)}
+            headers={api!.getAuthHeaders()}
+            filename={filename}
+          />
+        </>
+      );
+    }
+    if (phase.kind === "markdown") {
+      const filename = phase.path.split("/").pop() || phase.path;
+      return (
+        <>
+          <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+            <Text style={styles.backBtnText}>Back to files</Text>
+          </TouchableOpacity>
+          <MarkdownViewer content={phase.content} filename={filename} />
+        </>
+      );
+    }
+    if (phase.kind === "pdf") {
+      const filename = phase.path.split("/").pop() || phase.path;
+      return (
+        <>
+          <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+            <Text style={styles.backBtnText}>Back to files</Text>
+          </TouchableOpacity>
+          <PdfViewer
+            uri={api!.getRawFileUrl(phase.path)}
+            headers={api!.getAuthHeaders()}
+            filename={filename}
+          />
+        </>
+      );
+    }
+    if (phase.kind === "file") {
+      const filename = phase.path.split("/").pop() || phase.path;
+      return (
+        <>
+          <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+            <Text style={styles.backBtnText}>Back to files</Text>
+          </TouchableOpacity>
+          <CodeViewer content={phase.content} filename={filename} />
+        </>
+      );
+    }
+    return null;
+  };
+
+  // Browse phase: FileTree stays mounted (hidden when viewing a file) to preserve scroll
+  if (isBrowsing || isViewingFile) {
+    return (
+      <View style={styles.container}>
+        {/* FileTree always mounted — hidden via display:none to preserve scroll position */}
+        <View style={isViewingFile ? { display: 'none' } : { flex: 1 }}>
+          {roots.length > 1 && (
+            <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+              <Text style={styles.backBtnText}>Back to roots</Text>
+            </TouchableOpacity>
+          )}
+          <FileTree
+            entries={entries}
+            currentPath={currentPath}
+            onNavigate={loadDirectory}
+            onFileSelect={selectFile}
+          />
+        </View>
+        {/* File viewer renders on top when active */}
+        {isViewingFile && renderFileViewer()}
       </View>
     );
   }
