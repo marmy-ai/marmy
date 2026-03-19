@@ -32,13 +32,13 @@ const { src, alt, class: className = "" } = Astro.props;
 
   .phone-notch {
     position: absolute;
-    top: var(--bezel);
+    top: calc(var(--bezel) + 6px);
     left: 50%;
     transform: translateX(-50%);
-    width: 90px;
-    height: 24px;
-    background: #1a1a24;
-    border-radius: 0 0 16px 16px;
+    width: 76px;
+    height: 22px;
+    background: #000;
+    border-radius: 999px;
     z-index: 1;
   }
 
