@@ -5,6 +5,8 @@ import {
   ScrollView,
   StyleSheet,
 } from "react-native";
+import SyntaxHighlighter from "react-native-syntax-highlighter";
+import { atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
 
 interface CodeViewerProps {
   content: string;
@@ -12,20 +14,116 @@ interface CodeViewerProps {
   highlightLine?: number;
 }
 
-/**
- * Read-only code viewer with line numbers.
- *
- * MVP: renders plain monospace text with line numbers. For syntax highlighting,
- * integrate react-native-syntax-highlighter (already in package.json) keyed on
- * the file extension. For large files (>5K lines), swap to CodeMirror 6 in a
- * WebView with readOnly: true for virtualized rendering.
- */
+const PLAIN_TEXT_THRESHOLD = 2000;
+
+const EXT_TO_LANGUAGE: Record<string, string> = {
+  js: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  jsx: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  py: "python",
+  rb: "ruby",
+  rs: "rust",
+  go: "go",
+  java: "java",
+  kt: "kotlin",
+  kts: "kotlin",
+  swift: "swift",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  cc: "cpp",
+  hpp: "cpp",
+  cs: "csharp",
+  css: "css",
+  scss: "scss",
+  less: "less",
+  html: "xml",
+  htm: "xml",
+  xml: "xml",
+  svg: "xml",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "ini",
+  md: "markdown",
+  mdx: "markdown",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  fish: "bash",
+  sql: "sql",
+  graphql: "graphql",
+  gql: "graphql",
+  dockerfile: "dockerfile",
+  makefile: "makefile",
+  lua: "lua",
+  r: "r",
+  php: "php",
+  pl: "perl",
+  ex: "elixir",
+  exs: "elixir",
+  erl: "erlang",
+  hs: "haskell",
+  clj: "clojure",
+  scala: "scala",
+  dart: "dart",
+  vue: "xml",
+  svelte: "xml",
+};
+
+function detectLanguage(filename: string): string | undefined {
+  const lower = filename.toLowerCase();
+  // Handle dotfiles like Dockerfile, Makefile
+  const base = lower.split("/").pop() || lower;
+  if (base === "dockerfile") return "dockerfile";
+  if (base === "makefile") return "makefile";
+
+  const ext = base.split(".").pop();
+  if (!ext || ext === base) return undefined;
+  return EXT_TO_LANGUAGE[ext];
+}
+
 export default function CodeViewer({
   content,
   filename,
   highlightLine,
 }: CodeViewerProps) {
   const lines = content.split("\n");
+  const language = detectLanguage(filename);
+  const useSyntaxHighlighting = language && lines.length <= PLAIN_TEXT_THRESHOLD;
+
+  if (useSyntaxHighlighting) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.filename} numberOfLines={1}>
+            {filename}
+          </Text>
+          <Text style={styles.lineCount}>{lines.length} lines</Text>
+        </View>
+        <ScrollView style={styles.scroll}>
+          <SyntaxHighlighter
+            language={language}
+            style={atomOneDark}
+            fontSize={13}
+            fontFamily="Menlo"
+            highlighter="hljs"
+            customStyle={{
+              backgroundColor: "transparent",
+              padding: 8,
+            }}
+          >
+            {content}
+          </SyntaxHighlighter>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // Fallback: plain text with line numbers (for large files or unknown languages)
   const gutterWidth = String(lines.length).length * 10 + 16;
 
   return (
