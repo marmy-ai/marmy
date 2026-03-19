@@ -138,19 +138,24 @@ function parseAnsi(raw: string): AnsiSpan[] {
 function ansi256ToHex(n: number): string {
   // Standard 16 colors
   const base16: string[] = [
-    "#000", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#abb2bf",
+    "#555", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#abb2bf",
     "#5c6370", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#fff",
   ];
   if (n < 16) return base16[n];
-  if (n >= 232) { // Grayscale
-    const v = 8 + (n - 232) * 10;
+  if (n >= 232) { // Grayscale — clamp floor so dark grays are visible on dark bg
+    const v = Math.max(85, 8 + (n - 232) * 10);
     return `rgb(${v},${v},${v})`;
   }
-  // 216-color cube (16-231)
+  // 216-color cube (16-231) — boost very dark colors for readability
   const idx = n - 16;
-  const r = Math.floor(idx / 36) * 51;
-  const g = Math.floor((idx % 36) / 6) * 51;
-  const b = (idx % 6) * 51;
+  let r = Math.floor(idx / 36) * 51;
+  let g = Math.floor((idx % 36) / 6) * 51;
+  let b = (idx % 6) * 51;
+  if (r + g + b < 85) {
+    r = Math.max(r, 68);
+    g = Math.max(g, 68);
+    b = Math.max(b, 68);
+  }
   return `rgb(${r},${g},${b})`;
 }
 
