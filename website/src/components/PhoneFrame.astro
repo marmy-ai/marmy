@@ -10,36 +10,22 @@ const { src, alt, class: className = "" } = Astro.props;
 
 <div class:list={["phone-frame", className]}>
   <div class="phone-body">
-    <div class="phone-notch"></div>
     <img src={src} alt={alt} class="phone-screen" />
   </div>
 </div>
 
 <style>
   .phone-frame {
-    --bezel: 6px;
+    --bezel: 3px;
     --radius-outer: 3rem;
-    --radius-inner: 2.6rem;
+    --radius-inner: 2.8rem;
   }
 
   .phone-body {
-    position: relative;
     background: #1a1a24;
     border-radius: var(--radius-outer);
     padding: var(--bezel);
     border: 1.5px solid rgba(255, 255, 255, 0.15);
-  }
-
-  .phone-notch {
-    position: absolute;
-    top: calc(var(--bezel) + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    width: 76px;
-    height: 22px;
-    background: #000;
-    border-radius: 999px;
-    z-index: 1;
   }
 
   .phone-screen {
