@@ -1,56 +1,24 @@
 <section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
   <div class="max-w-5xl mx-auto">
     <div class="flex flex-col lg:flex-row items-center gap-14 lg:gap-20">
-      <!-- Phone mockup -->
+      <!-- Phone screenshots -->
       <div class="flex-shrink-0 order-2 lg:order-1 reveal stagger-2">
-        <div class="relative" style="animation: float 6s ease-in-out infinite; animation-delay: 2s;">
-          <div class="absolute inset-0 scale-90 bg-secondary/5 rounded-[3rem] blur-[40px]"></div>
-          <div class="relative w-[260px] sm:w-[280px] rounded-[2.5rem] border border-border bg-bg-card p-2 shadow-2xl shadow-black/40">
-            <div class="flex items-center justify-between px-5 py-1.5">
-              <span class="text-[10px] text-text-tertiary font-mono">9:41</span>
-              <div class="w-20 h-5 rounded-full bg-bg-deep"></div>
-              <div class="flex gap-1 items-center">
-                <div class="w-1.5 h-1.5 rounded-full bg-success"></div>
-                <span class="text-[10px] text-text-tertiary">LAN</span>
-              </div>
-            </div>
-
-            <div class="rounded-2xl bg-bg-deep overflow-hidden">
-              <div class="px-3 py-2 border-b border-border flex items-center justify-between">
-                <span class="text-xs font-mono font-bold text-text-primary">Files</span>
-                <span class="text-[10px] font-mono text-text-tertiary">auth-refactor</span>
-              </div>
-
-              <div class="p-2 font-mono text-[11px]">
-                <div class="space-y-0.5">
-                  <div class="px-2 py-1 text-text-tertiary">src/</div>
-                  <div class="px-2 py-1 pl-5 rounded-md bg-primary/8 border border-primary/15">
-                    <span class="text-primary">auth.ts</span>
-                    <span class="text-primary text-[9px] ml-1">modified</span>
-                  </div>
-                  <div class="px-2 py-1 pl-5 text-text-tertiary">index.ts</div>
-                  <div class="px-2 py-1 text-text-tertiary">docs/</div>
-                  <div class="px-2 py-1 pl-5 text-text-tertiary">API.md</div>
-                </div>
-
-                <div class="mt-2 rounded-lg bg-bg-card border border-border p-2 text-[10px] leading-relaxed">
-                  <div class="text-text-tertiary mb-1 text-[9px]">auth.ts</div>
-                  <div><span class="text-primary">export</span> <span class="text-success">async function</span> <span class="text-text-primary">verify</span>(</div>
-                  <div class="pl-2"><span class="text-text-tertiary">token:</span> <span class="text-success">string</span></div>
-                  <div>) {'{'}</div>
-                  <div class="pl-2"><span class="text-primary">const</span> decoded = jwt.decode(token)</div>
-                  <div class="pl-2"><span class="text-primary">return</span> validated(decoded)</div>
-                  <div>{'}'}</div>
-                </div>
-              </div>
-
-              <div class="flex justify-around py-2 border-t border-border text-[10px] font-mono">
-                <span class="text-text-tertiary">Machines</span>
-                <span class="text-text-tertiary">Workers</span>
-                <span class="text-text-tertiary">Terminal</span>
-                <span class="text-primary">Files</span>
-              </div>
-            </div>
+        <div class="flex gap-4 items-start">
+          <div class="relative" style="animation: float 6s ease-in-out infinite; animation-delay: 2s;">
+            <div class="absolute inset-0 scale-90 bg-secondary/5 rounded-[3rem] blur-[40px]"></div>
+            <img
+              src="/screenshots/file_dir.png"
+              alt="Marmy file browser showing directory tree"
+              class="relative w-[200px] sm:w-[220px] rounded-[2rem] shadow-2xl shadow-black/40"
+            />
+          </div>
+          <div class="relative" style="animation: float 6s ease-in-out infinite; animation-delay: 3.5s;">
+            <div class="absolute inset-0 scale-90 bg-primary/5 rounded-[3rem] blur-[40px]"></div>
+            <img
+              src="/screenshots/file-viewer.png"
+              alt="Marmy code viewer with syntax highlighting"
+              class="relative w-[200px] sm:w-[220px] rounded-[2rem] shadow-2xl shadow-black/40"
+            />
           </div>
         </div>
       </div>
