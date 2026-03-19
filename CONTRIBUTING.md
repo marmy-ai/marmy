@@ -49,17 +49,6 @@ Then in Xcode: select your signing team, set build config to Release, and Cmd+R.
 
 **Requires:** Node.js 18+, Expo CLI, Xcode (for iOS builds)
 
-### API (Node.js / Fastify)
-
-```bash
-cd api
-cp .env.example .env     # Configure environment variables
-npm install
-npm run dev              # Start with hot reload
-```
-
-**Requires:** Node.js 18+
-
 ### Website (Astro)
 
 ```bash
@@ -88,7 +77,6 @@ npm run build            # Production build
 ```
 marmy/
 ├── agent/       # Rust daemon — tmux control mode, REST API, WebSocket
-├── api/         # Node.js API server (legacy, being merged into agent)
 ├── mobile/      # React Native (Expo) mobile app
 ├── macos/       # macOS menu bar app (Swift)
 ├── website/     # Documentation website (Astro)
