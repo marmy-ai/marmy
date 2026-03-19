@@ -291,7 +291,8 @@ fn is_pane_cwd_within_allowed(pane_canonical: &std::path::Path, allowed_paths: &
 
 /// Dynamic path validation: checks static allowed_paths first, then pane working directories.
 /// When allowed_paths is configured, pane cwds only count if they are themselves under an
-/// allowed_path. This prevents a pane cd'd to /home from making the entire /home tree browsable.
+/// allowed_path. When allowed_paths is empty (default), any pane cwd is allowed — this is
+/// the sane default for a single-user tool.
 async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
     let allowed_paths = &state.config.files.allowed_paths;
 
@@ -300,12 +301,7 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
         return true;
     }
 
-    // If no allowed_paths configured, file browsing is disabled — don't fall through to pane cwds
-    if allowed_paths.is_empty() {
-        return false;
-    }
-
-    // Dynamic check: is this path under a pane's cwd, but only if that cwd is itself under an allowed_path?
+    // Dynamic check: is this path under any pane's current_path?
     let topology = match state.get_topology().await {
         Ok(t) => t,
         Err(_) => return false,
@@ -322,8 +318,11 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
             if pane_canonical == PathBuf::from("/") {
                 continue;
             }
+            // If allowed_paths is configured, pane cwds must be under an allowed path.
+            // If allowed_paths is empty (default), any pane cwd is permitted.
             if canonical.starts_with(&pane_canonical)
-                && is_pane_cwd_within_allowed(&pane_canonical, allowed_paths)
+                && (allowed_paths.is_empty()
+                    || is_pane_cwd_within_allowed(&pane_canonical, allowed_paths))
             {
                 return true;
             }
@@ -340,17 +339,14 @@ async fn is_path_allowed_for_browsing(path: &Path, state: &AppState) -> bool {
         return true;
     }
 
-    let allowed_paths = &state.config.files.allowed_paths;
-    if allowed_paths.is_empty() {
-        return false;
-    }
-
     let canonical = match path.canonicalize() {
         Ok(p) => p,
         Err(_) => return false,
     };
 
-    // Allow ancestors of pane working directories, but only for panes under allowed_paths
+    let allowed_paths = &state.config.files.allowed_paths;
+
+    // Allow ancestors of pane working directories so users can navigate down
     let topology = match state.get_topology().await {
         Ok(t) => t,
         Err(_) => return false,
@@ -360,7 +356,8 @@ async fn is_path_allowed_for_browsing(path: &Path, state: &AppState) -> bool {
         let pane_path = PathBuf::from(&pane.current_path);
         if let Ok(pane_canonical) = pane_path.canonicalize() {
             if pane_canonical.starts_with(&canonical)
-                && is_pane_cwd_within_allowed(&pane_canonical, allowed_paths)
+                && (allowed_paths.is_empty()
+                    || is_pane_cwd_within_allowed(&pane_canonical, allowed_paths))
             {
                 return true;
             }
@@ -631,5 +628,27 @@ mod tests {
         let allowed = vec![dir.path().to_string_lossy().to_string()];
         let canonical = dir.path().canonicalize().unwrap();
         assert!(is_pane_cwd_within_allowed(&canonical, &allowed));
+    }
+
+    // --- empty allowed_paths default behavior ---
+    // When allowed_paths is empty (the default), is_path_allowed_dynamic allows
+    // any pane cwd. We can't call the async function here, but we verify the
+    // building blocks behave correctly for the empty case:
+
+    #[test]
+    fn static_path_check_rejects_when_allowed_empty() {
+        // is_path_allowed returns false for empty list — this is correct because
+        // the dynamic pane-cwd path handles the empty default case.
+        assert!(!is_path_allowed(Path::new("/tmp"), &[]));
+    }
+
+    #[test]
+    fn pane_cwd_check_rejects_when_allowed_empty() {
+        // is_pane_cwd_within_allowed returns false for empty list — this is correct
+        // because is_path_allowed_dynamic skips this check when allowed_paths is empty,
+        // allowing any pane cwd by default.
+        let dir = tempfile::tempdir().unwrap();
+        let canonical = dir.path().canonicalize().unwrap();
+        assert!(!is_pane_cwd_within_allowed(&canonical, &[]));
     }
 }
