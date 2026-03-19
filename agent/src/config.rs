@@ -72,7 +72,7 @@ pub struct NotificationsConfig {
     pub apns_sandbox: bool,
     /// Relay URL for App Store builds. When set, tokens with provider "relay"
     /// are forwarded here instead of using the local APNs key.
-    #[serde(default)]
+    #[serde(default = "default_relay_url")]
     pub relay_url: String,
 }
 
@@ -105,6 +105,10 @@ fn default_apns_topic() -> String {
 
 fn default_apns_sandbox() -> bool {
     true
+}
+
+fn default_relay_url() -> String {
+    "https://tloo7bj5rmnw3bmvvveqo7immi0pmhhb.lambda-url.us-west-2.on.aws/".to_string()
 }
 
 fn default_server() -> ServerConfig {
@@ -181,7 +185,7 @@ impl Default for NotificationsConfig {
             apns_team_id: String::new(),
             apns_topic: default_apns_topic(),
             apns_sandbox: default_apns_sandbox(),
-            relay_url: String::new(),
+            relay_url: default_relay_url(),
         }
     }
 }
@@ -285,7 +289,7 @@ mod tests {
         assert_eq!(config.notifications.cooldown_seconds, 120);
         assert!(config.notifications.apns_sandbox);
         assert_eq!(config.notifications.apns_topic, "com.marmy.app");
-        assert!(config.notifications.relay_url.is_empty());
+        assert!(config.notifications.relay_url.starts_with("https://"));
         assert!(config.voice.gemini_api_key.is_empty());
     }
 

@@ -487,8 +487,17 @@ mod tests {
     // --- NotificationSender::is_configured ---
 
     #[test]
-    fn sender_not_configured_without_key() {
+    fn sender_configured_with_default_relay_url() {
+        // Default config has the official relay URL, so sender is configured
         let config = NotificationsConfig::default();
+        let sender = NotificationSender::new(&config);
+        assert!(sender.is_configured());
+    }
+
+    #[test]
+    fn sender_not_configured_without_key_or_relay() {
+        let mut config = NotificationsConfig::default();
+        config.relay_url = String::new();
         let sender = NotificationSender::new(&config);
         assert!(!sender.is_configured());
     }
