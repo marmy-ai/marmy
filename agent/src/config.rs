@@ -75,7 +75,7 @@ pub struct NotificationsConfig {
     #[serde(default = "default_relay_url")]
     pub relay_url: String,
     /// Shared secret for authenticating with the push relay.
-    #[serde(default)]
+    #[serde(default = "default_relay_secret")]
     pub relay_secret: String,
 }
 
@@ -112,6 +112,10 @@ fn default_apns_sandbox() -> bool {
 
 fn default_relay_url() -> String {
     "https://tloo7bj5rmnw3bmvvveqo7immi0pmhhb.lambda-url.us-west-2.on.aws/".to_string()
+}
+
+fn default_relay_secret() -> String {
+    "winter_is_coming".to_string()
 }
 
 fn default_server() -> ServerConfig {
@@ -189,7 +193,7 @@ impl Default for NotificationsConfig {
             apns_topic: default_apns_topic(),
             apns_sandbox: default_apns_sandbox(),
             relay_url: default_relay_url(),
-            relay_secret: String::new(),
+            relay_secret: default_relay_secret(),
         }
     }
 }
