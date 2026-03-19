@@ -7,17 +7,27 @@
     <div class="space-y-3 reveal stagger-1">
       <div class="rounded-xl border border-border bg-bg-card overflow-hidden">
         <div class="flex items-center justify-between px-4 py-2 border-b border-border">
-          <span class="text-xs text-text-tertiary font-mono">1 · Install</span>
-          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="curl -fsSL https://marmy.ai/install.sh | bash">copy</button>
+          <span class="text-xs text-text-tertiary font-mono">1 · Clone</span>
+          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="git clone https://github.com/mharajli/marmy && cd marmy/agent">copy</button>
         </div>
         <div class="px-4 py-2.5 font-mono text-sm">
-          <span class="text-text-tertiary">$</span> <span class="text-text-primary">curl -fsSL https://marmy.ai/install.sh | bash</span>
+          <span class="text-text-tertiary">$</span> <span class="text-text-primary">git clone https://github.com/mharajli/marmy && cd marmy/agent</span>
         </div>
       </div>
 
       <div class="rounded-xl border border-border bg-bg-card overflow-hidden">
         <div class="flex items-center justify-between px-4 py-2 border-b border-border">
-          <span class="text-xs text-text-tertiary font-mono">2 · Start</span>
+          <span class="text-xs text-text-tertiary font-mono">2 · Build</span>
+          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="cargo build --release">copy</button>
+        </div>
+        <div class="px-4 py-2.5 font-mono text-sm">
+          <span class="text-text-tertiary">$</span> <span class="text-text-primary">cargo build --release</span>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-border bg-bg-card overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-border">
+          <span class="text-xs text-text-tertiary font-mono">3 · Start</span>
           <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="marmy-agent serve">copy</button>
         </div>
         <div class="px-4 py-2.5 font-mono text-sm">
@@ -27,7 +37,7 @@
 
       <div class="rounded-xl border border-border bg-bg-card overflow-hidden">
         <div class="flex items-center justify-between px-4 py-2 border-b border-border">
-          <span class="text-xs text-text-tertiary font-mono">3 · Pair</span>
+          <span class="text-xs text-text-tertiary font-mono">4 · Pair</span>
           <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="marmy-agent pair">copy</button>
         </div>
         <div class="px-4 py-2.5 font-mono text-sm">
@@ -38,7 +48,7 @@
 
       <div class="rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
         <div class="px-4 py-2 border-b border-primary/10">
-          <span class="text-xs text-primary font-mono">4 · Use Claude Code like normal</span>
+          <span class="text-xs text-primary font-mono">5 · Use Claude Code like normal</span>
         </div>
         <div class="px-4 py-2.5 font-mono text-sm">
           <span class="text-text-tertiary">$</span> <span class="text-text-primary">claude "refactor the auth module"</span>
