@@ -275,14 +275,37 @@ fn is_path_allowed(path: &Path, allowed: &[String]) -> bool {
     false
 }
 
+/// Check if a pane's cwd is itself under one of the configured allowed_paths.
+/// Returns false if allowed_paths is empty (file browsing disabled).
+fn is_pane_cwd_within_allowed(pane_canonical: &std::path::Path, allowed_paths: &[String]) -> bool {
+    for allowed_path in allowed_paths {
+        let allowed = resolve_path(allowed_path);
+        if let Ok(allowed_canonical) = allowed.canonicalize() {
+            if pane_canonical.starts_with(&allowed_canonical) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Dynamic path validation: checks static allowed_paths first, then pane working directories.
+/// When allowed_paths is configured, pane cwds only count if they are themselves under an
+/// allowed_path. This prevents a pane cd'd to /home from making the entire /home tree browsable.
 async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
+    let allowed_paths = &state.config.files.allowed_paths;
+
     // Static config check first
-    if is_path_allowed(path, &state.config.files.allowed_paths) {
+    if is_path_allowed(path, allowed_paths) {
         return true;
     }
 
-    // Dynamic check: is this path under any pane's current_path?
+    // If no allowed_paths configured, file browsing is disabled — don't fall through to pane cwds
+    if allowed_paths.is_empty() {
+        return false;
+    }
+
+    // Dynamic check: is this path under a pane's cwd, but only if that cwd is itself under an allowed_path?
     let topology = match state.get_topology().await {
         Ok(t) => t,
         Err(_) => return false,
@@ -296,11 +319,12 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
     for pane in &topology.panes {
         let pane_path = PathBuf::from(&pane.current_path);
         if let Ok(pane_canonical) = pane_path.canonicalize() {
-            // Skip panes at filesystem root — too broad
             if pane_canonical == PathBuf::from("/") {
                 continue;
             }
-            if canonical.starts_with(&pane_canonical) {
+            if canonical.starts_with(&pane_canonical)
+                && is_pane_cwd_within_allowed(&pane_canonical, allowed_paths)
+            {
                 return true;
             }
         }
@@ -309,35 +333,42 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
     false
 }
 
-/// Like is_path_allowed_dynamic, but also allows ancestor directories of pane paths.
+/// Like is_path_allowed_dynamic, but also allows ancestor directories of allowed pane paths.
 /// Used for directory browsing (list_dir) so users can navigate down to pane working dirs.
 async fn is_path_allowed_for_browsing(path: &Path, state: &AppState) -> bool {
     if is_path_allowed_dynamic(path, state).await {
         return true;
     }
 
-    // Allow ancestors of pane working directories (for navigating down)
-    let topology = match state.get_topology().await {
-        Ok(t) => t,
-        Err(_) => return false,
-    };
+    let allowed_paths = &state.config.files.allowed_paths;
+    if allowed_paths.is_empty() {
+        return false;
+    }
 
     let canonical = match path.canonicalize() {
         Ok(p) => p,
         Err(_) => return false,
     };
 
+    // Allow ancestors of pane working directories, but only for panes under allowed_paths
+    let topology = match state.get_topology().await {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+
     for pane in &topology.panes {
         let pane_path = PathBuf::from(&pane.current_path);
         if let Ok(pane_canonical) = pane_path.canonicalize() {
-            if pane_canonical.starts_with(&canonical) {
+            if pane_canonical.starts_with(&canonical)
+                && is_pane_cwd_within_allowed(&pane_canonical, allowed_paths)
+            {
                 return true;
             }
         }
     }
 
     // Also allow ancestors of static allowed_paths
-    for allowed_path in &state.config.files.allowed_paths {
+    for allowed_path in allowed_paths {
         let allowed = resolve_path(allowed_path);
         if let Ok(allowed_canonical) = allowed.canonicalize() {
             if allowed_canonical.starts_with(&canonical) {
