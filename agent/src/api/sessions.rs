@@ -264,3 +264,78 @@ pub async fn delete_session(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- is_valid_session_name ---
+
+    #[test]
+    fn valid_simple_names() {
+        assert!(is_valid_session_name("my-session"));
+        assert!(is_valid_session_name("test_123"));
+        assert!(is_valid_session_name("ProjectAlpha"));
+    }
+
+    #[test]
+    fn valid_single_char() {
+        assert!(is_valid_session_name("a"));
+        assert!(is_valid_session_name("Z"));
+        assert!(is_valid_session_name("0"));
+        assert!(is_valid_session_name("_"));
+        assert!(is_valid_session_name("-"));
+    }
+
+    #[test]
+    fn valid_at_length_boundary() {
+        let name_64 = "a".repeat(64);
+        assert!(is_valid_session_name(&name_64));
+    }
+
+    #[test]
+    fn rejects_empty() {
+        assert!(!is_valid_session_name(""));
+    }
+
+    #[test]
+    fn rejects_over_64_chars() {
+        let name_65 = "a".repeat(65);
+        assert!(!is_valid_session_name(&name_65));
+    }
+
+    #[test]
+    fn rejects_shell_injection_semicolon() {
+        assert!(!is_valid_session_name("x; rm -rf /"));
+    }
+
+    #[test]
+    fn rejects_shell_injection_subshell() {
+        assert!(!is_valid_session_name("$(whoami)"));
+    }
+
+    #[test]
+    fn rejects_shell_injection_backtick() {
+        assert!(!is_valid_session_name("`id`"));
+    }
+
+    #[test]
+    fn rejects_dots_and_special_chars() {
+        // Dots are valid in tmux session names but we reject them
+        // to keep the shell interpolation safe.
+        assert!(!is_valid_session_name("my.session"));
+        assert!(!is_valid_session_name("has spaces"));
+        assert!(!is_valid_session_name("has/slash"));
+        assert!(!is_valid_session_name("pipe|here"));
+        assert!(!is_valid_session_name("amp&ersand"));
+        assert!(!is_valid_session_name("quote'mark"));
+        assert!(!is_valid_session_name("double\"quote"));
+    }
+
+    #[test]
+    fn rejects_newlines_and_control_chars() {
+        assert!(!is_valid_session_name("line\nbreak"));
+        assert!(!is_valid_session_name("tab\there"));
+        assert!(!is_valid_session_name("null\0byte"));
+    }
+}
