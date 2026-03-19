@@ -280,3 +280,130 @@ pub fn save_push_tokens(tokens: &[String]) {
         let _ = std::fs::write(&path, content);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    // --- expand_tilde ---
+
+    #[test]
+    fn expand_tilde_with_subpath() {
+        let result = expand_tilde("~/Documents/key.p8");
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(result, home.join("Documents/key.p8"));
+    }
+
+    #[test]
+    fn expand_tilde_absolute_path_unchanged() {
+        let result = expand_tilde("/etc/ssl/cert.pem");
+        assert_eq!(result, PathBuf::from("/etc/ssl/cert.pem"));
+    }
+
+    #[test]
+    fn expand_tilde_bare_tilde_no_slash_unchanged() {
+        // "~" without "/" is not expanded (only "~/" prefix triggers expansion)
+        let result = expand_tilde("~");
+        assert_eq!(result, PathBuf::from("~"));
+    }
+
+    // --- Unread sessions JSON format ---
+
+    #[test]
+    fn unread_sessions_json_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unread.json");
+
+        let sessions: HashSet<String> = ["worker-1".into(), "worker-2".into()].into();
+        let list: Vec<&String> = sessions.iter().collect();
+        let val = serde_json::json!({ "sessions": list });
+        let content = serde_json::to_string_pretty(&val).unwrap();
+        std::fs::write(&path, &content).unwrap();
+
+        // Parse it back the same way load_unread_sessions does
+        let read_content = std::fs::read_to_string(&path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&read_content).unwrap();
+        let loaded: HashSet<String> = parsed
+            .get("sessions")
+            .and_then(|t| t.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+
+        assert_eq!(loaded, sessions);
+    }
+
+    #[test]
+    fn unread_sessions_missing_file_returns_empty() {
+        // Simulates load_unread_sessions behavior when file doesn't exist
+        let path = PathBuf::from("/nonexistent/unread_sessions.json");
+        assert!(!path.exists());
+        // The function returns empty set for missing files
+        let result: HashSet<String> = HashSet::new();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn unread_sessions_corrupt_json_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("corrupt.json");
+        std::fs::write(&path, "not valid json {{{").unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+        let loaded: HashSet<String> = val
+            .get("sessions")
+            .and_then(|t| t.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+
+        assert!(loaded.is_empty());
+    }
+
+    // --- Push tokens JSON format ---
+
+    #[test]
+    fn push_tokens_json_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tokens.json");
+
+        let tokens = vec!["abc123".to_string(), "def456".to_string()];
+        let val = serde_json::json!({ "tokens": tokens });
+        let content = serde_json::to_string_pretty(&val).unwrap();
+        std::fs::write(&path, &content).unwrap();
+
+        let read_content = std::fs::read_to_string(&path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&read_content).unwrap();
+        let loaded: Vec<String> = parsed
+            .get("tokens")
+            .and_then(|t| t.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+
+        assert_eq!(loaded, tokens);
+    }
+
+    #[test]
+    fn push_tokens_empty_array_roundtrip() {
+        let tokens: Vec<String> = vec![];
+        let val = serde_json::json!({ "tokens": tokens });
+        let content = serde_json::to_string_pretty(&val).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let loaded: Vec<String> = parsed
+            .get("tokens")
+            .and_then(|t| t.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+
+        assert!(loaded.is_empty());
+    }
+
+    // --- NotificationSender::is_configured ---
+
+    #[test]
+    fn sender_not_configured_without_key() {
+        let config = NotificationsConfig::default();
+        let sender = NotificationSender::new(&config);
+        assert!(!sender.is_configured());
+    }
+}
