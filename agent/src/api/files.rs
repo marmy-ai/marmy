@@ -404,3 +404,145 @@ fn guess_content_type(path: &Path) -> &'static str {
         _ => "application/octet-stream",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- resolve_path ---
+
+    #[test]
+    fn resolve_path_tilde_expands_to_home() {
+        let result = resolve_path("~/projects");
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(result, home.join("projects"));
+    }
+
+    #[test]
+    fn resolve_path_tilde_alone() {
+        let result = resolve_path("~");
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(result, home);
+    }
+
+    #[test]
+    fn resolve_path_absolute_unchanged() {
+        let result = resolve_path("/usr/local/bin");
+        assert_eq!(result, PathBuf::from("/usr/local/bin"));
+    }
+
+    #[test]
+    fn resolve_path_relative_unchanged() {
+        let result = resolve_path("relative/path");
+        assert_eq!(result, PathBuf::from("relative/path"));
+    }
+
+    // --- has_hidden_component ---
+
+    #[test]
+    fn hidden_component_dotfile_at_leaf() {
+        assert!(has_hidden_component(Path::new("/home/user/.bashrc")));
+    }
+
+    #[test]
+    fn hidden_component_dotdir_in_middle() {
+        assert!(has_hidden_component(Path::new("/home/user/.config/app/settings")));
+    }
+
+    #[test]
+    fn hidden_component_none() {
+        assert!(!has_hidden_component(Path::new("/home/user/projects/readme.md")));
+    }
+
+    #[test]
+    fn hidden_component_dot_in_filename_not_at_start() {
+        // "file.txt" has a dot but the component doesn't start with it
+        assert!(!has_hidden_component(Path::new("/home/user/file.txt")));
+    }
+
+    #[test]
+    fn hidden_component_at_root() {
+        assert!(has_hidden_component(Path::new("/.hidden/file")));
+    }
+
+    // --- guess_content_type ---
+
+    #[test]
+    fn content_type_images() {
+        assert_eq!(guess_content_type(Path::new("photo.png")), "image/png");
+        assert_eq!(guess_content_type(Path::new("photo.jpg")), "image/jpeg");
+        assert_eq!(guess_content_type(Path::new("photo.jpeg")), "image/jpeg");
+        assert_eq!(guess_content_type(Path::new("anim.gif")), "image/gif");
+        assert_eq!(guess_content_type(Path::new("photo.webp")), "image/webp");
+        assert_eq!(guess_content_type(Path::new("icon.svg")), "image/svg+xml");
+        assert_eq!(guess_content_type(Path::new("icon.bmp")), "image/bmp");
+        assert_eq!(guess_content_type(Path::new("icon.ico")), "image/x-icon");
+    }
+
+    #[test]
+    fn content_type_code_and_text() {
+        assert_eq!(guess_content_type(Path::new("app.js")), "text/javascript");
+        assert_eq!(guess_content_type(Path::new("lib.mjs")), "text/javascript");
+        assert_eq!(guess_content_type(Path::new("style.css")), "text/css");
+        assert_eq!(guess_content_type(Path::new("page.html")), "text/html");
+        assert_eq!(guess_content_type(Path::new("old.htm")), "text/html");
+        assert_eq!(guess_content_type(Path::new("README.md")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("main.rs")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("config.toml")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("data.yaml")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("data.yml")), "text/plain");
+        assert_eq!(guess_content_type(Path::new("notes.txt")), "text/plain");
+    }
+
+    #[test]
+    fn content_type_structured() {
+        assert_eq!(guess_content_type(Path::new("data.json")), "application/json");
+        assert_eq!(guess_content_type(Path::new("doc.pdf")), "application/pdf");
+    }
+
+    #[test]
+    fn content_type_unknown_extension() {
+        assert_eq!(guess_content_type(Path::new("file.xyz")), "application/octet-stream");
+    }
+
+    #[test]
+    fn content_type_no_extension() {
+        assert_eq!(guess_content_type(Path::new("Makefile")), "application/octet-stream");
+    }
+
+    #[test]
+    fn content_type_case_insensitive() {
+        assert_eq!(guess_content_type(Path::new("PHOTO.PNG")), "image/png");
+        assert_eq!(guess_content_type(Path::new("data.JSON")), "application/json");
+        assert_eq!(guess_content_type(Path::new("page.Html")), "text/html");
+    }
+
+    // --- is_path_allowed ---
+
+    #[test]
+    fn path_allowed_empty_list_rejects_everything() {
+        let allowed: Vec<String> = vec![];
+        assert!(!is_path_allowed(Path::new("/tmp"), &allowed));
+    }
+
+    #[test]
+    fn path_allowed_nonexistent_path_rejected() {
+        // canonicalize will fail on a path that doesn't exist
+        let allowed = vec!["/tmp".to_string()];
+        assert!(!is_path_allowed(Path::new("/nonexistent/fake/path"), &allowed));
+    }
+
+    #[test]
+    fn path_allowed_within_allowed_dir() {
+        // Use /tmp itself — canonicalizes to /private/tmp on macOS
+        let allowed = vec!["/tmp".to_string()];
+        assert!(is_path_allowed(Path::new("/tmp"), &allowed));
+    }
+
+    #[test]
+    fn path_allowed_outside_allowed_dir() {
+        let allowed = vec!["/tmp".to_string()];
+        // /usr is not under /tmp
+        assert!(!is_path_allowed(Path::new("/usr"), &allowed));
+    }
+}
