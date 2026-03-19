@@ -5,6 +5,17 @@ use tracing::info;
 use crate::state::AppState;
 use crate::tmux::types::EnrichedTopology;
 
+/// Validate that a session name contains only safe characters (alphanumeric, underscore, hyphen)
+/// and is between 1 and 64 characters. This prevents shell injection when session names are
+/// interpolated into commands sent to tmux panes.
+fn is_valid_session_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 #[derive(Deserialize)]
 pub struct CreateSessionRequest {
     pub name: String,
@@ -55,6 +66,12 @@ pub async fn create_session(
     let name = req.name.trim().to_string();
     if name.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "session name is required".into()));
+    }
+    if !is_valid_session_name(&name) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "invalid session name: only alphanumeric characters, hyphens, and underscores are allowed (max 64 chars)".into(),
+        ));
     }
 
     // Check for duplicate
@@ -183,6 +200,9 @@ pub async fn delete_session(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    if !is_valid_session_name(&name) {
+        return Err((StatusCode::BAD_REQUEST, "invalid session name".into()));
+    }
     state
         .tmux
         .kill_session(&name)
