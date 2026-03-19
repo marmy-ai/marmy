@@ -1,3 +1,7 @@
+---
+import PhoneFrame from './PhoneFrame.astro';
+---
+
 <section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
   <div class="max-w-5xl mx-auto">
     <div class="flex flex-col lg:flex-row items-center gap-14 lg:gap-20">
@@ -33,10 +37,10 @@
       <!-- Phone screenshot -->
       <div class="flex-shrink-0 reveal stagger-5">
         <div class="relative" style="animation: float 6s ease-in-out infinite; animation-delay: 1s;">
-          <img
+          <PhoneFrame
             src="/screenshots/phonecall_accept_message.png"
             alt="Marmy voice call with approval card to send instructions to Claude"
-            class="w-[260px] sm:w-[280px] rounded-3xl"
+            class="w-[260px] sm:w-[280px]"
           />
         </div>
       </div>

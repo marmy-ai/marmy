@@ -1,3 +1,7 @@
+---
+import PhoneFrame from './PhoneFrame.astro';
+---
+
 <section class="relative pt-28 pb-24 sm:pt-40 sm:pb-32 px-5 sm:px-8 overflow-hidden">
   <!-- Glow -->
   <div class="absolute top-16 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-primary/6 rounded-full blur-[140px] pointer-events-none"></div>
@@ -50,10 +54,10 @@
     <!-- Phone screenshot -->
     <div class="flex justify-center reveal stagger-4">
       <div class="relative" style="animation: float 6s ease-in-out infinite;">
-        <img
+        <PhoneFrame
           src="/screenshots/workers.png"
           alt="Marmy Workers screen showing active Claude Code sessions"
-          class="relative w-[270px] sm:w-[300px] rounded-3xl"
+          class="w-[270px] sm:w-[300px]"
         />
       </div>
     </div>

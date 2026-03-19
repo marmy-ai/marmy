@@ -1,3 +1,7 @@
+---
+import PhoneFrame from './PhoneFrame.astro';
+---
+
 <section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
   <div class="max-w-3xl mx-auto">
     <div class="font-mono text-xs text-secondary mb-3 sm:text-center tracking-widest reveal">PUSH NOTIFICATIONS</div>
@@ -10,10 +14,10 @@
 
     <!-- Push notification screenshot -->
     <div class="flex justify-center reveal stagger-3">
-      <img
+      <PhoneFrame
         src="/screenshots/push.png"
         alt="iOS push notification from Marmy showing task complete"
-        class="w-[280px] sm:w-[320px] rounded-3xl"
+        class="w-[280px] sm:w-[320px]"
       />
     </div>
   </div>

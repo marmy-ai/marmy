@@ -1,3 +1,7 @@
+---
+import PhoneFrame from './PhoneFrame.astro';
+---
+
 <section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
   <div class="max-w-5xl mx-auto">
     <div class="flex flex-col lg:flex-row items-center gap-14 lg:gap-20">
@@ -5,17 +9,17 @@
       <div class="flex-shrink-0 order-2 lg:order-1 reveal stagger-2">
         <div class="flex gap-4 items-start">
           <div class="relative" style="animation: float 6s ease-in-out infinite; animation-delay: 2s;">
-            <img
+            <PhoneFrame
               src="/screenshots/file_dir.png"
               alt="Marmy file browser showing directory tree"
-              class="w-[200px] sm:w-[220px] rounded-3xl"
+              class="w-[200px] sm:w-[220px]"
             />
           </div>
           <div class="relative" style="animation: float 6s ease-in-out infinite; animation-delay: 3.5s;">
-            <img
+            <PhoneFrame
               src="/screenshots/file-viewer.png"
               alt="Marmy code viewer with syntax highlighting"
-              class="w-[200px] sm:w-[220px] rounded-3xl"
+              class="w-[200px] sm:w-[220px]"
             />
           </div>
         </div>

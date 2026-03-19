@@ -1,3 +1,7 @@
+---
+import PhoneFrame from './PhoneFrame.astro';
+---
+
 <section class="py-24 sm:py-32 px-5 sm:px-8 section-divide">
   <div class="max-w-5xl mx-auto">
     <h2 class="text-2xl sm:text-3xl font-bold sm:text-center mb-4 tracking-[-0.02em] reveal">
@@ -29,10 +33,10 @@
 
     <!-- Machines screenshot -->
     <div class="flex justify-center mt-12 reveal stagger-3">
-      <img
+      <PhoneFrame
         src="/screenshots/landing.png"
         alt="Marmy Machines screen showing MacBook Pro, Rpi5, Mac Mini, RpiZero, and EC2"
-        class="w-[270px] sm:w-[300px] rounded-3xl"
+        class="w-[270px] sm:w-[300px]"
       />
     </div>
   </div>
