@@ -74,6 +74,9 @@ pub struct NotificationsConfig {
     /// are forwarded here instead of using the local APNs key.
     #[serde(default = "default_relay_url")]
     pub relay_url: String,
+    /// Shared secret for authenticating with the push relay.
+    #[serde(default)]
+    pub relay_secret: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +189,7 @@ impl Default for NotificationsConfig {
             apns_topic: default_apns_topic(),
             apns_sandbox: default_apns_sandbox(),
             relay_url: default_relay_url(),
+            relay_secret: String::new(),
         }
     }
 }

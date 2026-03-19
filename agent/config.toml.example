@@ -36,6 +36,9 @@ apns_sandbox = true
 # points to the official Marmy relay. Override to use your own, or set
 # to "" to disable relay and use direct APNs only.
 relay_url = "https://tloo7bj5rmnw3bmvvveqo7immi0pmhhb.lambda-url.us-west-2.on.aws/"
+# Shared secret for authenticating with the push relay. Must match the
+# RELAY_SECRET configured on the Lambda/Worker.
+relay_secret = ""
 
 [voice]
 # Gemini API key for voice mode (optional)

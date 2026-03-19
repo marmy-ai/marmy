@@ -25,6 +25,7 @@ fn default_provider() -> String {
 pub struct NotificationSender {
     apns: ApnsClient,
     relay_url: String,
+    relay_secret: String,
     http: reqwest::Client,
 }
 
@@ -33,6 +34,7 @@ impl NotificationSender {
         Self {
             apns: ApnsClient::new(config),
             relay_url: config.relay_url.clone(),
+            relay_secret: config.relay_secret.clone(),
             http: reqwest::Client::new(),
         }
     }
@@ -82,7 +84,12 @@ impl NotificationSender {
             "session_name": session_name,
         });
 
-        match self.http.post(&self.relay_url).json(&payload).send().await {
+        let mut req = self.http.post(&self.relay_url).json(&payload);
+        if !self.relay_secret.is_empty() {
+            req = req.header("authorization", format!("Bearer {}", self.relay_secret));
+        }
+
+        match req.send().await {
             Ok(resp) => {
                 if !resp.status().is_success() {
                     let status = resp.status();
