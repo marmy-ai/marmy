@@ -10,7 +10,7 @@ use crate::tmux::types::EnrichedTopology;
 /// Validate that a session name contains only safe characters (alphanumeric, underscore, hyphen)
 /// and is between 1 and 64 characters. This prevents shell injection when session names are
 /// interpolated into commands sent to tmux panes.
-fn is_valid_session_name(name: &str) -> bool {
+pub(crate) fn is_valid_session_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name
