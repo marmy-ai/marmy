@@ -338,4 +338,66 @@ mod tests {
         assert!(!is_valid_session_name("tab\there"));
         assert!(!is_valid_session_name("null\0byte"));
     }
+
+    // --- is_working_dir_allowed ---
+
+    #[test]
+    fn working_dir_allowed_inside_allowed_path() {
+        let parent = tempfile::tempdir().unwrap();
+        let child = parent.path().join("project");
+        std::fs::create_dir(&child).unwrap();
+
+        let allowed = vec![parent.path().to_string_lossy().to_string()];
+        assert!(is_working_dir_allowed(&child.to_string_lossy(), &allowed));
+    }
+
+    #[test]
+    fn working_dir_rejected_outside_allowed_path() {
+        let allowed_dir = tempfile::tempdir().unwrap();
+        let other_dir = tempfile::tempdir().unwrap();
+
+        let allowed = vec![allowed_dir.path().to_string_lossy().to_string()];
+        assert!(!is_working_dir_allowed(&other_dir.path().to_string_lossy(), &allowed));
+    }
+
+    #[test]
+    fn working_dir_rejected_nonexistent_path() {
+        let allowed = vec!["/tmp".to_string()];
+        assert!(!is_working_dir_allowed("/nonexistent/fake/path/xyz", &allowed));
+    }
+
+    #[test]
+    fn working_dir_exact_match_is_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        let allowed = vec![dir.path().to_string_lossy().to_string()];
+        assert!(is_working_dir_allowed(&dir.path().to_string_lossy(), &allowed));
+    }
+
+    #[test]
+    fn working_dir_parent_traversal_rejected() {
+        // allowed is /tmp/parent/child, request is /tmp/parent — should fail
+        let parent = tempfile::tempdir().unwrap();
+        let child = parent.path().join("child");
+        std::fs::create_dir(&child).unwrap();
+
+        let allowed = vec![child.to_string_lossy().to_string()];
+        assert!(!is_working_dir_allowed(&parent.path().to_string_lossy(), &allowed));
+    }
+
+    #[test]
+    fn working_dir_multiple_allowed_paths() {
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+        let dir_c = tempfile::tempdir().unwrap();
+
+        let allowed = vec![
+            dir_a.path().to_string_lossy().to_string(),
+            dir_b.path().to_string_lossy().to_string(),
+        ];
+
+        // dir_b is in allowed list
+        assert!(is_working_dir_allowed(&dir_b.path().to_string_lossy(), &allowed));
+        // dir_c is not
+        assert!(!is_working_dir_allowed(&dir_c.path().to_string_lossy(), &allowed));
+    }
 }
