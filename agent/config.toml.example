@@ -31,6 +31,10 @@ apns_team_id = ""
 apns_topic = "com.marmy.app"
 # Use APNs sandbox (true for dev builds, false for production)
 apns_sandbox = true
+# Relay URL for App Store builds. Tokens registered with provider "relay"
+# are forwarded here instead of using the local APNs key. Leave empty to
+# disable relay and use direct APNs only.
+relay_url = ""
 
 [voice]
 # Gemini API key for voice mode (optional)

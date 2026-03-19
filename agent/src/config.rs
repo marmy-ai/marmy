@@ -70,6 +70,10 @@ pub struct NotificationsConfig {
     /// Use APNs sandbox (true for dev builds, false for production)
     #[serde(default = "default_apns_sandbox")]
     pub apns_sandbox: bool,
+    /// Relay URL for App Store builds. When set, tokens with provider "relay"
+    /// are forwarded here instead of using the local APNs key.
+    #[serde(default)]
+    pub relay_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,6 +181,7 @@ impl Default for NotificationsConfig {
             apns_team_id: String::new(),
             apns_topic: default_apns_topic(),
             apns_sandbox: default_apns_sandbox(),
+            relay_url: String::new(),
         }
     }
 }
@@ -280,6 +285,7 @@ mod tests {
         assert_eq!(config.notifications.cooldown_seconds, 120);
         assert!(config.notifications.apns_sandbox);
         assert_eq!(config.notifications.apns_topic, "com.marmy.app");
+        assert!(config.notifications.relay_url.is_empty());
         assert!(config.voice.gemini_api_key.is_empty());
     }
 

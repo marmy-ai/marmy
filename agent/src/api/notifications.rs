@@ -13,6 +13,13 @@ use crate::state::AppState;
 #[derive(Deserialize)]
 pub struct TokenRequest {
     pub token: String,
+    /// "relay" = forward to hosted relay, "local" = direct APNs. Default: "local".
+    #[serde(default = "default_provider")]
+    pub push_provider: String,
+}
+
+fn default_provider() -> String {
+    "local".to_string()
 }
 
 #[derive(Deserialize)]
@@ -39,8 +46,8 @@ pub async fn register_token(
     State(state): State<AppState>,
     Json(body): Json<TokenRequest>,
 ) -> StatusCode {
-    info!("registering push token: {}...", &body.token[..body.token.len().min(20)]);
-    state.register_push_token(body.token).await;
+    info!("registering push token: {}... (provider: {})", &body.token[..body.token.len().min(20)], body.push_provider);
+    state.register_push_token(body.token, body.push_provider).await;
     StatusCode::OK
 }
 
