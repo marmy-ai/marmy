@@ -50,6 +50,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Internal docs (kept locally, not published)
+docs/
+
 # Runtime / misc
 *.tsbuildinfo
 .cache/
