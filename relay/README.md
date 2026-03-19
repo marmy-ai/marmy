@@ -37,7 +37,7 @@ cd relay
 zip relay.zip index.mjs
 aws lambda create-function \
   --function-name marmy-push-relay \
-  --runtime nodejs20.x \
+  --runtime nodejs24.x \
   --handler index.handler \
   --zip-file fileb://relay.zip \
   --role arn:aws:iam::YOUR_ACCOUNT:role/lambda-basic-role

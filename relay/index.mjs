@@ -7,7 +7,7 @@
  * Forwards to APNs HTTP/2 endpoint.
  *
  * Deployable as: AWS Lambda (via function URL or API Gateway),
- * Cloudflare Worker, or any Node.js 18+ runtime.
+ * Cloudflare Worker, or any Node.js 24+ runtime.
  */
 
 import http2 from "node:http2";
