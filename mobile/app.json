@@ -6,6 +6,7 @@
     "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "marmy",
+    "privacyPolicyUrl": "https://marmy.ai/privacy",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
