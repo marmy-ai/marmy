@@ -1,0 +1,49 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout title="Privacy Policy - marmy">
+  <Nav />
+  <main class="px-5 sm:px-8 py-20 sm:py-28">
+    <div class="max-w-2xl mx-auto prose-sm">
+      <h1 class="text-3xl font-bold mb-8">Privacy Policy</h1>
+      <p class="text-text-tertiary text-sm mb-10">Last updated: March 19, 2026</p>
+
+      <h2 class="text-lg font-semibold mb-3">The short version</h2>
+      <p class="text-text-secondary text-[15px] leading-relaxed mb-8">
+        Marmy is open source and self-hosted. We do not collect, store, or transmit your data. There are no analytics, no tracking, and no third-party data collection. Your code, your sessions, and your conversations stay on your machines.
+      </p>
+
+      <h2 class="text-lg font-semibold mb-3">Self-hosted architecture</h2>
+      <p class="text-text-secondary text-[15px] leading-relaxed mb-8">
+        The Marmy agent runs on your hardware. Your phone connects directly to your machines over LAN or Tailscale. No data passes through our servers. We do not operate any cloud infrastructure that handles user data.
+      </p>
+
+      <h2 class="text-lg font-semibold mb-3">Push notifications (APNs)</h2>
+      <p class="text-text-secondary text-[15px] leading-relaxed mb-4">
+        <strong class="text-text-primary">Self-hosted:</strong> Your device's APNs token is stored locally on your machine in <code class="text-text-primary bg-bg-card px-1.5 py-0.5 rounded text-sm">~/.marmy/push_tokens.json</code>. The agent sends notifications directly to Apple's Push Notification service. We never see your device tokens.
+      </p>
+      <p class="text-text-secondary text-[15px] leading-relaxed mb-8">
+        <strong class="text-text-primary">iOS app (App Store / TestFlight):</strong> Push notifications route through a relay service we operate. The relay forwards notifications to APNs on behalf of your agent. It does not store message content or device tokens beyond the moment of delivery. The relay source code is included in the repository and can be audited or self-hosted.
+      </p>
+
+      <h2 class="text-lg font-semibold mb-3">Voice (Gemini)</h2>
+      <p class="text-text-secondary text-[15px] leading-relaxed mb-8">
+        Voice mode connects directly to Google's Gemini API using your own API key. Audio is streamed from your phone to Google's servers. We do not proxy, store, or have access to your voice data or API key. Google's own privacy policy governs their handling of that data.
+      </p>
+
+      <h2 class="text-lg font-semibold mb-3">Website</h2>
+      <p class="text-text-secondary text-[15px] leading-relaxed mb-8">
+        This website is a static site. No cookies, no analytics, no tracking scripts.
+      </p>
+
+      <h2 class="text-lg font-semibold mb-3">Contact</h2>
+      <p class="text-text-secondary text-[15px] leading-relaxed">
+        Questions? Open an issue on <a href="https://github.com/marmy-ai/marmy" class="text-primary hover:underline">GitHub</a>.
+      </p>
+    </div>
+  </main>
+  <Footer />
+</Layout>
