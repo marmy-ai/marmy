@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
+import * as SecureStore from "expo-secure-store";
 import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -62,6 +63,7 @@ const DEFAULT_ROWS = 50;
 const MIN_COLS = 40;
 const MAX_COLS = 200;
 const COLS_STEP = 10;
+const TERM_COLS_KEY = "marmy_termCols";
 
 // --- ANSI parser ---
 
@@ -230,6 +232,13 @@ export default function TerminalScreen() {
   const [termCols, setTermCols] = useState(DEFAULT_COLS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Restore saved terminal width on mount
+  useEffect(() => {
+    SecureStore.getItemAsync(TERM_COLS_KEY).then((v) => {
+      if (v) { const n = Number(v); if (n >= MIN_COLS && n <= MAX_COLS) setTermCols(n); }
+    });
+  }, []);
 
   // Track keyboard visibility to conditionally apply bottom safe area
   useEffect(() => {
@@ -555,7 +564,7 @@ export default function TerminalScreen() {
               maximumValue={MAX_COLS}
               step={COLS_STEP}
               value={termCols}
-              onValueChange={(v) => setTermCols(v)}
+              onValueChange={(v) => { setTermCols(v); SecureStore.setItemAsync(TERM_COLS_KEY, String(v)); }}
               minimumTrackTintColor={theme.primary}
               maximumTrackTintColor={theme.border}
               thumbImage={require("../assets/slider-thumb.png")}
