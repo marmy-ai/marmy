@@ -10,16 +10,12 @@ import PhoneFrame from './PhoneFrame.astro';
   <div class="relative z-10 max-w-5xl mx-auto text-left sm:text-center">
     <p class="font-mono text-xs sm:text-sm text-primary tracking-wider mb-5 reveal">THE MOBILE IDE FOR AI AGENTS</p>
 
-    <h1 class="text-4xl sm:text-5xl lg:text-[3.5rem] font-extrabold tracking-[-0.03em] leading-[1.08] mb-6 reveal stagger-1">
-      Build with agents. Manage from anywhere.
+    <h1 class="text-4xl sm:text-5xl lg:text-[3.5rem] font-extrabold tracking-[-0.03em] leading-[1.08] mb-4 reveal stagger-1">
+      The future of development fits in your pocket.
     </h1>
 
-    <p class="text-xl sm:text-2xl text-text-secondary max-w-xl sm:mx-auto mb-6 leading-relaxed reveal stagger-2">
-      The future of development fits in your pocket.
-    </p>
-
-    <p class="text-base sm:text-lg text-text-secondary max-w-xl sm:mx-auto mb-9 leading-relaxed reveal stagger-2">
-      Development has moved from writing code to directing agents. Marmy puts that workflow on your phone. Monitor progress, approve decisions, review files, and talk to your agents by voice. Built for Claude Code, works with any terminal agent.
+    <p class="text-xl sm:text-2xl text-text-secondary max-w-xl sm:mx-auto mb-9 leading-relaxed reveal stagger-2">
+      Build with agents. Manage from anywhere.
     </p>
 
     <!-- CTAs -->
@@ -33,19 +29,22 @@ import PhoneFrame from './PhoneFrame.astro';
         View Source
       </a>
     </div>
-    <p class="text-text-tertiary text-xs sm:text-center mb-20 reveal stagger-3">
+    <p class="text-text-tertiary text-xs sm:text-center mb-16 reveal stagger-3">
       Download the app to get push notifications without configuring APNs yourself.
     </p>
 
-    <!-- Phone screenshot -->
-    <div class="flex justify-center reveal stagger-4">
-      <div class="relative">
+    <!-- Phone + description side by side -->
+    <div class="flex flex-col md:flex-row items-center justify-center gap-10 md:gap-16 reveal stagger-4">
+      <div class="relative shrink-0">
         <PhoneFrame
           src="/screenshots/workers.png"
           alt="Marmy Workers screen showing active Claude Code sessions"
           class="w-[270px] sm:w-[300px]"
         />
       </div>
+      <p class="text-base sm:text-lg text-text-secondary max-w-md text-left leading-relaxed">
+        Development has moved from writing code to directing agents. Marmy puts that workflow on your phone. Monitor progress, approve decisions, review files, and talk to your agents by voice. Built for Claude Code, works with any terminal agent.
+      </p>
     </div>
   </div>
 </section>
