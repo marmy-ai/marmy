@@ -11,29 +11,8 @@ import PhoneFrame from './PhoneFrame.astro';
     <p class="font-mono text-xs sm:text-sm text-primary tracking-wider mb-5 reveal">THE MOBILE IDE FOR AI AGENTS</p>
 
     <h1 class="text-4xl sm:text-5xl lg:text-[3.5rem] font-extrabold tracking-[-0.03em] leading-[1.08] mb-6 reveal stagger-1">
-      You are the tech lead.<br/>
-      Your agents are your <span class="text-primary" id="rotating-word">team.</span>
+      Build with agents. Manage from anywhere.
     </h1>
-
-    <script>
-      const words = ["team.", "fleet.", "workforce.", "engineers."];
-      let idx = 0;
-      const el = document.getElementById("rotating-word");
-      if (el) {
-        setInterval(() => {
-          el.style.opacity = "0";
-          el.style.transform = "translateY(6px)";
-          setTimeout(() => {
-            idx = (idx + 1) % words.length;
-            el.textContent = words[idx];
-            el.style.opacity = "1";
-            el.style.transform = "translateY(0)";
-          }, 250);
-        }, 2200);
-        el.style.transition = "opacity 0.25s, transform 0.25s";
-        el.style.display = "inline-block";
-      }
-    </script>
 
     <p class="text-base sm:text-lg text-text-secondary max-w-xl sm:mx-auto mb-9 leading-relaxed reveal stagger-2">
       Development has moved from writing code to directing agents. Marmy puts that workflow on your phone. Monitor progress, approve decisions, review files, and talk to your agents by voice. Built for Claude Code, works with any terminal agent.
