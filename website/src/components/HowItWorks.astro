@@ -8,26 +8,20 @@ import PhoneFrame from './PhoneFrame.astro';
       How it works
     </h2>
     <p class="text-text-secondary sm:text-center text-lg leading-relaxed max-w-xl sm:mx-auto mb-12 reveal stagger-1">
-      A lightweight Rust agent runs alongside Claude Code on each machine. Your phone connects directly over LAN or Tailscale. Self-hosted, open source, no third-party servers.
+      A lightweight Rust agent runs on each of your machines and safely opens phone access to your tmux sessions. Connect over LAN or Tailscale, authenticated with a token. Read output, send input, browse files. All self-hosted, nothing leaves your network.
     </p>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 reveal stagger-2">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 reveal stagger-2">
       <div class="p-6 rounded-xl bg-bg-card border border-border hover:border-border-light transition-colors">
         <div class="text-primary font-mono text-xs mb-3 tracking-wider">01</div>
-        <h3 class="font-semibold mb-2">Install the agent</h3>
-        <p class="text-text-secondary text-sm leading-relaxed">One Rust binary on each machine you want to manage. macOS, Linux, Raspberry Pi. Menu bar app for Mac, systemd for servers.</p>
+        <h3 class="font-semibold mb-2">Install the agent, get the app</h3>
+        <p class="text-text-secondary text-sm leading-relaxed">Install the Rust binary on your machine. Download Marmy on your iPhone. Pair with a token from <code class="text-text-primary">marmy-agent pair</code>. You are up and running.</p>
       </div>
 
       <div class="p-6 rounded-xl bg-bg-card border border-border hover:border-border-light transition-colors">
         <div class="text-primary font-mono text-xs mb-3 tracking-wider">02</div>
-        <h3 class="font-semibold mb-2">Get the app</h3>
-        <p class="text-text-secondary text-sm leading-relaxed">Download Marmy on your iPhone. Pair with your machine using the token from <code class="text-text-primary">marmy-agent pair</code>. Push notifications work out of the box.</p>
-      </div>
-
-      <div class="p-6 rounded-xl bg-bg-card border border-border hover:border-border-light transition-colors">
-        <div class="text-primary font-mono text-xs mb-3 tracking-wider">03</div>
-        <h3 class="font-semibold mb-2">Manage from anywhere</h3>
-        <p class="text-text-secondary text-sm leading-relaxed">Same Wi-Fi works instantly. Tailscale gives you access from anywhere. Connect your laptop, your workstation, your server. All your machines and all your sessions in one app.</p>
+        <h3 class="font-semibold mb-2">Or let Claude Code do it</h3>
+        <p class="text-text-secondary text-sm leading-relaxed">The whole thing is open source. Point Claude Code at the repo and ask it to build and configure the agent for your OS. You do not even need the app. Any device with a browser or API access can talk to the agent.</p>
       </div>
     </div>
 
