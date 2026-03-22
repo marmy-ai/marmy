@@ -15,6 +15,8 @@ Marmy is a lightweight Rust agent that runs on your machines and an iOS app that
 
 The agent runs alongside your terminal sessions. Your phone connects over LAN or Tailscale, authenticated with a token. Everything is self-hosted, open source, and nothing leaves your network.
 
+Any tmux session on the machine is visible and manageable from the app. It is not limited to Claude Code. If it runs in tmux, you can see it and control it from your phone.
+
 ## Features
 
 - **Session management**: View, create, and control tmux sessions from your phone
@@ -27,33 +29,22 @@ The agent runs alongside your terminal sessions. Your phone connects over LAN or
 ## Screenshots
 
 <p align="center">
+  <img src="website/public/screenshots/landing.png" alt="Multi-machine view" width="220" />
+  &nbsp;&nbsp;
   <img src="website/public/screenshots/workers.png" alt="Sessions list" width="220" />
   &nbsp;&nbsp;
-  <img src="website/public/screenshots/file-viewer.png" alt="File browser with syntax highlighting" width="220" />
+  <img src="website/public/screenshots/manager_sessions.png" alt="Terminal view" width="220" />
+  &nbsp;&nbsp;
+  <img src="website/public/screenshots/file-viewer.png" alt="File browser" width="220" />
   &nbsp;&nbsp;
   <img src="website/public/screenshots/push.png" alt="Push notifications" width="220" />
 </p>
 
 ## Quick start (macOS)
 
-### 1. Install the agent
+### 1. Install MacMarmy
 
-Build the macOS menu bar app (MacMarmy), which bundles the agent:
-
-```bash
-cd macos/MarmyMenuBar
-xcodebuild -scheme MarmyMenuBar -configuration Release build CODE_SIGNING_ALLOWED=NO
-open ~/Library/Developer/Xcode/DerivedData/MarmyMenuBar-*/Build/Products/Release/MarmyMenuBar.app
-```
-
-Or build the agent standalone:
-
-```bash
-cd agent
-cargo build --release
-cp target/release/marmy-agent ~/.local/bin/
-marmy-agent serve
-```
+Download MacMarmy from the [latest release](https://github.com/marmy-ai/marmy/releases/latest). Open the app. It runs in your menu bar and starts the agent automatically.
 
 ### 2. Get the iOS app
 
@@ -61,17 +52,53 @@ Download from [TestFlight](https://testflight.apple.com/join/v8HmNu1H).
 
 ### 3. Pair
 
-```bash
-marmy-agent pair
-```
-
-This prints your machine's hostname, port, and auth token. Enter the address and token in the app.
+Click the MacMarmy icon in your menu bar. Your address and token are shown there. Enter them in the iOS app. If you are using Tailscale, replace the local IP with your machine's Tailscale IP to connect from anywhere.
 
 ### 4. Done
 
 Open the Machines tab, tap **+**, enter the address and token, and connect.
 
+## Quick start (Linux)
+
+**Prerequisites:** Rust (latest stable) via [rustup](https://rustup.rs), tmux 3.2+ (`apt install tmux` or `dnf install tmux`).
+
+```bash
+git clone https://github.com/marmy-ai/marmy && cd marmy/agent
+cargo build --release
+./target/release/marmy-agent serve
+```
+
+In a separate terminal:
+
+```bash
+./target/release/marmy-agent pair
+```
+
+Enter the address and token in the iOS app. If you are using Tailscale, replace the local IP with your machine's Tailscale IP to connect from anywhere.
+
+To run the agent as a background service, create `~/.config/systemd/user/marmy-agent.service`:
+
+```ini
+[Unit]
+Description=Marmy Agent
+After=network.target
+
+[Service]
+ExecStart=/path/to/marmy-agent serve
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now marmy-agent
+```
+
 ## Build from source
+
+**Prerequisites:** Rust (latest stable), tmux 3.2+, Node.js 18+, Xcode, CocoaPods.
 
 ### Agent
 
@@ -80,6 +107,14 @@ git clone https://github.com/marmy-ai/marmy && cd marmy/agent
 cargo build --release
 ./target/release/marmy-agent serve
 ./target/release/marmy-agent pair
+```
+
+### MacMarmy (macOS menu bar app)
+
+```bash
+cd macos/MarmyMenuBar
+xcodebuild -scheme MarmyMenuBar -configuration Release build CODE_SIGNING_ALLOWED=NO
+open ~/Library/Developer/Xcode/DerivedData/MarmyMenuBar-*/Build/Products/Release/MarmyMenuBar.app
 ```
 
 ### iOS app
@@ -142,11 +177,11 @@ enabled = true
 apns_key_path = "~/.marmy/apns_key.p8"
 apns_key_id = "XXXXXXXXXX"
 apns_team_id = "XXXXXXXXXX"
-apns_topic = "com.marmy.app"
+apns_topic = "com.yourteam.marmy"
 apns_sandbox = true
 ```
 
-Set `apns_sandbox = true` for dev builds (Xcode), `false` for production.
+`apns_topic` must match your app's bundle identifier in Xcode (Signing & Capabilities). Set `apns_sandbox = true` for dev builds (Xcode), `false` for production.
 
 You can either send notifications directly via APNs (the default when a key is configured) or run your own relay using the code in the `relay/` directory.
 
