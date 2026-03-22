@@ -15,6 +15,8 @@ Marmy is a lightweight Rust agent that runs on your machines and an iOS app that
 
 The agent runs alongside your terminal sessions. Your phone connects over LAN or Tailscale, authenticated with a token. Everything is self-hosted, open source, and nothing leaves your network.
 
+Any tmux session on the machine is visible and manageable from the app. It is not limited to Claude Code. If it runs in tmux, you can see it and control it from your phone.
+
 ## Features
 
 - **Session management**: View, create, and control tmux sessions from your phone
