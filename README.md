@@ -29,15 +29,15 @@ Any tmux session on the machine is visible and manageable from the app. It is no
 ## Screenshots
 
 <p align="center">
-  <img src="website/public/screenshots/workers.png" alt="Sessions list" width="220" />
-  &nbsp;&nbsp;
-  <img src="website/public/screenshots/file-viewer.png" alt="File browser with syntax highlighting" width="220" />
-  &nbsp;&nbsp;
-  <img src="website/public/screenshots/push.png" alt="Push notifications" width="220" />
-  &nbsp;&nbsp;
   <img src="website/public/screenshots/landing.png" alt="Multi-machine view" width="220" />
   &nbsp;&nbsp;
+  <img src="website/public/screenshots/workers.png" alt="Sessions list" width="220" />
+  &nbsp;&nbsp;
   <img src="website/public/screenshots/manager_sessions.png" alt="Terminal view" width="220" />
+  &nbsp;&nbsp;
+  <img src="website/public/screenshots/file-viewer.png" alt="File browser" width="220" />
+  &nbsp;&nbsp;
+  <img src="website/public/screenshots/push.png" alt="Push notifications" width="220" />
 </p>
 
 ## Prerequisites
