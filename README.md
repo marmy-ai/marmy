@@ -112,7 +112,25 @@ cargo build --release
 ./target/release/marmy-agent pair
 ```
 
-Enter the address and token in the iOS app. For running the agent as a background service, see the systemd unit file example in the [old README](docs/old_README.md) or create your own under `~/.config/systemd/user/marmy-agent.service`.
+Enter the address and token in the iOS app. To run the agent as a background service, create `~/.config/systemd/user/marmy-agent.service`:
+
+```ini
+[Unit]
+Description=Marmy Agent
+After=network.target
+
+[Service]
+ExecStart=/path/to/marmy-agent serve
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now marmy-agent
+```
 
 ## Build from source
 
