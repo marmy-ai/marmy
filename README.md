@@ -44,7 +44,7 @@ Any tmux session on the machine is visible and manageable from the app. It is no
 
 ### 1. Install MacMarmy
 
-Download MacMarmy from the [latest release](https://github.com/marmy-ai/marmy/releases/latest). Open the app. It runs in your menu bar and starts the agent automatically.
+Download MacMarmy from the [latest release](https://github.com/marmy-ai/marmy/releases/latest). Open the app. It runs in your menu bar and starts the agent automatically. Since MacMarmy is unsigned, macOS may block it on first launch. Right-click the app and select Open, then click Open in the dialog. You only need to do this once.
 
 ### 2. Get the iOS app
 
