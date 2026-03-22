@@ -76,7 +76,7 @@ cargo build --release
 cd mobile
 npm install
 npx expo prebuild --platform ios
-cd ios && rm -rf Pods Podfile.lock && pod install && cd ..
+cd ios && pod install && cd ..
 open ios/marmy.xcworkspace
 ```
 
@@ -89,6 +89,17 @@ In Xcode:
 ## Configuration
 
 The agent config lives at `~/Library/Application Support/marmy/config.toml` on macOS or `~/.config/marmy/config.toml` on Linux. See [`agent/config.toml.example`](agent/config.toml.example) for all options.
+
+### File browsing
+
+File browsing is **disabled by default**. The default config has `allowed_paths = []`, which means the app cannot browse any files. To enable it, add your project directories:
+
+```toml
+[files]
+allowed_paths = ["~/projects", "~/code"]
+```
+
+The agent will only serve files within these directories. All access is read-only.
 
 ### Gemini voice
 
@@ -148,14 +159,14 @@ Install the agent on each machine. Run `marmy-agent serve` and `marmy-agent pair
 
 ```
 marmy/
-  agent/     Rust agent (REST API + WebSocket, tmux control mode)
+  agent/     Rust agent (REST API + WebSocket, tmux subprocess calls)
   mobile/    iOS app (React Native / Expo)
   macos/     macOS menu bar app (Swift, bundles the Rust agent)
   website/   Landing page (Astro)
   relay/     Push notification relay (Node.js Lambda)
 ```
 
-The agent connects to tmux via [control mode](https://github.com/tmux/tmux/wiki/Control-Mode) (`tmux -CC`) and exposes a REST API. The mobile app uses REST for all core operations and an optional WebSocket for real-time topology updates.
+The agent interacts with tmux by spawning short-lived subprocess calls (`tmux list-sessions`, `tmux capture-pane`, `tmux send-keys`, etc.) and exposes the results via a REST API. No persistent connection or control mode. The mobile app uses REST for all core operations and an optional WebSocket for real-time topology updates.
 
 ## Contributing
 
