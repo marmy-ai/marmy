@@ -5,6 +5,8 @@ Manage your Claude Code sessions from your phone.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![iOS Beta](https://img.shields.io/badge/iOS-TestFlight-blue)](https://testflight.apple.com/join/v8HmNu1H)
 
+Website: [marmy.ai](https://marmy.ai)
+
 ## What is Marmy
 
 Marmy is a lightweight Rust agent that runs on your machines and an iOS app that connects to it. Together they let you manage your Claude Code sessions (or any tmux terminal agent) from your phone. Read output, send input, browse files, get push notifications, and talk to your agents by voice.
@@ -21,6 +23,16 @@ The agent runs alongside your terminal sessions. Your phone connects over LAN or
 - **Voice commands**: A Gemini-powered voice assistant relays your spoken decisions to your agents
 - **Manager sessions**: Launch a Claude Code session that supervises and coordinates your other sessions
 - **Multi-machine support**: Install the agent on each machine and manage them all from one app
+
+## Screenshots
+
+<p align="center">
+  <img src="website/public/screenshots/workers.png" alt="Sessions list" width="220" />
+  &nbsp;&nbsp;
+  <img src="website/public/screenshots/file-viewer.png" alt="File browser with syntax highlighting" width="220" />
+  &nbsp;&nbsp;
+  <img src="website/public/screenshots/push.png" alt="Push notifications" width="220" />
+</p>
 
 ## Quick start (macOS)
 
