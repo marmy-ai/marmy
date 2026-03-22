@@ -7,7 +7,30 @@
       The agent, the app, and the relay are all MIT-licensed. Run it on your own hardware. Audit every line. No vendor lock-in, no cloud dependency, no subscription.
     </p>
 
-    <div class="flex flex-col sm:flex-row gap-3 sm:justify-center mb-14 reveal stagger-2">
+    <!-- Get started steps -->
+    <div class="space-y-4 reveal stagger-2">
+      <div class="p-6 rounded-xl bg-bg-card border border-border hover:border-border-light transition-colors">
+        <div class="text-primary font-mono text-xs mb-3 tracking-wider">01</div>
+        <h3 class="font-semibold mb-2">Download MacMarmy (macOS)</h3>
+        <p class="text-text-secondary text-lg leading-relaxed mb-3">Download the agent, open it, it runs in your menu bar.</p>
+        <a href="https://github.com/marmy-ai/marmy/releases/latest" target="_blank" rel="noopener"
+          class="inline-flex items-center gap-1 text-primary text-sm hover:underline">Download latest release &rarr;</a>
+      </div>
+
+      <div class="p-6 rounded-xl bg-bg-card border border-border hover:border-border-light transition-colors">
+        <div class="text-primary font-mono text-xs mb-3 tracking-wider">02</div>
+        <h3 class="font-semibold mb-2">Get the iOS app</h3>
+        <p class="text-text-secondary text-lg leading-relaxed mb-3">Download the app, pair with your machine from the menu bar.</p>
+        <a href="https://testflight.apple.com/join/v8HmNu1H" target="_blank" rel="noopener"
+          class="inline-flex items-center gap-1 text-primary text-sm hover:underline">Join iOS Beta &rarr;</a>
+      </div>
+    </div>
+
+    <p class="text-text-secondary sm:text-center text-sm leading-relaxed max-w-lg sm:mx-auto mt-8 mb-8 reveal stagger-3">
+      Want to build from source or run on Linux? Check out the repo.
+    </p>
+
+    <div class="flex flex-col sm:flex-row gap-3 sm:justify-center reveal stagger-3">
       <a href="https://github.com/marmy-ai/marmy" target="_blank" rel="noopener"
         class="inline-flex items-center justify-center gap-2 px-7 py-3 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold transition-all hover:shadow-lg hover:shadow-primary/20">
         View on GitHub
@@ -16,50 +39,6 @@
         class="inline-flex items-center justify-center gap-2 px-7 py-3 rounded-lg border border-border text-text-primary hover:bg-bg-card hover:border-border-light transition-all">
         Read the Docs
       </a>
-    </div>
-
-    <!-- Quick start -->
-    <div class="space-y-3 reveal stagger-3">
-      <div class="rounded-xl border border-border bg-bg-card overflow-hidden hover:border-border-light transition-colors">
-        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
-          <span class="text-xs text-text-tertiary font-mono tracking-wider">1 · Clone</span>
-          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="git clone https://github.com/marmy-ai/marmy && cd marmy/agent">copy</button>
-        </div>
-        <div class="px-4 py-3 font-mono text-sm">
-          <span class="text-text-tertiary">$</span> <span class="text-text-primary">git clone https://github.com/marmy-ai/marmy && cd marmy/agent</span>
-        </div>
-      </div>
-
-      <div class="rounded-xl border border-border bg-bg-card overflow-hidden hover:border-border-light transition-colors">
-        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
-          <span class="text-xs text-text-tertiary font-mono tracking-wider">2 · Build</span>
-          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="cargo build --release">copy</button>
-        </div>
-        <div class="px-4 py-3 font-mono text-sm">
-          <span class="text-text-tertiary">$</span> <span class="text-text-primary">cargo build --release</span>
-        </div>
-      </div>
-
-      <div class="rounded-xl border border-border bg-bg-card overflow-hidden hover:border-border-light transition-colors">
-        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
-          <span class="text-xs text-text-tertiary font-mono tracking-wider">3 · Start</span>
-          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="marmy-agent serve">copy</button>
-        </div>
-        <div class="px-4 py-3 font-mono text-sm">
-          <span class="text-text-tertiary">$</span> <span class="text-text-primary">marmy-agent serve</span>
-        </div>
-      </div>
-
-      <div class="rounded-xl border border-border bg-bg-card overflow-hidden hover:border-border-light transition-colors">
-        <div class="flex items-center justify-between px-4 py-2.5 border-b border-border">
-          <span class="text-xs text-text-tertiary font-mono tracking-wider">4 · Pair</span>
-          <button class="copy-btn text-xs text-text-tertiary hover:text-primary transition-colors font-mono" data-code="marmy-agent pair">copy</button>
-        </div>
-        <div class="px-4 py-3 font-mono text-sm">
-          <span class="text-text-tertiary">$</span> <span class="text-text-primary">marmy-agent pair</span>
-          <div class="text-text-tertiary mt-1.5 text-xs">Token: <span class="text-secondary">a1b2c3d4e5f6...</span></div>
-        </div>
-      </div>
     </div>
   </div>
 </section>
