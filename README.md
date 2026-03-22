@@ -178,11 +178,11 @@ enabled = true
 apns_key_path = "~/.marmy/apns_key.p8"
 apns_key_id = "XXXXXXXXXX"
 apns_team_id = "XXXXXXXXXX"
-apns_topic = "com.marmy.app"
+apns_topic = "com.yourteam.marmy"
 apns_sandbox = true
 ```
 
-Set `apns_sandbox = true` for dev builds (Xcode), `false` for production.
+`apns_topic` must match your app's bundle identifier in Xcode (Signing & Capabilities). Set `apns_sandbox = true` for dev builds (Xcode), `false` for production.
 
 You can either send notifications directly via APNs (the default when a key is configured) or run your own relay using the code in the `relay/` directory.
 
