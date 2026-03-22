@@ -67,7 +67,7 @@ npm run build            # Production build
 
 ## Reporting Issues
 
-- Use [GitHub Issues](https://github.com/mharajli/marmy/issues) to report bugs or request features
+- Use [GitHub Issues](https://github.com/marmy-ai/marmy/issues) to report bugs or request features
 - Include steps to reproduce for bugs
 - Include your OS, Rust version, Node version, and tmux version where relevant
 - Check existing issues before opening a new one
