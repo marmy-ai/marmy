@@ -104,18 +104,22 @@ The agent config lives at `~/Library/Application Support/marmy/config.toml` on m
 
 ### File browsing
 
-File browsing is **disabled by default**. The default config has `allowed_paths = []`, which means the app cannot browse any files. To enable it, add your project directories:
+File browsing works out of the box for any directory where you have an active tmux session. When `allowed_paths` is empty (the default), the agent allows browsing within any active session's working directory.
+
+If you want to restrict access to specific directories only, configure `allowed_paths`:
 
 ```toml
 [files]
 allowed_paths = ["~/projects", "~/code"]
 ```
 
-The agent will only serve files within these directories. All access is read-only.
+If you want to browse files outside of session directories (e.g. a shared assets folder), add those paths to `allowed_paths` as well. All access is read-only.
 
 ### Gemini voice
 
-Add your API key to the config file:
+**MacMarmy users**: Click "Set Up Voice Mode..." in the menu bar app. It will prompt you for your Gemini API key and save it to the config automatically.
+
+**Standalone agent / Linux**: Add your API key to the config file manually:
 
 ```toml
 [voice]
@@ -128,9 +132,9 @@ Get a key from [Google AI Studio](https://aistudio.google.com/apikey).
 
 **TestFlight / App Store builds** use the hosted relay automatically. No configuration needed. The relay URL is set in the default config and routes notifications through a Lambda function.
 
-**Self-built apps** need either:
+**Self-built apps** need their own APNs setup. The hosted relay only works for official TestFlight and App Store builds because APNs tokens are tied to the signing team that built the app.
 
-1. **Your own APNs key**: Create a key in [Apple Developer](https://developer.apple.com) > Keys with APNs enabled. Download the `.p8` file, then configure:
+Set up your own APNs key: go to [Apple Developer](https://developer.apple.com) > Keys, create a key with APNs enabled, and download the `.p8` file. Then configure:
 
 ```toml
 [notifications]
@@ -142,9 +146,9 @@ apns_topic = "com.marmy.app"
 apns_sandbox = true
 ```
 
-Set `apns_sandbox = true` for dev builds (Xcode), `false` for TestFlight/App Store.
+Set `apns_sandbox = true` for dev builds (Xcode), `false` for production.
 
-2. **The hosted relay**: If you build the app with the same bundle identifier (`com.marmy.app`), the default relay URL in the config will work. Set a `relay_secret` that matches the relay's `RELAY_SECRET`.
+You can either send notifications directly via APNs (the default when a key is configured) or run your own relay using the code in the `relay/` directory.
 
 ### Tailscale
 
