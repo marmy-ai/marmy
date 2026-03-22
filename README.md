@@ -1,185 +1,113 @@
 # Marmy
 
-Remote tmux + Claude Code mobile client. Run Claude Code on your laptop, continue the conversation from your phone.
+Manage your Claude Code sessions from your phone.
 
-Marmy is a React Native mobile app paired with a lightweight Rust daemon that bridges tmux sessions to your phone over a secure network. It provides a plain-text terminal view with input, shortcut keys, and a read-only file browser — all connected to your remote tmux sessions via polling and REST API.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![iOS Beta](https://img.shields.io/badge/iOS-TestFlight-blue)](https://testflight.apple.com/join/v8HmNu1H)
 
-## Architecture
+## What is Marmy
 
+Marmy is a lightweight Rust agent that runs on your machines and an iOS app that connects to it. Together they let you manage your Claude Code sessions (or any tmux terminal agent) from your phone. Read output, send input, browse files, get push notifications, and talk to your agents by voice.
+
+## How it works
+
+The agent runs alongside your terminal sessions. Your phone connects over LAN or Tailscale, authenticated with a token. Everything is self-hosted, open source, and nothing leaves your network.
+
+## Features
+
+- **Session management**: View, create, and control tmux sessions from your phone
+- **File browser**: Browse file trees, read code with syntax highlighting, view diffs, markdown, images, and PDFs
+- **Push notifications**: Get notified when a Claude Code session finishes or needs input
+- **Voice commands**: A Gemini-powered voice assistant relays your spoken decisions to your agents
+- **Manager sessions**: Launch a Claude Code session that supervises and coordinates your other sessions
+- **Multi-machine support**: Install the agent on each machine and manage them all from one app
+
+## Quick start (macOS)
+
+### 1. Install the agent
+
+Build the macOS menu bar app (MacMarmy), which bundles the agent:
+
+```bash
+cd macos/MarmyMenuBar
+xcodebuild -scheme MarmyMenuBar -configuration Release build CODE_SIGNING_ALLOWED=NO
+open ~/Library/Developer/Xcode/DerivedData/MarmyMenuBar-*/Build/Products/Release/MarmyMenuBar.app
 ```
-  Phone (React Native)                    Laptop / Server
-  ┌──────────────────┐                   ┌─────────────────────┐
-  │  Machines Tab    │                   │  marmy-agent (Rust) │
-  │  Sessions Tab    │◄── REST API ────► │    │                │
-  │  Terminal Tab    │    + WebSocket     │    ├─ tmux -CC      │
-  │  Files Tab       │    (topology)      │    │  (control mode) │
-  └──────────────────┘                   │    ├─ REST API       │
-         │                               │    └─ File server    │
-         │                               └─────────────────────┘
-         └── Tailscale / LAN / VPN ──────────────┘
-```
 
-**marmy-agent** runs on each development machine. It connects to the local tmux server via [control mode](https://github.com/tmux/tmux/wiki/Control-Mode) (`tmux -CC`) and exposes a REST API (with an optional WebSocket for topology updates). The mobile app polls pane content via REST and sends input via REST POST — simple, reliable, and easy to debug.
-
-## Prerequisites
-
-### On your development machine (server)
-
-- **Rust** (latest stable — `brew install rust` or via [rustup](https://rustup.rs))
-- **tmux** 3.2+ (`apt install tmux` / `brew install tmux`)
-
-### On your phone
-
-- **Expo Go** app ([iOS](https://apps.apple.com/app/expo-go/id982107779) / [Android](https://play.google.com/store/apps/details?id=host.exp.exponent)) for development
-- Or build a standalone binary with `eas build`
-
-### For development (building the mobile app)
-
-- **Node.js** 18+ and npm
-- **Expo CLI**: `npm install -g expo-cli`
-
-### Networking
-
-Both devices need IP connectivity. Recommended options:
-
-| Method | Difficulty | Best for |
-|--------|-----------|----------|
-| **Same LAN** | None | Phone and laptop on same Wi-Fi |
-| **Tailscale** | Easy | Phone on cellular, laptop behind NAT |
-| **WireGuard** | Medium | Full control, have public IP or VPS |
-| **SSH tunnel** | Medium | Already have a VPS |
-
-**Tailscale** (recommended for most users): Install on both devices, sign in, done. Your laptop gets a stable IP like `100.x.y.z` accessible from your phone anywhere.
-
-## Quick Start
-
-### 1. Build and run the agent
+Or build the agent standalone:
 
 ```bash
 cd agent
 cargo build --release
-
-# The binary is at target/release/marmy-agent
-# Copy it somewhere on your PATH if desired:
 cp target/release/marmy-agent ~/.local/bin/
-```
-
-### 2. Start the agent
-
-```bash
 marmy-agent serve
 ```
 
-On first run, this:
-1. Creates a config file (`~/Library/Application Support/marmy/config.toml` on macOS, `~/.config/marmy/config.toml` on Linux)
-2. Generates a random auth token
-3. Connects to tmux via control mode (creates a `_marmy_ctrl` session)
-4. Starts listening on `0.0.0.0:9876`
+### 2. Get the iOS app
 
-> **macOS users:** You can skip the CLI setup entirely — see [macOS Menu Bar App](#macos-menu-bar-app) below.
+Download from [TestFlight](https://testflight.apple.com/join/v8HmNu1H).
 
-### 3. Get pairing info
+### 3. Pair
 
 ```bash
 marmy-agent pair
 ```
 
-This prints your machine's hostname, port, and auth token. You'll enter these in the mobile app.
+This prints your machine's hostname, port, and auth token. Enter the address and token in the app.
 
-Example output:
+### 4. Done
+
+Open the Machines tab, tap **+**, enter the address and token, and connect.
+
+## Build from source
+
+### Agent
+
+```bash
+git clone https://github.com/marmy-ai/marmy && cd marmy/agent
+cargo build --release
+./target/release/marmy-agent serve
+./target/release/marmy-agent pair
 ```
-=== Marmy Pairing Info ===
 
-Hostname:  my-laptop
-Port:      9876
-Token:     a1b2c3d4e5f6...
-
-In the Marmy app, add this machine with:
-  Address:  my-laptop:9876
-  Token:    a1b2c3d4e5f6...
-```
-
-### 4. Set up the mobile app
+### iOS app
 
 ```bash
 cd mobile
 npm install
-npx expo start
+npx expo prebuild --platform ios
+cd ios && rm -rf Pods Podfile.lock && pod install && cd ..
+open ios/marmy.xcworkspace
 ```
 
-Scan the QR code with Expo Go on your phone, or press `i` for iOS simulator / `a` for Android emulator.
+In Xcode:
 
-### 5. Connect from the app
-
-1. Open the **Machines** tab
-2. Tap **+** to add a machine
-3. Enter a name, the address (`host:port`), and the auth token from step 3
-4. Tap the machine card to connect
-5. You'll see your tmux sessions in the **Sessions** tab
-6. Tap any pane to open it in the **Terminal** tab
+1. Select your signing team under Signing & Capabilities for the `Marmy` target.
+2. Set the build configuration to **Release**: Product > Scheme > Edit Scheme > Run > Build Configuration > Release.
+3. Connect your iPhone and press **Cmd+R** to build and install.
 
 ## Configuration
 
-The agent config lives at `~/Library/Application Support/marmy/config.toml` on macOS or `~/.config/marmy/config.toml` on Linux:
+The agent config lives at `~/Library/Application Support/marmy/config.toml` on macOS or `~/.config/marmy/config.toml` on Linux. See [`agent/config.toml.example`](agent/config.toml.example) for all options.
+
+### Gemini voice
+
+Add your API key to the config file:
 
 ```toml
-[server]
-bind = "0.0.0.0"     # Listen address
-port = 9876           # Listen port
-
-[auth]
-token = "auto-generated-token"   # Auth token for API access
-
-[files]
-allowed_paths = [     # Directories the mobile app can browse
-  "~/projects",       # Add your project directories here
-  "~/code",
-]
-
-[tmux]
-socket_name = ""      # tmux socket name (-L flag). Empty = default server
+[voice]
+gemini_api_key = "your-key-here"
 ```
 
-### File browsing
+Get a key from [Google AI Studio](https://aistudio.google.com/apikey).
 
-File browsing is **disabled by default** for security. To enable it, add directories to `allowed_paths`:
+### Push notifications
 
-```toml
-[files]
-allowed_paths = ["~/projects", "/home/me/code"]
-```
+**TestFlight / App Store builds** use the hosted relay automatically. No configuration needed. The relay URL is set in the default config and routes notifications through a Lambda function.
 
-The agent will only serve files within these directories. Files are read-only (no write access from the mobile app).
+**Self-built apps** need either:
 
-## Push Notifications
-
-Push notifications alert you when a Claude session finishes a task. They use Claude Code's `Stop` hook to fire a curl command to the agent, which sends directly to APNs — no polling, no terminal scraping, no third-party push service.
-
-### How It Works
-
-1. Toggle the bell icon (top-right of the terminal screen) to enable notifications
-2. The agent writes a Claude Code `Stop` hook to `~/.claude/settings.json`
-3. Whenever Claude finishes responding, the hook runs `curl` to hit the agent's `/api/notifications/send` endpoint
-4. The agent sends an APNs push to your phone
-
-No detection heuristics, no CPU monitoring, no prompt pattern matching. Claude Code itself tells the agent it's done.
-
-### APNs Setup
-
-1. Go to [Apple Developer](https://developer.apple.com) > Certificates, Identifiers & Profiles > **Keys**
-2. Click **+** to create a new key
-3. Name it (e.g. "Marmy APNs"), check **Apple Push Notifications service (APNs)**, click Continue then Register
-4. **Download** the `.p8` file (you can only download it once)
-5. Note the **Key ID** shown on the page (10-character string)
-6. Note your **Team ID** (top-right of the developer portal, or under Membership)
-
-```bash
-# Save the key
-mkdir -p ~/.marmy
-cp ~/Downloads/AuthKey_XXXXXXXXXX.p8 ~/.marmy/apns_key.p8
-```
-
-Add to your agent config (`~/Library/Application Support/marmy/config.toml` on macOS):
+1. **Your own APNs key**: Create a key in [Apple Developer](https://developer.apple.com) > Keys with APNs enabled. Download the `.p8` file, then configure:
 
 ```toml
 [notifications]
@@ -187,603 +115,51 @@ enabled = true
 apns_key_path = "~/.marmy/apns_key.p8"
 apns_key_id = "XXXXXXXXXX"
 apns_team_id = "XXXXXXXXXX"
+apns_topic = "com.marmy.app"
 apns_sandbox = true
 ```
 
-Set `apns_sandbox = true` for dev builds (running from Xcode). Set `false` for TestFlight/App Store builds.
+Set `apns_sandbox = true` for dev builds (Xcode), `false` for TestFlight/App Store.
 
-Restart the agent. The mobile app automatically registers its device token when it connects to a machine.
+2. **The hosted relay**: If you build the app with the same bundle identifier (`com.marmy.app`), the default relay URL in the config will work. Set a `relay_secret` that matches the relay's `RELAY_SECRET`.
 
-### Testing
+### Tailscale
 
-```bash
-# Check that a device token was registered
-cat ~/.marmy/push_tokens.json
-
-# Send a test notification
-TOKEN="your-marmy-auth-token"
-curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9876/api/notifications/test
-
-# Check hook status
-curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9876/api/notifications/debug
-```
-
-## Features
-
-### Machines Tab
-- Add/remove machines by address and token
-- Connection status indicators
-- Long-press to remove a machine
-
-### Sessions Tab
-- Live view of all tmux sessions with session name and working directory
-- Topology auto-updates when sessions are created or destroyed
-- Tap any session to open in the terminal view
-- Long-press to delete a session
-
-### Sessions Manager
-- A dedicated Claude Code session that monitors all other running CC sessions
-- Tap "Start Manager" in the Sessions tab header to launch
-- Queries the marmy API to see what each session is working on (live terminal content + conversation history)
-- Can send messages to other sessions and create/kill sessions
-- Appears at the top of the sessions list with child sessions nested below
-
-### Terminal Tab
-- Plain-text terminal view — polls pane content via REST every 500ms
-- Monospace font, auto-scroll to bottom on new output
-- Text input bar for typing commands (sent via REST POST)
-- Shortcut bar: Ctrl-C, Tab, Up, Down, y, n
-- Selectable text for copy/paste
-- Width slider (40–200 cols) to resize the tmux window so content fits the phone screen
-- Notify toggle to get push notifications when Claude finishes a task
-
-### Files Tab
-- Browse remote file trees
-- Navigate directories with breadcrumb path
-- View file contents with line numbers
-- Sorted: directories first, then alphabetically
-- Hidden files (dotfiles) filtered out
-
-## How It Works
-
-### tmux Control Mode
-
-The agent connects to tmux using [control mode](https://github.com/tmux/tmux/wiki/Control-Mode) (`tmux -CC`). This is the same mechanism iTerm2 uses for its tmux integration. In control mode, tmux sends structured text notifications instead of drawing to a terminal:
-
-- `%output %3 hello\012world` — pane %3 produced output (octal-escaped)
-- `%window-add @1` — a new window was created
-- `%sessions-changed` — sessions were created/destroyed
-- `%begin` / `%end` — command response boundaries
-
-The agent parses these notifications and maintains an in-memory topology model.
-
-### REST API (primary)
-
-The mobile app uses REST for all core operations — polling pane content, sending input, browsing files. This is simple, stateless, and easy to debug with `curl`.
-
-```
-GET  /api/sessions                    List all sessions/windows/panes
-POST /api/sessions                    Create a new tmux session
-DELETE /api/sessions/:name            Kill a tmux session
-GET  /api/panes/:id/content           Capture current pane screen (plain text)
-GET  /api/panes/:id/history           Capture full scrollback
-POST /api/panes/:id/input             Send keys to a pane
-POST /api/panes/:id/resize            Resize a pane's tmux window (cols × rows)
-GET  /api/files/tree?path=...         List directory contents
-GET  /api/files/content?path=..       Read file contents
-GET  /api/cc/sessions                 List live Claude Code sessions (tmux panes running claude)
-GET  /api/cc/sessions/:id/context     Get session context (live pane content + conversation history)
-POST /api/cc/dashboard/start          Start or reuse the sessions manager
-POST /api/notifications/register      Register a device push token
-DELETE /api/notifications/register    Unregister a push token
-POST /api/notifications/send          Send a push notification (called by Claude Code Stop hook)
-POST /api/notifications/hook          Enable/disable the Claude Code Stop hook
-POST /api/notifications/test          Send a test push notification
-GET  /api/notifications/debug         Check notification config status
-```
-
-### WebSocket (optional)
-
-A WebSocket endpoint (`/ws`) is available for real-time topology updates (session/window/pane changes) and streaming pane output. The mobile app currently uses REST polling for terminal content, but the WebSocket can be used for lower-latency use cases.
-
-## Running as a Service
-
-### macOS Menu Bar App
-
-The easiest way to run the agent on macOS. A native menu bar app that auto-starts the agent, shows status, and displays pairing info — no terminal needed.
-
-#### Build from source
+Install [Tailscale](https://tailscale.com/download) on your machine and phone. The agent binds to `0.0.0.0:9876` by default, so your phone can connect via your machine's Tailscale IP.
 
 ```bash
-cd macos/MarmyMenuBar
-
-# Build (compiles both the Swift app and the Rust agent)
-xcodebuild -scheme MarmyMenuBar -configuration Release build CODE_SIGNING_ALLOWED=NO
-
-# Launch
-open ~/Library/Developer/Xcode/DerivedData/MarmyMenuBar-*/Build/Products/Release/MarmyMenuBar.app
-
-# Or open the Xcode project and hit Cmd+B to build, then launch from Finder
-open MarmyMenuBar.xcodeproj
-```
-
-#### What it does
-
-- Shows a terminal icon in the menu bar (no dock icon)
-- Auto-starts `marmy-agent serve` on launch
-- Displays connection status (green = running, yellow = starting, red = error)
-- Shows your address and token with copy buttons for easy pairing
-- Start/Stop agent controls
-- Launch at Login toggle (via macOS login items)
-- Quit cleanly stops the agent
-
-The agent binary is bundled inside the app at `Contents/MacOS/marmy-agent`. The build script (`Scripts/build-agent.sh`) runs `cargo build` automatically as an Xcode build phase.
-
-### systemd (Linux)
-
-#### User service (recommended — no sudo needed)
-
-Create `~/.config/systemd/user/marmy-agent.service`:
-
-```ini
-[Unit]
-Description=Marmy Agent - bridges tmux to mobile
-After=default.target
-
-[Service]
-Type=simple
-KillMode=process
-ExecStart=/path/to/marmy-agent serve
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-```
-
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now marmy-agent
-systemctl --user status marmy-agent
-
-# Enable lingering so the service runs even when you're not logged in
-loginctl enable-linger $USER
-```
-
-#### System service (alternative — requires sudo)
-
-Create `/etc/systemd/system/marmy-agent.service`:
-
-```ini
-[Unit]
-Description=Marmy Agent
-After=network.target
-
-[Service]
-Type=simple
-KillMode=process
-User=your-username
-ExecStart=/home/your-username/.local/bin/marmy-agent serve
-Restart=always
-RestartSec=5
-Environment=RUST_LOG=marmy_agent=info
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now marmy-agent
-sudo systemctl status marmy-agent
-```
-
-### launchd (macOS — alternative to menu bar app)
-
-If you prefer a background service over the menu bar app, create `~/Library/LaunchAgents/com.marmy.agent.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.marmy.agent</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/marmy-agent</string>
-        <string>serve</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/marmy-agent.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/marmy-agent.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>RUST_LOG</key>
-        <string>marmy_agent=info</string>
-    </dict>
-</dict>
-</plist>
-```
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.marmy.agent.plist
-launchctl list | grep marmy
-```
-
-## Networking Setup
-
-### Tailscale (recommended)
-
-Tailscale is the easiest way to connect your phone to your development machine from anywhere. It creates a WireGuard-encrypted mesh VPN that works through NAT, firewalls, and cellular networks — no port forwarding, no public IPs, no configuration headaches. Traffic between your devices is end-to-end encrypted, so even though Marmy uses plain HTTP, the transport layer is fully secured.
-
-**The short version:** install Tailscale on both devices, sign in, use your Tailscale IP in the Marmy app. That's it — everything else below is optional hardening.
-
-#### Step 1: Install Tailscale on your development machine
-
-**macOS:**
-```bash
-# Homebrew
-brew install --cask tailscale
-
-# Or download from https://tailscale.com/download/mac
-# The Mac app lives in the menu bar
-```
-
-**Linux (Debian/Ubuntu):**
-```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
-```
-
-**Linux (Fedora/RHEL):**
-```bash
-sudo dnf install -y tailscale
-sudo systemctl enable --now tailscaled
-sudo tailscale up
-```
-
-After installation, authenticate when prompted. Your machine joins your tailnet and gets a stable IP in the `100.x.y.z` range.
-
-#### Step 2: Install Tailscale on your phone
-
-- **iOS**: [Tailscale on the App Store](https://apps.apple.com/app/tailscale/id1470499037)
-- **Android**: [Tailscale on Google Play](https://play.google.com/store/apps/details?id=com.tailscale.ipn)
-
-Open the app, sign in with the same account (or accept an invite to the same tailnet). Your phone now has its own Tailscale IP and can reach your development machine directly.
-
-#### Step 3: Find your Tailscale IP
-
-```bash
-# On your development machine
 tailscale ip -4
-# Example output: 100.89.137.42
+# Use this IP as the address in the Marmy app, e.g. 100.x.y.z:9876
 ```
 
-Or check the Tailscale admin console at https://login.tailscale.com/admin/machines.
-
-#### Step 4: Connect from Marmy
-
-In the Marmy app, add your machine with:
-- **Address**: `100.89.137.42:9876` (your Tailscale IP)
-- **Token**: from `marmy-agent pair`
-
-That's all you need. Your phone can now reach the agent from anywhere — home Wi-Fi, coffee shop, cellular, wherever.
-
-#### MagicDNS (friendly hostnames)
-
-Tailscale includes [MagicDNS](https://tailscale.com/kb/1081/magicdns), which is enabled by default on new tailnets. It lets you use your machine's hostname instead of an IP:
-
-```
-my-macbook:9876
-dev-server:9876
-```
-
-Check your tailnet name in the admin console under DNS. The full MagicDNS name is `<hostname>.<tailnet-name>.ts.net`, but the short name works within your tailnet.
-
-To verify MagicDNS is working:
-```bash
-# From your phone's Tailscale app, or from another machine on your tailnet
-ping my-macbook    # Should resolve to 100.x.y.z
-```
-
-#### Hardening: bind only to Tailscale
-
-By default, `marmy-agent` listens on `0.0.0.0` (all interfaces), meaning anything that can reach port 9876 on any interface can attempt to connect (they'd still need the token). If you want to lock it down so the agent *only* accepts connections over Tailscale:
+To restrict the agent to Tailscale only:
 
 ```toml
-# ~/.config/marmy/config.toml
 [server]
-bind = "100.89.137.42"   # Your Tailscale IP — only accepts connections via tailnet
+bind = "100.x.y.z"  # Your Tailscale IP
 port = 9876
 ```
 
-Or use the CLI override:
-```bash
-marmy-agent serve -b 100.89.137.42
-```
+### Multi-machine
 
-This means the agent won't respond on your LAN IP, localhost, or any other interface — only Tailscale. Useful if you're on a shared or untrusted network.
+Install the agent on each machine. Run `marmy-agent serve` and `marmy-agent pair` on each one. Add each machine in the app. They all appear in the Machines tab.
 
-> **Tip:** Your Tailscale IP is stable across reboots and network changes, so this config is set-and-forget.
-
-#### Tailscale ACLs (multi-user tailnets)
-
-If you share your tailnet with others (family, team), you can use [Tailscale ACLs](https://tailscale.com/kb/1018/acls) to restrict who can reach the agent. In the admin console under Access Controls:
-
-```jsonc
-{
-  "acls": [
-    {
-      // Only your devices can reach the marmy-agent port
-      "action": "accept",
-      "src": ["your-email@example.com"],
-      "dst": ["your-macbook:9876"]
-    }
-  ]
-}
-```
-
-This ensures that even other authenticated devices on your tailnet can't connect to the agent.
-
-#### Tailscale HTTPS (optional)
-
-Tailscale can provision TLS certificates for your machines via `tailscale cert`. Marmy doesn't natively serve HTTPS, but you can put a reverse proxy in front if you want TLS termination:
-
-```bash
-# Get a cert for your machine
-tailscale cert my-macbook.tailnet-name.ts.net
-
-# Use with caddy, nginx, etc. to proxy to localhost:9876
-# This is optional — Tailscale's WireGuard tunnel is already encrypted
-```
-
-For most users this is unnecessary since WireGuard already encrypts all traffic between your devices. TLS on top would be double encryption.
-
-#### Troubleshooting Tailscale
-
-**Devices not seeing each other:**
-```bash
-tailscale status                    # Both devices should be listed
-tailscale ping <other-device>      # Test direct connectivity
-```
-
-**Connection refused:**
-```bash
-# Verify agent is running and listening
-curl http://100.89.137.42:9876/api/sessions -H "Authorization: Bearer <token>"
-```
-
-**Tailscale on but no connection:**
-- Check that Tailscale is active on your phone (VPN icon should be visible)
-- On iOS, Tailscale can be killed by the OS in the background — open the app to re-activate
-- On Linux, ensure `tailscaled` is running: `sudo systemctl status tailscaled`
-
-**MagicDNS not resolving:**
-- Verify MagicDNS is enabled in admin console → DNS settings
-- Try the full name: `my-macbook.tailnet-name.ts.net:9876`
-- Fall back to the IP: `tailscale ip -4`
-
-### Same LAN
-
-If both devices are on the same Wi-Fi:
-
-```bash
-# Find your laptop's local IP
-ip addr show | grep "inet " | grep -v 127.0.0.1   # Linux
-ifconfig | grep "inet " | grep -v 127.0.0.1        # macOS
-```
-
-Use this IP in the Marmy app (e.g., `192.168.1.100:9876`).
-
-### SSH Reverse Tunnel (through a VPS)
-
-If your laptop is behind NAT and you have a VPS:
-
-```bash
-# On your laptop: forward port 9876 through the VPS
-ssh -R 9876:localhost:9876 user@your-vps.com -N
-
-# In Marmy app, connect to: your-vps.com:9876
-```
-
-For persistence, use `autossh`:
-```bash
-autossh -M 0 -R 9876:localhost:9876 user@your-vps.com \
-  -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -N
-```
-
-## Firewall
-
-If you have a firewall, allow TCP port 9876 (or your configured port):
-
-```bash
-# ufw (Ubuntu)
-sudo ufw allow 9876/tcp
-
-# firewalld (Fedora/RHEL)
-sudo firewall-cmd --add-port=9876/tcp --permanent
-sudo firewall-cmd --reload
-
-# iptables
-sudo iptables -A INPUT -p tcp --dport 9876 -j ACCEPT
-```
-
-## Troubleshooting
-
-### Agent won't start
-
-**"failed to spawn tmux -CC"**: tmux is not installed or not in PATH.
-```bash
-which tmux    # Should print a path
-tmux -V       # Should be 3.2+
-```
-
-**"Address already in use"**: Another process is using port 9876.
-```bash
-lsof -i :9876               # Find what's using the port
-marmy-agent serve -p 9877   # Use a different port
-```
-
-### Can't connect from phone
-
-1. Verify the agent is running: `curl http://localhost:9876/api/sessions`
-2. Check firewall: `curl http://<agent-ip>:9876/api/sessions` from another machine
-3. Check Tailscale: `tailscale status` — both devices should be listed
-4. Verify token: the token in the app must exactly match `marmy-agent pair` output
-
-### WebSocket disconnects
-
-The mobile app auto-reconnects with exponential backoff (1s → 2s → 4s → ... → 30s max). If you see frequent disconnects:
-- Check network stability (Wi-Fi signal, cellular coverage)
-- The agent logs connection events at `info` level: `RUST_LOG=marmy_agent=debug marmy-agent serve`
-
-### No tmux sessions shown
-
-The agent creates a hidden `_marmy_ctrl` session for its control connection. Your actual sessions should appear. If they don't:
-- Verify you have tmux sessions: `tmux list-sessions`
-- Check if using a non-default tmux socket: set `socket_name` in config
-
-### File browser shows "path not in allowed directories"
-
-File browsing is disabled by default. Edit your config file (see [Configuration](#configuration) for the path):
-```toml
-[files]
-allowed_paths = ["~/projects"]
-```
-Restart the agent after changing config.
-
-## Development
-
-### Agent development
-
-```bash
-cd agent
-cargo run -- serve                    # Run in dev mode
-RUST_LOG=marmy_agent=debug cargo run -- serve  # With debug logging
-cargo test                            # Run tests
-cargo build --release                 # Release build
-```
-
-### Mobile app development
-
-```bash
-cd mobile
-npm install
-npx expo start          # Start dev server
-npx expo start --clear  # Clear cache and start
-```
-
-### Building for iOS (run on your iPhone via Xcode)
-
-#### Prerequisites
-
-- An [Apple Developer account](https://developer.apple.com/) ($99/year)
-- Xcode installed with a valid signing team configured
-
-#### Steps
-
-```bash
-cd mobile
-
-# Install JS dependencies
-npm install
-
-# Generate the native ios/ project
-npx expo prebuild --platform ios
-
-# Clean and install CocoaPods (avoids "undefined symbol facebook::react" linker errors)
-cd ios && rm -rf Pods Podfile.lock && pod install && cd ..
-
-# Open the Xcode workspace
-open ios/marmy.xcworkspace
-```
-
-In Xcode:
-
-1. Select your **signing team** under **Signing & Capabilities** for the `Marmy` target.
-2. Set the build configuration to **Release**: **Product > Scheme > Edit Scheme > Run > Build Configuration > Release**. This bundles the JS into the app so it runs standalone on the device without Metro.
-3. Connect your iPhone via USB and select it as the build destination.
-4. Press **Cmd+R** (or **Product > Run**) to build and install directly on your device.
-
-To create an archive for App Store / TestFlight distribution:
-
-1. Set the device to **Any iOS Device (arm64)**.
-2. **Product > Archive**.
-3. When the archive finishes, the Organizer opens. Click **Distribute App > App Store Connect > Upload**.
-4. Go to [App Store Connect](https://appstoreconnect.apple.com/), fill in listing metadata, and submit for review.
-
-The `ios/` directory retains your signing team and provisioning profile across builds. If you ever need to regenerate the native project (`npx expo prebuild --platform ios --clean`), you'll need to re-select your signing team in **Signing & Capabilities** afterward.
-
-## Project Structure
+## Architecture
 
 ```
 marmy/
-├── agent/                     # Rust daemon
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs            # CLI entry point (serve, pair, config)
-│       ├── config.rs          # TOML config management
-│       ├── auth.rs            # Bearer token auth middleware
-│       ├── state.rs           # Shared app state (topology cache)
-│       ├── notifications.rs   # APNs client + push token persistence
-│       ├── tmux/
-│       │   ├── types.rs       # Session/Window/Pane types, WS messages
-│       │   ├── parser.rs      # Control mode protocol parser
-│       │   └── control.rs     # tmux -CC connection manager
-│       └── api/
-│           ├── mod.rs         # Router setup
-│           ├── sessions.rs    # GET /api/sessions
-│           ├── panes.rs       # Pane input/content/resize endpoints
-│           ├── files.rs       # File tree and content endpoints
-│           ├── ws.rs          # WebSocket handler
-│           └── notifications.rs  # Push token, hook management, send/test endpoints
-├── macos/                     # macOS menu bar app (Swift)
-│   └── MarmyMenuBar/
-│       ├── MarmyMenuBar.xcodeproj
-│       ├── MarmyMenuBar/
-│       │   ├── MarmyMenuBarApp.swift   # @main, MenuBarExtra scene
-│       │   ├── AgentManager.swift      # Process lifecycle (start/stop/health)
-│       │   ├── ConfigReader.swift      # Parse config.toml
-│       │   ├── PairingInfo.swift       # Pairing data model
-│       │   ├── MenuBarView.swift       # Menu content UI
-│       │   └── Info.plist              # LSUIElement (no dock icon)
-│       └── Scripts/
-│           └── build-agent.sh          # Compiles Rust binary into app bundle
-├── mobile/                    # React Native (Expo) app
-│   ├── package.json
-│   ├── app.json
-│   ├── app/                   # expo-router pages
-│   │   ├── _layout.tsx        # Root layout
-│   │   └── (tabs)/
-│   │       ├── _layout.tsx    # Tab bar config
-│   │       ├── index.tsx      # Machines screen
-│   │       ├── sessions.tsx   # Sessions/panes browser
-│   │       ├── terminal.tsx   # Plain-text terminal (polling)
-│   │       └── files.tsx      # File browser
-│   └── src/
-│       ├── types/             # TypeScript types (API contract)
-│       ├── services/          # API client, WebSocket manager, push notifications
-│       ├── stores/            # Zustand state stores
-│       └── components/        # Reusable UI components
-│           ├── FileTree       # Directory listing
-│           └── CodeViewer     # Line-numbered code display
-├── product_prd.md             # Product requirements document
-└── README.md                  # This file
+  agent/     Rust agent (REST API + WebSocket, tmux control mode)
+  mobile/    iOS app (React Native / Expo)
+  macos/     macOS menu bar app (Swift, bundles the Rust agent)
+  website/   Landing page (Astro)
+  relay/     Push notification relay (Node.js Lambda)
 ```
 
-## Security
+The agent connects to tmux via [control mode](https://github.com/tmux/tmux/wiki/Control-Mode) (`tmux -CC`) and exposes a REST API. The mobile app uses REST for all core operations and an optional WebSocket for real-time topology updates.
 
-- **Auth**: Bearer token authentication on all API endpoints. Token auto-generated on first run, shown via `marmy-agent pair`.
-- **File access**: Explicitly scoped to `allowed_paths` in config. No access by default.
-- **Read-only files**: The agent never writes files on behalf of the mobile client.
-- **Terminal input**: Only sent to panes the user explicitly selects. No ambient command execution.
-- **Transport**: Tailscale provides WireGuard encryption. Within a LAN, traffic is unencrypted HTTP/WS — use Tailscale or a VPN for security over untrusted networks.
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
