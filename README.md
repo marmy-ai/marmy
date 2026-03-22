@@ -34,6 +34,19 @@ The agent runs alongside your terminal sessions. Your phone connects over LAN or
   <img src="website/public/screenshots/push.png" alt="Push notifications" width="220" />
 </p>
 
+## Prerequisites
+
+**Required:**
+
+- **Rust** (latest stable) via [rustup](https://rustup.rs) or `brew install rust`
+- **tmux** 3.2+ (`brew install tmux` on macOS, `apt install tmux` on Linux)
+
+**For building from source (optional):**
+
+- **Node.js** 18+ and npm (for the iOS app)
+- **Xcode** (for the iOS app and MacMarmy menu bar app)
+- **CocoaPods** (`sudo gem install cocoapods`)
+
 ## Quick start (macOS)
 
 ### 1. Install the agent
