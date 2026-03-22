@@ -34,6 +34,8 @@ Any tmux session on the machine is visible and manageable from the app. It is no
   <img src="website/public/screenshots/file-viewer.png" alt="File browser with syntax highlighting" width="220" />
   &nbsp;&nbsp;
   <img src="website/public/screenshots/push.png" alt="Push notifications" width="220" />
+  &nbsp;&nbsp;
+  <img src="website/public/screenshots/landing.png" alt="Multi-machine view" width="220" />
 </p>
 
 ## Prerequisites
