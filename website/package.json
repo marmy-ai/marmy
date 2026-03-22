@@ -11,12 +11,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mharajli/marmy.git",
+    "url": "https://github.com/marmy-ai/marmy.git",
     "directory": "website"
   },
-  "homepage": "https://github.com/mharajli/marmy#readme",
+  "homepage": "https://github.com/marmy-ai/marmy#readme",
   "bugs": {
-    "url": "https://github.com/mharajli/marmy/issues"
+    "url": "https://github.com/marmy-ai/marmy/issues"
   },
   "dependencies": {
     "astro": "^5.5.0",
