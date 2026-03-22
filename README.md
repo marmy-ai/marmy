@@ -64,9 +64,10 @@ Or build the agent standalone:
 ```bash
 cd agent
 cargo build --release
-cp target/release/marmy-agent ~/.local/bin/
-marmy-agent serve
+./target/release/marmy-agent serve
 ```
+
+The binary is at `target/release/marmy-agent`. Add it to your PATH or run it directly.
 
 ### 2. Get the iOS app
 
