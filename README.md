@@ -84,6 +84,29 @@ This prints your machine's hostname, port, and auth token. Enter the address and
 
 Open the Machines tab, tap **+**, enter the address and token, and connect.
 
+## Quick start (Linux)
+
+```bash
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install tmux
+sudo apt install tmux   # Debian/Ubuntu
+sudo dnf install tmux   # Fedora/RHEL
+
+# Clone and build the agent
+git clone https://github.com/marmy-ai/marmy && cd marmy/agent
+cargo build --release
+
+# Start the agent
+./target/release/marmy-agent serve
+
+# Get your pairing token
+./target/release/marmy-agent pair
+```
+
+Enter the address and token in the iOS app. For running the agent as a background service, see the systemd unit file example in the [old README](docs/old_README.md) or create your own under `~/.config/systemd/user/marmy-agent.service`.
+
 ## Build from source
 
 ### Agent
