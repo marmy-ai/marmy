@@ -43,6 +43,32 @@ struct MenuBarView: View {
 
         Divider()
 
+        // Sessions
+        if manager.status == .running && !manager.sessions.isEmpty {
+            Text("Sessions (\(manager.sessions.count))")
+                .foregroundColor(.secondary)
+                .font(.system(.caption))
+            ForEach(manager.sessions) { session in
+                Button(action: { openSession(session.name) }) {
+                    HStack {
+                        Text(session.name)
+                        Spacer()
+                        if session.unread {
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 6))
+                                .foregroundColor(.blue)
+                        }
+                        if session.attached {
+                            Image(systemName: "desktopcomputer")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            Divider()
+        }
+
         // Controls
         if manager.status == .running || manager.status == .starting {
             Button("Stop Agent") { manager.stop() }
@@ -108,6 +134,23 @@ struct MenuBarView: View {
                     manager.start()
                 }
             }
+        }
+    }
+
+    private func openSession(_ name: String) {
+        // Sanitize session name to prevent AppleScript injection.
+        // tmux session names are already validated by the agent (alphanumeric, underscore, hyphen).
+        let sanitized = name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        guard !sanitized.isEmpty else { return }
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "tmux attach-session -t \(sanitized)"
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
         }
     }
 
