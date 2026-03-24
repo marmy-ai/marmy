@@ -133,20 +133,16 @@ struct MenuBarView: View {
     }
 
     private func openSession(_ name: String) {
-        // Sanitize session name to prevent AppleScript injection.
-        // tmux session names are already validated by the agent (alphanumeric, underscore, hyphen).
+        // Sanitize session name (agent already validates: alphanumeric, underscore, hyphen).
         let sanitized = name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
         guard !sanitized.isEmpty else { return }
-        let script = """
-        tell application "Terminal"
-            activate
-            do script "tmux attach-session -t \(sanitized)"
-        end tell
-        """
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
-        }
+
+        // Use osascript subprocess instead of NSAppleScript to avoid silent permission failures.
+        let script = "tell application \"Terminal\" to do script \"tmux attach-session -t \(sanitized)\""
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-e", script, "-e", "tell application \"Terminal\" to activate"]
+        try? proc.run()
     }
 
     private func copyToClipboard(_ text: String) {
