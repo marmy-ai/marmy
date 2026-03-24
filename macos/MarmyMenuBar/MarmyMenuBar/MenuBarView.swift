@@ -43,6 +43,27 @@ struct MenuBarView: View {
 
         Divider()
 
+        // Sessions (expandable submenu like Tailscale's "My Devices")
+        if manager.status == .running && !manager.sessions.isEmpty {
+            Menu("Sessions (\(manager.sessions.count))") {
+                ForEach(manager.sessions) { session in
+                    Button(action: { openSession(session.name) }) {
+                        HStack {
+                            Text(session.name)
+                            Spacer()
+                            if session.unread {
+                                Image(systemName: "circle.fill")
+                            }
+                            if session.attached {
+                                Image(systemName: "desktopcomputer")
+                            }
+                        }
+                    }
+                }
+            }
+            Divider()
+        }
+
         // Controls
         if manager.status == .running || manager.status == .starting {
             Button("Stop Agent") { manager.stop() }
@@ -109,6 +130,19 @@ struct MenuBarView: View {
                 }
             }
         }
+    }
+
+    private func openSession(_ name: String) {
+        // Sanitize session name (agent already validates: alphanumeric, underscore, hyphen).
+        let sanitized = name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        guard !sanitized.isEmpty else { return }
+
+        // Use osascript subprocess instead of NSAppleScript to avoid silent permission failures.
+        let script = "tell application \"Terminal\" to do script \"tmux attach-session -t \(sanitized)\""
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-e", script, "-e", "tell application \"Terminal\" to activate"]
+        try? proc.run()
     }
 
     private func copyToClipboard(_ text: String) {

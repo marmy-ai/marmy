@@ -1,6 +1,18 @@
 import Foundation
 import Combine
 
+struct MarmySession: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let windows: [String]
+    let attached: Bool
+    let unread: Bool
+}
+
+private struct SessionsResponse: Decodable {
+    let sessions: [MarmySession]
+}
+
 enum AgentStatus: Equatable {
     case stopped
     case starting
@@ -30,6 +42,7 @@ enum AgentStatus: Equatable {
 final class AgentManager: ObservableObject {
     @Published var status: AgentStatus = .stopped
     @Published var pairingInfo: PairingInfo?
+    @Published var sessions: [MarmySession] = []
 
     private var process: Process?
     private var healthTimer: Timer?
@@ -118,6 +131,7 @@ final class AgentManager: ObservableObject {
         }
         isStopping = true
         status = .stopped
+        sessions = []
         stopHealthCheck()
         proc.terminate()
 
@@ -168,17 +182,23 @@ final class AgentManager: ObservableObject {
         request.timeoutInterval = 3
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, http.statusCode == 200 {
                 if status != .running {
                     status = .running
                     reloadConfig()
                 }
+                // Parse sessions from response
+                if let decoded = try? JSONDecoder().decode(SessionsResponse.self, from: data) {
+                    sessions = decoded.sessions.filter { $0.name != "_marmy_ctrl" }
+                }
             } else {
                 if status == .running { status = .starting }
+                sessions = []
             }
         } catch {
             if status == .running { status = .starting }
+            sessions = []
         }
     }
 
