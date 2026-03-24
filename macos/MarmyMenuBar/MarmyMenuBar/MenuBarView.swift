@@ -43,25 +43,20 @@ struct MenuBarView: View {
 
         Divider()
 
-        // Sessions
+        // Sessions (expandable submenu like Tailscale's "My Devices")
         if manager.status == .running && !manager.sessions.isEmpty {
-            Text("Sessions (\(manager.sessions.count))")
-                .foregroundColor(.secondary)
-                .font(.system(.caption))
-            ForEach(manager.sessions) { session in
-                Button(action: { openSession(session.name) }) {
-                    HStack {
-                        Text(session.name)
-                        Spacer()
-                        if session.unread {
-                            Image(systemName: "circle.fill")
-                                .font(.system(size: 6))
-                                .foregroundColor(.blue)
-                        }
-                        if session.attached {
-                            Image(systemName: "desktopcomputer")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
+            Menu("Sessions (\(manager.sessions.count))") {
+                ForEach(manager.sessions) { session in
+                    Button(action: { openSession(session.name) }) {
+                        HStack {
+                            Text(session.name)
+                            Spacer()
+                            if session.unread {
+                                Image(systemName: "circle.fill")
+                            }
+                            if session.attached {
+                                Image(systemName: "desktopcomputer")
+                            }
                         }
                     }
                 }
