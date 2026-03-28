@@ -38,7 +38,7 @@ Keep it short. You're a voice, not a document. Start with "How can I help you?".
 function buildSetupMessage(sessionName: string) {
   return {
     setup: {
-      model: "models/gemini-2.5-flash-native-audio-preview-12-2025",
+      model: "models/gemini-3.1-flash-live-preview",
       generationConfig: {
         responseModalities: ["AUDIO"],
         speechConfig: {
@@ -426,18 +426,8 @@ export class VoiceSession {
 
       this.ws?.send(
         JSON.stringify({
-          clientContent: {
-            turns: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: `--- ENGINEER UPDATE ---\n${trimmed}\n--- END UPDATE ---`,
-                  },
-                ],
-              },
-            ],
-            turnComplete: true,
+          realtimeInput: {
+            text: `--- ENGINEER UPDATE ---\n${trimmed}\n--- END UPDATE ---`,
           },
         })
       );
