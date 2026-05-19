@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useConnectionStore } from "../src/stores/connectionStore";
-import { useSessionStore } from "../src/stores/sessionStore";
+import { useSessionStore, type AgentMode } from "../src/stores/sessionStore";
 import { theme } from "../src/theme";
 import DirPicker from "../src/components/DirPicker";
 import type { TmuxSession } from "../src/types";
@@ -64,12 +64,12 @@ const glassesStyles = StyleSheet.create({
 
 export default function WorkersScreen() {
   const { api, topology, activeMachine, connected } = useConnectionStore();
-  const { setActivePane, setActiveSession, setActiveSessionName } = useSessionStore();
+  const { setActivePane, setActiveSession, setActiveSessionName, setActiveAgentMode } = useSessionStore();
   const router = useRouter();
   const [showNewSession, setShowNewSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState("");
   const [startingManager, setStartingManager] = useState(false);
-  const [sessionMode, setSessionMode] = useState<"claude" | "terminal">("claude");
+  const [sessionMode, setSessionMode] = useState<AgentMode>("claude");
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
@@ -120,6 +120,7 @@ export default function WorkersScreen() {
       });
       setActivePane(result.pane_id);
       setActiveSessionName(result.session_name);
+      setActiveAgentMode(sessionMode);
       resetModal();
       router.push("/terminal");
     } catch (e: any) {
@@ -152,9 +153,14 @@ export default function WorkersScreen() {
       if (session.unread && api) {
         api.markSessionRead(session.name).catch(() => {});
       }
+      const cmd = (pane.current_command ?? "").toLowerCase();
+      const agentMode: AgentMode = cmd.includes("codex") ? "codex"
+        : cmd.includes("claude") ? "claude"
+        : "terminal";
       setActivePane(pane.id);
       setActiveSession(session.id);
       setActiveSessionName(session.name);
+      setActiveAgentMode(agentMode);
       router.push("/terminal");
     }
   };
@@ -252,38 +258,17 @@ export default function WorkersScreen() {
             <Text style={styles.modalTitle}>New Session</Text>
 
             <View style={styles.modeToggle}>
-              <TouchableOpacity
-                style={[
-                  styles.modeBtn,
-                  sessionMode === "claude" && styles.modeBtnActive,
-                ]}
-                onPress={() => setSessionMode("claude")}
-              >
-                <Text
-                  style={[
-                    styles.modeBtnText,
-                    sessionMode === "claude" && styles.modeBtnTextActive,
-                  ]}
+              {(["claude", "codex", "terminal"] as AgentMode[]).map((mode) => (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.modeBtn, sessionMode === mode && styles.modeBtnActive]}
+                  onPress={() => setSessionMode(mode)}
                 >
-                  Claude
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modeBtn,
-                  sessionMode === "terminal" && styles.modeBtnActive,
-                ]}
-                onPress={() => setSessionMode("terminal")}
-              >
-                <Text
-                  style={[
-                    styles.modeBtnText,
-                    sessionMode === "terminal" && styles.modeBtnTextActive,
-                  ]}
-                >
-                  Terminal
-                </Text>
-              </TouchableOpacity>
+                  <Text style={[styles.modeBtnText, sessionMode === mode && styles.modeBtnTextActive]}>
+                    {mode === "claude" ? "Claude" : mode === "codex" ? "Codex" : "Terminal"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
             <TextInput

@@ -19,8 +19,8 @@ export type VoiceState =
 const GEMINI_WS_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
-function buildSystemPrompt(sessionName: string): string {
-  return `You are Marmy, a neutral relay between a manager and their engineer. The manager is talking to you by voice — they're hands-free and can't type. The engineer is an AI coding agent called Claude Code, working on session "${sessionName}".
+function buildSystemPrompt(sessionName: string, agentName = "the AI coding agent"): string {
+  return `You are Marmy, a neutral relay between a manager and their engineer. The manager is talking to you by voice — they're hands-free and can't type. The engineer is ${agentName}, an AI coding agent working on session "${sessionName}".
 
 Your role is to relay instructions. When the manager gives an instruction, rephrase it naturally into direct second-person address before passing it via your send_instruction tool. For example, if the manager says "ask the engineer if the db size is doing ok", you should send "is the db size doing ok?". If they say "tell them to fix the login bug", send "fix the login bug". Keep the meaning intact but make it sound like a direct message to the engineer — not a relayed quote. The instruction will be shown to the manager for approval before it's sent — they can accept or decline. If they decline, they'll tell you what to change.
 
@@ -35,7 +35,7 @@ The manager may refer to the engineer as "Claude", "it", "them", or just talk ab
 Keep it short. You're a voice, not a document. Start with "How can I help you?".`;
 }
 
-function buildSetupMessage(sessionName: string) {
+function buildSetupMessage(sessionName: string, agentName?: string) {
   return {
     setup: {
       model: "models/gemini-3.1-flash-live-preview",
@@ -48,7 +48,7 @@ function buildSetupMessage(sessionName: string) {
         },
       },
       systemInstruction: {
-        parts: [{ text: buildSystemPrompt(sessionName) }],
+        parts: [{ text: buildSystemPrompt(sessionName, agentName) }],
       },
       tools: [
         {
@@ -85,9 +85,12 @@ interface VoiceSessionConfig {
   api: MarmyApi;
   paneId: string;
   sessionName: string;
+  agentName?: string;
   onStateChange: (state: VoiceState) => void;
   /** Called when Gemini wants to send an instruction. Resolve true to send, false to discard. */
   onInstructionPending: (text: string) => Promise<boolean>;
+  /** Called with an optional human-readable message when state transitions to "error". */
+  onError?: (message: string) => void;
 }
 
 // Uint8Array (16-bit LE PCM) to base64
@@ -165,7 +168,7 @@ export class VoiceSession {
     const { granted } = await requestMicrophonePermissionsAsync();
     if (!granted) {
       console.error("[Voice] Mic permission denied");
-      this.setState("error");
+      this.setError("Microphone permission denied");
       this.active = false;
       return;
     }
@@ -236,12 +239,17 @@ export class VoiceSession {
     this.config.onStateChange(state);
   }
 
+  private setError(message: string) {
+    this.setState("error");
+    this.config.onError?.(message);
+  }
+
   private openWebSocket() {
     const url = `${GEMINI_WS_URL}?key=${this.config.geminiApiKey}`;
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      const setup = buildSetupMessage(this.config.sessionName);
+      const setup = buildSetupMessage(this.config.sessionName, this.config.agentName);
       if (this.sessionResumptionHandle) {
         (setup.setup as any).sessionResumption = {
           handle: this.sessionResumptionHandle,
@@ -272,19 +280,19 @@ export class VoiceSession {
 
     this.ws.onerror = (e) => {
       console.error("[Voice] WebSocket error:", e);
-      if (this.active) this.setState("error");
+      if (this.active) this.setError("Connection failed");
     };
 
     this.ws.onclose = (e) => {
       console.log("[Voice] WebSocket closed:", e.code, e.reason);
       if (!this.active) return;
       if (e.code === 1007 || e.code === 1008 || e.code === 4003) {
-        this.setState("error");
+        this.setError(e.reason ? `${e.reason} (${e.code})` : `Rejected by server (${e.code})`);
         return;
       }
       if (this.reconnectCount >= VoiceSession.MAX_RECONNECTS) {
         console.error("[Voice] Max reconnects reached, giving up");
-        this.setState("error");
+        this.setError("Could not connect after multiple attempts");
         return;
       }
       this.reconnectCount++;

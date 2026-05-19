@@ -24,6 +24,11 @@ import { VoiceSession } from "../src/services/voiceSession";
 import { theme } from "../src/theme";
 import type { VoiceState } from "../src/services/voiceSession";
 import VoiceCallBar from "../src/components/VoiceCallBar";
+import SttBar from "../src/components/SttBar";
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
 
 // Unified shortcut grid — shared by both MSG and KB modes
 const SHORTCUT_P1_ROW1 = [
@@ -64,6 +69,9 @@ const MIN_COLS = 40;
 const MAX_COLS = 200;
 const COLS_STEP = 10;
 const TERM_COLS_KEY = "marmy_termCols";
+const STT_ENABLED_KEY = "marmy_sttEnabled";
+const TERMINAL_TEXT = "#f1f5f9";
+const TERMINAL_DIM_TEXT = "#a8b0bd";
 
 // --- ANSI parser ---
 
@@ -76,10 +84,10 @@ interface AnsiSpan {
 }
 
 const ANSI_FG: Record<number, string> = {
-  30: "#555", 31: "#e06c75", 32: "#98c379", 33: "#e5c07b",
+  30: "#8b949e", 31: "#ff7b72", 32: "#8ddb8c", 33: "#f2cc60",
   34: "#61afef", 35: "#c678dd", 36: "#56b6c2", 37: "#abb2bf",
-  90: "#5c6370", 91: "#e06c75", 92: "#98c379", 93: "#e5c07b",
-  94: "#61afef", 95: "#c678dd", 96: "#56b6c2", 97: "#ffffff",
+  90: "#7d8590", 91: "#ff7b72", 92: "#8ddb8c", 93: "#f2cc60",
+  94: "#79c0ff", 95: "#d2a8ff", 96: "#76e3ea", 97: "#ffffff",
 };
 
 function parseAnsi(raw: string): AnsiSpan[] {
@@ -140,12 +148,12 @@ function parseAnsi(raw: string): AnsiSpan[] {
 function ansi256ToHex(n: number): string {
   // Standard 16 colors
   const base16: string[] = [
-    "#555", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#abb2bf",
-    "#5c6370", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#fff",
+    "#8b949e", "#ff7b72", "#8ddb8c", "#f2cc60", "#79c0ff", "#d2a8ff", "#76e3ea", "#abb2bf",
+    "#7d8590", "#ff7b72", "#8ddb8c", "#f2cc60", "#79c0ff", "#d2a8ff", "#76e3ea", "#fff",
   ];
   if (n < 16) return base16[n];
   if (n >= 232) { // Grayscale — clamp floor so dark grays are visible on dark bg
-    const v = Math.max(85, 8 + (n - 232) * 10);
+    const v = Math.max(112, 8 + (n - 232) * 10);
     return `rgb(${v},${v},${v})`;
   }
   // 216-color cube (16-231) — boost very dark colors for readability
@@ -153,10 +161,10 @@ function ansi256ToHex(n: number): string {
   let r = Math.floor(idx / 36) * 51;
   let g = Math.floor((idx % 36) / 6) * 51;
   let b = (idx % 6) * 51;
-  if (r + g + b < 85) {
-    r = Math.max(r, 68);
-    g = Math.max(g, 68);
-    b = Math.max(b, 68);
+  if (r + g + b < 120) {
+    r = Math.max(r, 92);
+    g = Math.max(g, 92);
+    b = Math.max(b, 92);
   }
   return `rgb(${r},${g},${b})`;
 }
@@ -169,7 +177,7 @@ function renderContent(content: string) {
 
   const lines = cleaned.split("\n");
   const elements: React.ReactNode[] = [];
-  const promptRegex = /^[>$] /;
+  const promptRegex = /^[>$❯] /;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -190,7 +198,7 @@ function renderContent(content: string) {
             style={[
               styles.terminalText,
               span.bold && { fontWeight: "700" as const },
-              span.dim && { opacity: 0.5 },
+              span.dim && { color: TERMINAL_DIM_TEXT, opacity: 0.82 },
               span.italic && { fontStyle: "italic" as const },
               span.color ? { color: span.color } : undefined,
             ]}
@@ -208,7 +216,7 @@ function renderContent(content: string) {
 
 export default function TerminalScreen() {
   const { api, socket, connected } = useConnectionStore();
-  const { activePaneId, activeSessionId, activeSessionName, notifyOnDone, setNotifyOnDone } = useSessionStore();
+  const { activePaneId, activeSessionId, activeSessionName, activeAgentMode, notifyOnDone, setNotifyOnDone } = useSessionStore();
   const navigation = useNavigation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -232,11 +240,20 @@ export default function TerminalScreen() {
   const [termCols, setTermCols] = useState(DEFAULT_COLS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [sttEnabled, setSttEnabled] = useState(false);
+  const [sttActive, setSttActive] = useState(false);
+  const [sttTranscript, setSttTranscript] = useState("");
+  const [codexNotifySupported, setCodexNotifySupported] = useState(false);
+  const [codexNotifyOnDone, setCodexNotifyOnDone] = useState(false);
 
-  // Restore saved terminal width on mount
+  // Restore saved settings on mount
   useEffect(() => {
     SecureStore.getItemAsync(TERM_COLS_KEY).then((v) => {
       if (v) { const n = Number(v); if (n >= MIN_COLS && n <= MAX_COLS) setTermCols(n); }
+    });
+    SecureStore.getItemAsync(STT_ENABLED_KEY).then((v) => {
+      if (v === "true") setSttEnabled(true);
     });
   }, []);
 
@@ -250,6 +267,7 @@ export default function TerminalScreen() {
   // Voice mode
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const voiceSessionRef = useRef<VoiceSession | null>(null);
   const [pendingInstruction, setPendingInstruction] = useState<string | null>(null);
   const pendingResolveRef = useRef<((approved: boolean) => void) | null>(null);
@@ -282,12 +300,17 @@ export default function TerminalScreen() {
     try {
       const { token } = await api.getVoiceToken();
       console.log("[Voice] Got token, connecting to Gemini...");
+      const agentName = activeAgentMode === "codex" ? "Codex"
+        : activeAgentMode === "claude" ? "Claude Code"
+        : undefined;
       const session = new VoiceSession({
         geminiApiKey: token,
         api,
         paneId: activePaneId,
         sessionName: activeSessionName || "default",
-        onStateChange: setVoiceState,
+        agentName,
+        onStateChange: (state) => { setVoiceState(state); if (state !== "error") setVoiceError(null); },
+        onError: setVoiceError,
         onInstructionPending: (text: string) =>
           new Promise<boolean>((resolve) => {
             setPendingInstruction(text);
@@ -299,6 +322,7 @@ export default function TerminalScreen() {
     } catch (e) {
       console.error("[Voice] Failed to start:", e);
       setVoiceState("error");
+      setVoiceError(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -311,7 +335,43 @@ export default function TerminalScreen() {
     await voiceSessionRef.current?.stop();
     voiceSessionRef.current = null;
     setVoiceState("idle");
+    setVoiceError(null);
     setVoiceActive(false);
+  };
+
+  // On-device STT
+  useSpeechRecognitionEvent("result", (event) => {
+    setSttTranscript(event.results[0]?.transcript ?? "");
+  });
+
+  useSpeechRecognitionEvent("end", () => {
+    setSttActive(false);
+  });
+
+  useSpeechRecognitionEvent("error", (event) => {
+    console.error("[STT] Error:", event.error, event.message);
+    setSttActive(false);
+  });
+
+  const startStt = async () => {
+    setSttTranscript("");
+    setSttActive(true);
+    ExpoSpeechRecognitionModule.start({
+      lang: "en-US",
+      interimResults: true,
+      requiresOnDeviceRecognition: true,
+      continuous: true,
+    });
+  };
+
+  const stopStt = (confirm: boolean) => {
+    ExpoSpeechRecognitionModule.stop();
+    setSttActive(false);
+    if (confirm && sttTranscript.trim()) {
+      setInputText(sttTranscript.trim());
+      setIsKeyboardMode(false);
+    }
+    setSttTranscript("");
   };
 
   const handleFiles = () => {
@@ -335,7 +395,11 @@ export default function TerminalScreen() {
   // Sync notify toggle with agent on mount
   useEffect(() => {
     if (!api) return;
-    api.getNotifyHookStatus().then(setNotifyOnDone).catch(() => {});
+    api.getNotifyHookStatus("claude").then(setNotifyOnDone).catch(() => {});
+    api.getNotifyHookStatus("codex").then(setCodexNotifyOnDone).catch(() => {});
+    api.getNotifyHookSupport("codex").then(setCodexNotifySupported).catch(() => {
+      setCodexNotifySupported(false);
+    });
   }, [api]);
 
   // Subscribe to pane output via WebSocket
@@ -508,14 +572,17 @@ export default function TerminalScreen() {
 
         <TouchableOpacity
           style={styles.callButton}
-          onPress={voiceActive ? stopVoice : startVoice}
+          onPress={sttEnabled
+            ? (sttActive ? () => stopStt(false) : startStt)
+            : (voiceActive ? stopVoice : startVoice)
+          }
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons
-            name="call-outline"
+            name={sttEnabled ? (sttActive ? "mic" : "mic-outline") : "call-outline"}
             size={22}
-            color={voiceActive ? theme.error : theme.textSecondary}
-            style={voiceActive ? { transform: [{ rotate: "135deg" }] } : undefined}
+            color={(sttEnabled ? sttActive : voiceActive) ? theme.error : theme.textSecondary}
+            style={(sttEnabled ? sttActive : voiceActive) ? { transform: [{ rotate: "135deg" }] } : undefined}
           />
         </TouchableOpacity>
 
@@ -546,13 +613,58 @@ export default function TerminalScreen() {
               setNotifyOnDone(next);
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               try {
-                await api?.setNotifyHook(next);
-              } catch {}
+                await api?.setNotifyHook(next, "claude");
+              } catch {
+                setNotifyOnDone(!next);
+              }
             }}
           >
-            <Text style={styles.settingsLabel}>Notify on done</Text>
+            <Text style={styles.settingsLabel}>Claude notify</Text>
             <View style={[styles.toggleTrack, notifyOnDone && styles.toggleTrackActive]}>
               <View style={[styles.toggleThumb, notifyOnDone && styles.toggleThumbActive]} />
+            </View>
+          </TouchableOpacity>
+
+          {codexNotifySupported ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.settingsRow}
+              onPress={async () => {
+                const next = !codexNotifyOnDone;
+                setCodexNotifyOnDone(next);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                try {
+                  await api?.setNotifyHook(next, "codex");
+                } catch {
+                  setCodexNotifyOnDone(!next);
+                }
+              }}
+            >
+              <Text style={styles.settingsLabel}>Codex notify</Text>
+              <View style={[styles.toggleTrack, codexNotifyOnDone && styles.toggleTrackActive]}>
+                <View style={[styles.toggleThumb, codexNotifyOnDone && styles.toggleThumbActive]} />
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.settingsRow, styles.settingsRowDisabled]}>
+              <Text style={styles.settingsLabel}>Codex notify</Text>
+              <Text style={styles.settingsUnavailable}>Unavailable</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.settingsRow}
+            onPress={async () => {
+              const next = !sttEnabled;
+              setSttEnabled(next);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              await SecureStore.setItemAsync(STT_ENABLED_KEY, String(next));
+            }}
+          >
+            <Text style={styles.settingsLabel}>On-device STT</Text>
+            <View style={[styles.toggleTrack, sttEnabled && styles.toggleTrackActive]}>
+              <View style={[styles.toggleThumb, sttEnabled && styles.toggleThumbActive]} />
             </View>
           </TouchableOpacity>
 
@@ -574,14 +686,24 @@ export default function TerminalScreen() {
         </View>
       )}
 
+      {/* Selection mode banner */}
+      {selectionMode && (
+        <TouchableOpacity
+          style={styles.selectionBanner}
+          onPress={() => setSelectionMode(false)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.selectionBannerText}>Selection mode — tap to exit</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Terminal content with ANSI rendering */}
       <ScrollView
         ref={scrollRef}
         style={styles.terminalScroll}
         contentContainerStyle={styles.terminalContent}
         keyboardDismissMode="on-drag"
-        onTouchStart={() => Keyboard.dismiss()}
-
+        scrollEnabled={!selectionMode}
         onScroll={(e) => {
           const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
           const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
@@ -589,7 +711,14 @@ export default function TerminalScreen() {
         }}
         scrollEventThrottle={100}
       >
-        <Text selectable style={styles.terminalTextContainer}>
+        <Text
+          selectable
+          style={styles.terminalTextContainer}
+          onLongPress={() => {
+            setSelectionMode(true);
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }}
+        >
           {renderedContent}
         </Text>
       </ScrollView>
@@ -744,11 +873,23 @@ export default function TerminalScreen() {
           </TouchableOpacity>
         )}
       </View>
+      {/* Floating STT overlay */}
+      {sttActive && (
+        <View style={styles.voiceOverlayWrapper} pointerEvents="box-none">
+          <SttBar
+            transcript={sttTranscript}
+            onDone={() => stopStt(true)}
+            onCancel={() => stopStt(false)}
+          />
+        </View>
+      )}
+
       {/* Floating voice call overlay */}
       {voiceActive && (
         <View style={styles.voiceOverlayWrapper} pointerEvents="box-none">
           <VoiceCallBar
             state={voiceState}
+            errorMessage={voiceError}
             onEnd={stopVoice}
             onMicOn={() => voiceSessionRef.current?.pushToTalkStart()}
             onMicOff={() => voiceSessionRef.current?.pushToTalkEnd()}
@@ -821,8 +962,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   settingsLabel: {
-    color: "#aaa",
+    color: "#c5cad3",
     fontSize: 14,
+  },
+  settingsRowDisabled: {
+    opacity: 0.72,
+  },
+  settingsUnavailable: {
+    color: theme.textSecondary,
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
   settingsSlider: {
     flex: 1,
@@ -836,6 +985,17 @@ const styles = StyleSheet.create({
     width: 28,
     textAlign: "right",
   },
+  selectionBanner: {
+    backgroundColor: theme.primary,
+    paddingVertical: 7,
+    alignItems: "center",
+  },
+  selectionBannerText: {
+    color: "#fff",
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontWeight: "600",
+  },
   terminalScroll: {
     flex: 1,
     backgroundColor: theme.bgDeep,
@@ -844,13 +1004,13 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   terminalTextContainer: {
-    color: theme.textPrimary,
+    color: TERMINAL_TEXT,
     fontSize: 11,
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     lineHeight: 16,
   },
   terminalText: {
-    color: theme.textPrimary,
+    color: TERMINAL_TEXT,
     fontSize: 11,
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     lineHeight: 16,

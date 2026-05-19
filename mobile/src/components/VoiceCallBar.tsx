@@ -14,6 +14,7 @@ import type { VoiceState } from "../services/voiceSession";
 
 interface VoiceCallBarProps {
   state: VoiceState;
+  errorMessage?: string | null;
   onEnd: () => void;
   onMicOn: () => void;
   onMicOff: () => void;
@@ -36,7 +37,7 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function VoiceCallBar({ state, onEnd, onMicOn, onMicOff, pendingInstruction, onApprove, onDecline }: VoiceCallBarProps) {
+export default function VoiceCallBar({ state, errorMessage, onEnd, onMicOn, onMicOff, pendingInstruction, onApprove, onDecline }: VoiceCallBarProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const [micActive, setMicActive] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -113,6 +114,11 @@ export default function VoiceCallBar({ state, onEnd, onMicOn, onMicOff, pendingI
           </Text>
         </View>
       </View>
+
+      {/* Error message */}
+      {state === "error" && errorMessage && (
+        <Text style={styles.errorMessage}>{errorMessage}</Text>
+      )}
 
       {/* Talk / Done toggle */}
       <TouchableOpacity
@@ -282,6 +288,14 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 13,
     fontWeight: "700",
+  },
+  errorMessage: {
+    color: "#ef4444",
+    fontSize: 11,
+    fontFamily: "monospace",
+    textAlign: "center",
+    paddingHorizontal: 12,
+    marginBottom: 8,
   },
   // Approval card
   approvalCard: {
