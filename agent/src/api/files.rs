@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use axum::{
-    extract::{Query, State},
+    extract::{Multipart, Query, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -47,6 +47,104 @@ pub struct SessionRoot {
     pub pane_id: String,
     pub window_name: String,
     pub current_command: String,
+}
+
+#[derive(Deserialize)]
+pub struct UploadQuery {
+    pub pane_id: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct UploadResponse {
+    pub path: String,
+    pub filename: String,
+}
+
+/// POST /api/files/upload?pane_id=<id> — receive an image or file from the mobile app,
+/// save it locally, and (if pane_id is given) place it on the macOS clipboard and
+/// send Ctrl+V to the pane so Claude Code pastes it automatically.
+pub async fn upload_file(
+    State(state): State<AppState>,
+    Query(query): Query<UploadQuery>,
+    mut multipart: Multipart,
+) -> Result<Json<UploadResponse>, (StatusCode, String)> {
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "no file in request".to_string()))?;
+
+    let original_name = field.file_name().unwrap_or("upload").to_string();
+
+    // Sanitise extension to alphanumeric only — used in a file path and osascript string.
+    let ext: String = Path::new(&original_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin")
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .take(10)
+        .collect();
+
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    // Save to ~/Library/Application Support/marmy/uploads/<id>.<ext>
+    let upload_dir = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join("marmy")
+        .join("uploads");
+    tokio::fs::create_dir_all(&upload_dir)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let filename = format!("{}.{}", upload_id(), ext);
+    let save_path = upload_dir.join(&filename);
+    tokio::fs::write(&save_path, &data)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let path_str = save_path.to_string_lossy().to_string();
+
+    if let Some(raw_pane_id) = query.pane_id {
+        let pane_id = if raw_pane_id.starts_with('%') {
+            raw_pane_id
+        } else {
+            format!("%{}", raw_pane_id)
+        };
+        // Place the image on the macOS system clipboard via NSImage (handles PNG/JPEG/HEIC/…).
+        set_clipboard_image(&path_str);
+        // Ctrl+V (0x16) triggers Claude Code's paste-from-clipboard handler.
+        let _ = state.tmux.send_bytes(&pane_id, &[0x16]).await;
+    }
+
+    Ok(Json(UploadResponse { path: path_str, filename }))
+}
+
+/// Generate a random hex ID for uploaded file names.
+fn upload_id() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    format!("{:08x}{:08x}", rng.gen::<u32>(), rng.gen::<u32>())
+}
+
+/// Set the macOS system clipboard to an image file using NSImage via osascript.
+/// NSImage handles all common formats: PNG, JPEG, HEIC, GIF, BMP, TIFF.
+fn set_clipboard_image(path: &str) {
+    let script = format!(
+        "use framework \"AppKit\"\n\
+         use scripting additions\n\
+         set img to current application's NSImage's alloc()'s initWithContentsOfFile:\"{path}\"\n\
+         set pb to current application's NSPasteboard's generalPasteboard()\n\
+         pb's clearContents()\n\
+         pb's writeObjects:{{img}}"
+    );
+    let _ = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output();
 }
 
 /// GET /api/files/roots — return configured allowed_paths.

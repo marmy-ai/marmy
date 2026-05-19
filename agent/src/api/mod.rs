@@ -40,6 +40,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/files/tree", get(files::list_dir))
         .route("/api/files/content", get(files::read_file))
         .route("/api/files/raw", get(files::raw_file))
+        .route("/api/files/upload", post(files::upload_file))
         .route("/api/cc/sessions", get(cc::list_sessions))
         .route("/api/cc/sessions/:id/context", get(cc::get_session_context))
         .route("/api/cc/dashboard/start", post(cc::start_dashboard))
