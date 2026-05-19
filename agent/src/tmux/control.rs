@@ -155,6 +155,25 @@ impl TmuxController {
         Ok(panes)
     }
 
+    /// Return the cursor position (col, row) within the visible pane area (0-based).
+    /// Row 0 is the top of the visible area. Use alongside pane height and scrollback
+    /// line count to locate the cursor in the full scrollback buffer.
+    pub async fn pane_cursor(&self, pane_id: &str) -> Result<(u32, u32)> {
+        let out = self
+            .run_tmux(&[
+                "display-message",
+                "-t",
+                pane_id,
+                "-p",
+                "#{pane_cursor_x},#{pane_cursor_y}",
+            ])
+            .await?;
+        let mut parts = out.trim().splitn(2, ',');
+        let x = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let y = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        Ok((x, y))
+    }
+
     /// Capture the current visible content of a pane.
     pub async fn capture_pane(&self, pane_id: &str, scrollback: bool) -> Result<String> {
         let mut args = vec!["capture-pane", "-t", pane_id, "-p", "-e"];

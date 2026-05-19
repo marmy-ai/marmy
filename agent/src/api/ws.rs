@@ -96,12 +96,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             _ = pane_tick.tick() => {
                 for pane_id in &subscribed_panes {
                     if let Ok(content) = state.tmux.capture_pane(pane_id, true).await {
+                        let (cursor_x, cursor_y) = state.tmux.pane_cursor(pane_id).await.unwrap_or((0, 0));
                         let changed = last_content.get(pane_id).map_or(true, |prev| prev != &content);
                         if changed {
                             last_content.insert(pane_id.clone(), content.clone());
                             let msg = ServerMessage::PaneOutput {
                                 pane_id: pane_id.clone(),
                                 data: content,
+                                cursor_x,
+                                cursor_y,
                             };
                             if let Ok(json) = serde_json::to_string(&msg) {
                                 if ws_tx.send(Message::Text(json.into())).await.is_err() {
@@ -130,12 +133,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 // Immediately push updated content if this pane is subscribed
                                 if subscribed_panes.contains(&pane_id) {
                                     if let Ok(content) = state.tmux.capture_pane(&pane_id, true).await {
+                                        let (cursor_x, cursor_y) = state.tmux.pane_cursor(&pane_id).await.unwrap_or((0, 0));
                                         let changed = last_content.get(&pane_id).map_or(true, |prev| prev != &content);
                                         if changed {
                                             last_content.insert(pane_id.clone(), content.clone());
                                             let msg = ServerMessage::PaneOutput {
                                                 pane_id: pane_id.clone(),
                                                 data: content,
+                                                cursor_x,
+                                                cursor_y,
                                             };
                                             if let Ok(json) = serde_json::to_string(&msg) {
                                                 let _ = ws_tx.send(Message::Text(json.into())).await;
@@ -159,10 +165,13 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 subscribed_panes.insert(pane_id.clone());
                                 // Send initial content immediately
                                 if let Ok(content) = state.tmux.capture_pane(&pane_id, true).await {
+                                    let (cursor_x, cursor_y) = state.tmux.pane_cursor(&pane_id).await.unwrap_or((0, 0));
                                     last_content.insert(pane_id.clone(), content.clone());
                                     let msg = ServerMessage::PaneOutput {
                                         pane_id: pane_id.clone(),
                                         data: content,
+                                        cursor_x,
+                                        cursor_y,
                                     };
                                     if let Ok(json) = serde_json::to_string(&msg) {
                                         let _ = ws_tx.send(Message::Text(json.into())).await;
