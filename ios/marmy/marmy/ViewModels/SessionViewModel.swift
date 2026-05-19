@@ -178,6 +178,17 @@ final class SessionViewModel {
         await submit()
     }
 
+    // MARK: - File Upload
+
+    @MainActor
+    func uploadImage(data: Data, fileExtension: String) async {
+        do {
+            _ = try await apiClient.uploadFile(imageData: data, fileExtension: fileExtension, sessionName: sessionId)
+        } catch {
+            self.error = error
+        }
+    }
+
     // MARK: - Session Management
 
     @MainActor

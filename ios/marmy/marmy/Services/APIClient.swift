@@ -108,6 +108,60 @@ final class APIClient {
         )
     }
 
+    // MARK: - File Upload
+
+    func uploadFile(imageData: Data, fileExtension: String, sessionName: String) async throws -> UploadResponse {
+        guard config.isConfigured else { throw APIError.notConfigured }
+
+        let encodedName = sessionName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? sessionName
+        guard let url = URL(string: "/api/files/upload?session_name=\(encodedName)", relativeTo: config.baseURL) else {
+            throw APIError.invalidURL
+        }
+
+        let boundary = UUID().uuidString
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(config.authToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        let mimeType = imageMimeType(for: fileExtension)
+        let filename = "upload.\(fileExtension)"
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+
+        #if DEBUG
+        logRequest(request)
+        #endif
+
+        let (data, response) = try await session.data(for: request)
+
+        #if DEBUG
+        logResponse(response, data: data)
+        #endif
+
+        guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.unexpectedStatusCode(httpResponse.statusCode)
+        }
+        return try decoder.decode(UploadResponse.self, from: data)
+    }
+
+    private func imageMimeType(for ext: String) -> String {
+        switch ext.lowercased() {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "heic": return "image/heic"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        default: return "application/octet-stream"
+        }
+    }
+
     // MARK: - Private Request Handler
 
     private func request<T: Decodable>(
@@ -186,6 +240,11 @@ final class APIClient {
 // MARK: - Supporting Types
 
 struct EmptyResponse: Decodable {}
+
+struct UploadResponse: Decodable {
+    let path: String
+    let filename: String
+}
 
 enum APIError: LocalizedError {
     case notConfigured

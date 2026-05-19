@@ -40,6 +40,11 @@ struct SessionDetailView: View {
                 },
                 onMicTap: {
                     handleMicTap()
+                },
+                onImagePicked: { data, ext in
+                    Task {
+                        await viewModel.uploadImage(data: data, fileExtension: ext)
+                    }
                 }
             )
         }

@@ -52,6 +52,9 @@ pub struct SessionRoot {
 #[derive(Deserialize)]
 pub struct UploadQuery {
     pub pane_id: Option<String>,
+    /// Session name (tmux session name) as an alternative to pane_id.
+    /// The server resolves this to the active pane in the named session.
+    pub session_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -60,9 +63,9 @@ pub struct UploadResponse {
     pub filename: String,
 }
 
-/// POST /api/files/upload?pane_id=<id> — receive an image or file from the mobile app,
-/// save it locally, and (if pane_id is given) place it on the macOS clipboard and
-/// send Ctrl+V to the pane so Claude Code pastes it automatically.
+/// POST /api/files/upload?pane_id=<id> or ?session_name=<name> — receive an image or
+/// file from the mobile app, save it locally, place it on the macOS clipboard, and
+/// send Ctrl+V to the target pane so Claude Code pastes it automatically.
 pub async fn upload_file(
     State(state): State<AppState>,
     Query(query): Query<UploadQuery>,
@@ -108,12 +111,32 @@ pub async fn upload_file(
 
     let path_str = save_path.to_string_lossy().to_string();
 
-    if let Some(raw_pane_id) = query.pane_id {
-        let pane_id = if raw_pane_id.starts_with('%') {
-            raw_pane_id
+    // Resolve target pane_id: explicit pane_id takes precedence over session_name lookup.
+    let resolved_pane = if let Some(raw_id) = query.pane_id {
+        let pid = if raw_id.starts_with('%') { raw_id } else { format!("%{}", raw_id) };
+        Some(pid)
+    } else if let Some(session_name) = query.session_name {
+        // Find the active pane in the named session from the cached topology.
+        if let Ok(topology) = state.get_topology().await {
+            if let Some(session) = topology.sessions.iter().find(|s| s.name == session_name) {
+                let pane = topology
+                    .panes
+                    .iter()
+                    .filter(|p| p.session_id == session.id)
+                    .find(|p| p.active)
+                    .or_else(|| topology.panes.iter().find(|p| p.session_id == session.id));
+                pane.map(|p| p.id.clone())
+            } else {
+                None
+            }
         } else {
-            format!("%{}", raw_pane_id)
-        };
+            None
+        }
+    } else {
+        None
+    };
+
+    if let Some(pane_id) = resolved_pane {
         // Place the image on the macOS system clipboard via NSImage (handles PNG/JPEG/HEIC/…).
         set_clipboard_image(&path_str);
         // Ctrl+V (0x16) triggers Claude Code's paste-from-clipboard handler.
