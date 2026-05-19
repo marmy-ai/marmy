@@ -95,7 +95,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             // Poll subscribed panes for content changes
             _ = pane_tick.tick() => {
                 for pane_id in &subscribed_panes {
-                    if let Ok(content) = state.tmux.capture_pane(pane_id, true).await {
+                    if let Ok(content) = state.tmux.capture_pane(pane_id, false).await {
                         let (cursor_x, cursor_y) = state.tmux.pane_cursor(pane_id).await.unwrap_or((0, 0));
                         let changed = last_content.get(pane_id).map_or(true, |prev| prev != &content);
                         if changed {
@@ -132,7 +132,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 }
                                 // Immediately push updated content if this pane is subscribed
                                 if subscribed_panes.contains(&pane_id) {
-                                    if let Ok(content) = state.tmux.capture_pane(&pane_id, true).await {
+                                    if let Ok(content) = state.tmux.capture_pane(&pane_id, false).await {
                                         let (cursor_x, cursor_y) = state.tmux.pane_cursor(&pane_id).await.unwrap_or((0, 0));
                                         let changed = last_content.get(&pane_id).map_or(true, |prev| prev != &content);
                                         if changed {
@@ -164,7 +164,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                 let pane_id = normalize_pane_id(&pane_id);
                                 subscribed_panes.insert(pane_id.clone());
                                 // Send initial content immediately
-                                if let Ok(content) = state.tmux.capture_pane(&pane_id, true).await {
+                                if let Ok(content) = state.tmux.capture_pane(&pane_id, false).await {
                                     let (cursor_x, cursor_y) = state.tmux.pane_cursor(&pane_id).await.unwrap_or((0, 0));
                                     last_content.insert(pane_id.clone(), content.clone());
                                     let msg = ServerMessage::PaneOutput {

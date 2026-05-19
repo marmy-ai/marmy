@@ -108,6 +108,32 @@ final class APIClient {
         )
     }
 
+    // MARK: - Topology
+
+    func getTopology() async throws -> Topology {
+        return try await request(endpoint: "/api/sessions", method: "GET")
+    }
+
+    // MARK: - Panes
+
+    func getPaneContent(paneId: String) async throws -> String {
+        struct PaneContentResponse: Decodable { let content: String }
+        let resp: PaneContentResponse = try await request(
+            endpoint: "/api/panes/\(paneId)/content",
+            method: "GET"
+        )
+        return resp.content
+    }
+
+    func sendInput(paneId: String, keys: String) async throws {
+        struct InputBody: Encodable { let keys: String }
+        let _: EmptyResponse = try await request(
+            endpoint: "/api/panes/\(paneId)/input",
+            method: "POST",
+            body: InputBody(keys: keys)
+        )
+    }
+
     // MARK: - File Upload
 
     func uploadFile(imageData: Data, fileExtension: String, sessionName: String) async throws -> UploadResponse {

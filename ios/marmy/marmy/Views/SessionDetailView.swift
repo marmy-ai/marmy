@@ -22,7 +22,9 @@ struct SessionDetailView: View {
             // Terminal content
             TerminalView(
                 content: viewModel.sessionContent,
-                isLoading: viewModel.isLoading
+                isLoading: viewModel.isLoading,
+                cursorX: viewModel.cursorX,
+                cursorY: viewModel.cursorY
             )
 
             Divider()

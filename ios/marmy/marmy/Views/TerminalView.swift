@@ -8,6 +8,8 @@ import SwiftUI
 struct TerminalView: View {
     let content: String
     let isLoading: Bool
+    var cursorX: Int = -1
+    var cursorY: Int = -1
 
     @State private var fontSize: CGFloat = 14
     @State private var isAtBottom = true
@@ -92,12 +94,35 @@ struct TerminalView: View {
     // MARK: - Terminal Content
 
     private var terminalContent: some View {
-        (Text(content) + Text(cursorOn ? "▋" : " ")
-            .foregroundStyle(Color.terminalText.opacity(0.85)))
+        Text(displayedContent)
             .font(.terminalFont(size: fontSize))
             .foregroundStyle(Color.terminalText)
             .textSelection(.enabled)
             .lineSpacing(2)
+    }
+
+    private var displayedContent: String {
+        // If we have a real cursor position from the server, place the cursor there.
+        if cursorX >= 0, cursorY >= 0 {
+            return cursorOn ? contentWithCursor() : content
+        }
+        // Fallback: append cursor at end (e.g. no WS connection yet).
+        return content + (cursorOn ? "▋" : " ")
+    }
+
+    private func contentWithCursor() -> String {
+        var lines = content.components(separatedBy: "\n")
+        guard cursorY < lines.count else {
+            return content + "▋"
+        }
+        var chars = Array(lines[cursorY])
+        if cursorX < chars.count {
+            chars[cursorX] = "▋"
+        } else {
+            chars += Array(repeating: " ", count: cursorX - chars.count) + ["▋"]
+        }
+        lines[cursorY] = String(chars)
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Loading View

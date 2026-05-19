@@ -10,6 +10,8 @@ final class SessionViewModel {
     let project: Project
 
     private(set) var sessionContent: String = ""
+    private(set) var cursorX: Int = -1
+    private(set) var cursorY: Int = -1
     private(set) var isLoading = false
     private(set) var isSubmitting = false
     private(set) var error: Error?
@@ -23,6 +25,7 @@ final class SessionViewModel {
 
     private var pollingTask: Task<Void, Never>?
     private var useWebSocket = true
+    private var activePaneId: String?
 
     init(
         project: Project,
@@ -70,9 +73,10 @@ final class SessionViewModel {
         webSocketManager.onContentUpdate = { [weak self] content in
             guard let self = self else { return }
             self.sessionContent = content.content
+            self.cursorX = content.cursorX
+            self.cursorY = content.cursorY
             self.lastUpdated = content.timestamp
 
-            // Auto-read if enabled
             if UserDefaults.standard.autoReadEnabled {
                 self.readContent()
             }
@@ -86,17 +90,36 @@ final class SessionViewModel {
         isLoading = true
         error = nil
 
-        // First, fetch initial content
-        await loadContent()
+        // Resolve the active pane for this session, then start WS.
+        await resolveActivePaneAndConnect()
 
-        // Then try WebSocket
+        isLoading = false
+    }
+
+    @MainActor
+    private func resolveActivePaneAndConnect() async {
+        do {
+            let topology = try await apiClient.getTopology()
+            if let session = topology.sessions.first(where: { $0.name == sessionId }) {
+                let pane = topology.panes.filter { $0.sessionId == session.id }.first(where: { $0.active })
+                       ?? topology.panes.first(where: { $0.sessionId == session.id })
+                activePaneId = pane?.id
+                // Seed content from topology's pane (if available) so something shows immediately.
+                if sessionContent.isEmpty, let paneId = activePaneId {
+                    if let content = try? await apiClient.getPaneContent(paneId: paneId) {
+                        sessionContent = content
+                    }
+                }
+            }
+        } catch {
+            // Non-fatal — WS will connect without pane subscription.
+        }
+
         if useWebSocket {
-            webSocketManager.connect(sessionId: sessionId)
+            webSocketManager.connect(paneId: activePaneId)
         } else {
             startPolling()
         }
-
-        isLoading = false
     }
 
     func disconnect() {
@@ -109,27 +132,11 @@ final class SessionViewModel {
     // MARK: - Content Loading
 
     @MainActor
-    func loadContent() async {
-        do {
-            let content = try await apiClient.getSessionContent(id: sessionId)
-            sessionContent = content.content
-            lastUpdated = content.timestamp
-            error = nil
-        } catch let apiError as APIError {
-            if case .notFound = apiError {
-                // Session doesn't exist yet, that's OK
-                sessionContent = ""
-            } else {
-                error = apiError
-            }
-        } catch {
-            self.error = error
-        }
-    }
-
-    @MainActor
     func refresh() async {
-        await loadContent()
+        guard let paneId = activePaneId else { return }
+        if let content = try? await apiClient.getPaneContent(paneId: paneId) {
+            sessionContent = content
+        }
     }
 
     // MARK: - Polling Fallback
@@ -138,11 +145,9 @@ final class SessionViewModel {
         pollingTask?.cancel()
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
                 guard !Task.isCancelled else { break }
-
-                await self?.loadContent()
+                await self?.refresh()
             }
         }
     }
@@ -151,7 +156,7 @@ final class SessionViewModel {
 
     @MainActor
     func submit() async {
-        guard canSubmit else { return }
+        guard canSubmit, let paneId = activePaneId else { return }
 
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         inputText = ""
@@ -160,11 +165,7 @@ final class SessionViewModel {
         error = nil
 
         do {
-            try await apiClient.submitToSession(id: sessionId, text: text)
-
-            // Reload content after submission
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
-            await loadContent()
+            try await apiClient.sendInput(paneId: paneId, keys: text + "\n")
         } catch {
             self.error = error
         }
@@ -235,7 +236,7 @@ final class SessionViewModel {
 
         if enabled {
             pollingTask?.cancel()
-            webSocketManager.connect(sessionId: sessionId)
+            webSocketManager.connect(paneId: activePaneId)
         } else {
             webSocketManager.disconnect()
             startPolling()

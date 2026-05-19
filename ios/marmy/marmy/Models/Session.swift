@@ -14,10 +14,20 @@ struct Session: Identifiable, Codable {
     let lastActivity: Date
 }
 
-struct SessionContent: Codable {
+struct SessionContent {
     let sessionId: String
     let content: String
     let timestamp: Date
+    let cursorX: Int
+    let cursorY: Int
+
+    init(sessionId: String, content: String, timestamp: Date = .now, cursorX: Int = -1, cursorY: Int = -1) {
+        self.sessionId = sessionId
+        self.content = content
+        self.timestamp = timestamp
+        self.cursorX = cursorX
+        self.cursorY = cursorY
+    }
 }
 
 struct SessionsResponse: Codable {
