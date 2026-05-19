@@ -210,7 +210,9 @@ final class AgentManager: ObservableObject {
 
     private func buildEnv() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
+        let brewBin = FileManager.default.fileExists(atPath: "/opt/homebrew/bin/brew")
+            ? "/opt/homebrew/bin" : "/usr/local/bin"
+        env["PATH"] = "\(brewBin):/usr/bin:/bin:" + (env["PATH"] ?? "")
         env["TERM"] = env["TERM"] ?? "xterm-256color"
         env["HOME"] = env["HOME"] ?? NSHomeDirectory()
         return env
