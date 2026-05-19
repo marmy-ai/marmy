@@ -3,104 +3,117 @@ import ServiceManagement
 
 struct MenuBarView: View {
     @ObservedObject var manager: AgentManager
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = LaunchAtLoginController.isEnabled
 
     var body: some View {
-        // Status
-        Text("\(manager.status.icon) Agent: \(manager.status.label)")
+        VStack(alignment: .leading, spacing: 8) {
+            Group {
+                // Status
+                Text("\(manager.status.icon) Agent: \(manager.status.label)")
 
-        Divider()
-
-        // Pairing info
-        if let info = manager.pairingInfo {
-            Text("LAN: \(info.address)")
-                .font(.system(.body, design: .monospaced))
-            if let tsAddr = info.tailscaleAddress {
-                Text("Tailscale: \(tsAddr)")
-                    .font(.system(.body, design: .monospaced))
+                Divider()
             }
-            Text("Token: \(info.token)")
-                .font(.system(.body, design: .monospaced))
 
-            Button("Copy LAN Address") {
-                copyToClipboard(info.address)
-            }
-            if let tsAddr = info.tailscaleAddress {
-                Button("Copy Tailscale Address") {
-                    copyToClipboard(tsAddr)
+            Group {
+                // Pairing info
+                if let info = manager.pairingInfo {
+                    Text("LAN: \(info.address)")
+                        .font(.system(.body, design: .monospaced))
+                    if let tsAddr = info.tailscaleAddress {
+                        Text("Tailscale: \(tsAddr)")
+                            .font(.system(.body, design: .monospaced))
+                    }
+                    Text("Token: \(info.token)")
+                        .font(.system(.body, design: .monospaced))
+
+                    Button("Copy LAN Address") {
+                        copyToClipboard(info.address)
+                    }
+                    if let tsAddr = info.tailscaleAddress {
+                        Button("Copy Tailscale Address") {
+                            copyToClipboard(tsAddr)
+                        }
+                    }
+                    Button("Copy Token") {
+                        copyToClipboard(info.token)
+                    }
+                } else {
+                    Text("No config found")
+                        .foregroundColor(.secondary)
+                    Text("Run: marmy-agent serve")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
                 }
-            }
-            Button("Copy Token") {
-                copyToClipboard(info.token)
-            }
-        } else {
-            Text("No config found")
-                .foregroundColor(.secondary)
-            Text("Run: marmy-agent serve")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary)
-        }
 
-        Divider()
+                Divider()
+            }
 
-        // Sessions (expandable submenu like Tailscale's "My Devices")
-        if manager.status == .running && !manager.sessions.isEmpty {
-            Menu("Sessions (\(manager.sessions.count))") {
-                ForEach(manager.sessions) { session in
-                    Button(action: { openSession(session.name) }) {
-                        HStack {
-                            Text(session.name)
-                            Spacer()
-                            if session.unread {
-                                Image(systemName: "circle.fill")
-                            }
-                            if session.attached {
-                                Image(systemName: "desktopcomputer")
+            Group {
+                // Sessions (expandable submenu like Tailscale's "My Devices")
+                if manager.status == .running && !manager.sessions.isEmpty {
+                    Menu("Sessions (\(manager.sessions.count))") {
+                        ForEach(manager.sessions) { session in
+                            Button(action: { openSession(session.name) }) {
+                                HStack {
+                                    Text(session.name)
+                                    Spacer()
+                                    if session.unread {
+                                        Image(systemName: "circle.fill")
+                                    }
+                                    if session.attached {
+                                        Image(systemName: "desktopcomputer")
+                                    }
+                                }
                             }
                         }
                     }
+                    Divider()
                 }
-            }
-            Divider()
-        }
 
-        // Controls
-        if manager.status == .running || manager.status == .starting {
-            Button("Stop Agent") { manager.stop() }
-        } else {
-            Button("Start Agent") { manager.start() }
-        }
+                // Controls
+                if manager.status == .running || manager.status == .starting {
+                    Button("Stop Agent") { manager.stop() }
+                } else {
+                    Button("Start Agent") { manager.start() }
+                }
 
-        Button("Reload Config") { manager.reloadConfig() }
+                Button("Reload Config") { manager.reloadConfig() }
 
-        Divider()
-
-        // Voice mode
-        if let info = manager.pairingInfo, let key = info.geminiApiKey, !key.isEmpty {
-            Text("Voice Mode: Enabled")
-                .foregroundColor(.secondary)
-        } else {
-            Button("Set Up Voice Mode...") {
-                promptForGeminiKey()
-            }
-        }
-
-        Divider()
-
-        Toggle("Launch at Login", isOn: $launchAtLogin)
-            .onChange(of: launchAtLogin) { newValue in
-                setLaunchAtLogin(newValue)
+                Divider()
             }
 
-        Divider()
+            Group {
+                // Voice mode
+                if let info = manager.pairingInfo, let key = info.geminiApiKey, !key.isEmpty {
+                    Text("Voice Mode: Enabled")
+                        .foregroundColor(.secondary)
+                } else {
+                    Button("Set Up Voice Mode...") {
+                        promptForGeminiKey()
+                    }
+                }
 
-        Button("Quit MacMarmy") {
-            manager.stop()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NSApplication.shared.terminate(nil)
+                Divider()
+            }
+
+            Group {
+                Toggle("Launch at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { newValue in
+                        setLaunchAtLogin(newValue)
+                    }
+
+                Divider()
+
+                Button("Quit MacMarmy") {
+                    manager.stop()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        NSApplication.shared.terminate(nil)
+                    }
+                }
+                .keyboardShortcut("q")
             }
         }
-        .keyboardShortcut("q")
+        .padding(12)
     }
 
     private func promptForGeminiKey() {
@@ -151,14 +164,67 @@ struct MenuBarView: View {
     }
 
     private func setLaunchAtLogin(_ enabled: Bool) {
-        do {
-            if enabled {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-        } catch {
-            launchAtLogin = SMAppService.mainApp.status == .enabled
+        if !LaunchAtLoginController.setEnabled(enabled) {
+            launchAtLogin = LaunchAtLoginController.isEnabled
         }
+    }
+}
+
+enum LaunchAtLoginController {
+    private static let agentID = Bundle.main.bundleIdentifier ?? "com.marmy.macmarmy"
+    private static var launchAgentPlist: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/\(agentID).plist")
+    }
+
+    static var isEnabled: Bool {
+        if #available(macOS 13.0, *) {
+            return SMAppService.mainApp.status == .enabled
+        }
+        return FileManager.default.fileExists(atPath: launchAgentPlist.path)
+    }
+
+    @discardableResult
+    static func setEnabled(_ enabled: Bool) -> Bool {
+        if #available(macOS 13.0, *) {
+            do {
+                if enabled { try SMAppService.mainApp.register() }
+                else        { try SMAppService.mainApp.unregister() }
+                return true
+            } catch {
+                return false
+            }
+        }
+        return enabled ? writeLaunchAgent() : removeLaunchAgent()
+    }
+
+    private static func writeLaunchAgent() -> Bool {
+        guard let execPath = Bundle.main.executableURL?.path else { return false }
+        let xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>Label</key>
+                <string>\(agentID)</string>
+                <key>ProgramArguments</key>
+                <array>
+                    <string>\(execPath)</string>
+                </array>
+                <key>RunAtLoad</key>
+                <true/>
+                <key>KeepAlive</key>
+                <false/>
+            </dict>
+            </plist>
+            """
+        let dir = launchAgentPlist.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return (try? xml.write(to: launchAgentPlist, atomically: true, encoding: .utf8)) != nil
+    }
+
+    private static func removeLaunchAgent() -> Bool {
+        guard FileManager.default.fileExists(atPath: launchAgentPlist.path) else { return true }
+        return (try? FileManager.default.removeItem(at: launchAgentPlist)) != nil
     }
 }
