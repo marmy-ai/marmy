@@ -12,6 +12,7 @@ struct TerminalView: View {
     @State private var fontSize: CGFloat = 14
     @State private var isAtBottom = true
     @State private var showJumpToBottom = false
+    @State private var cursorOn = true
 
     private let minFontSize: CGFloat = 10
     private let maxFontSize: CGFloat = 24
@@ -38,6 +39,12 @@ struct TerminalView: View {
                     .padding()
                 }
                 .background(Color.terminalBackground)
+                .task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 530_000_000)
+                        cursorOn.toggle()
+                    }
+                }
                 .onChange(of: content) { _, _ in
                     if isAtBottom {
                         withAnimation {
@@ -85,7 +92,8 @@ struct TerminalView: View {
     // MARK: - Terminal Content
 
     private var terminalContent: some View {
-        Text(content)
+        (Text(content) + Text(cursorOn ? "▋" : " ")
+            .foregroundStyle(Color.terminalText.opacity(0.85)))
             .font(.terminalFont(size: fontSize))
             .foregroundStyle(Color.terminalText)
             .textSelection(.enabled)
