@@ -195,9 +195,9 @@ function renderContent(content: string) {
     const isPrompt = promptRegex.test(line);
 
     if (isPrompt && i > 0) {
-      elements.push(
-        <View key={`sep-${i}`} style={styles.promptSeparator} />
-      );
+      // Spacer line. Must be <Text>, not <View>: a View nested inside the
+      // selectable <Text> breaks iOS text selection across it.
+      elements.push(<Text key={`sep-${i}`}>{"\n"}</Text>);
     }
 
     const spans = parseAnsi(line);
@@ -362,9 +362,18 @@ export default function TerminalScreen() {
     setVoiceActive(false);
   };
 
-  // On-device STT
+  // On-device STT. iOS finalizes the recognition task periodically (and on
+  // long speech), which resets results[0] — so accumulate finalized segments
+  // instead of replacing, or the transcript "deletes and starts fresh".
+  const sttCommittedRef = useRef("");
   useSpeechRecognitionEvent("result", (event) => {
-    setSttTranscript(event.results[0]?.transcript ?? "");
+    const text = event.results[0]?.transcript ?? "";
+    if (event.isFinal) {
+      sttCommittedRef.current = `${sttCommittedRef.current} ${text}`.trim();
+      setSttTranscript(sttCommittedRef.current);
+    } else {
+      setSttTranscript(`${sttCommittedRef.current} ${text}`.trim());
+    }
   });
 
   useSpeechRecognitionEvent("end", () => {
@@ -378,6 +387,7 @@ export default function TerminalScreen() {
 
   const startStt = async () => {
     setSttTranscript("");
+    sttCommittedRef.current = "";
     setSttActive(true);
     ExpoSpeechRecognitionModule.start({
       lang: "en-US",
@@ -796,8 +806,11 @@ export default function TerminalScreen() {
         style={styles.terminalScroll}
         contentContainerStyle={styles.terminalContent}
         keyboardDismissMode="on-drag"
-        scrollEnabled={!selectionMode}
         alwaysBounceVertical
+        onScrollBeginDrag={() => {
+          // Scrolling means the user is done selecting — resume auto-follow.
+          if (selectionMode) setSelectionMode(false);
+        }}
         onContentSizeChange={() => {
           // Pin to the live bottom as content/layout settles (e.g. on open),
           // unless the user has deliberately scrolled up.
@@ -829,13 +842,13 @@ export default function TerminalScreen() {
           selectable
           style={styles.terminalTextContainer}
           onLongPress={() => {
-            // Long-press starts a selection; freeze scrolling so dragging the
-            // selection handles doesn't fight the ScrollView. No visible "mode".
+            // Long-press starts a selection — pause auto-scroll-to-bottom so
+            // streaming output doesn't yank the view out from under it.
             setSelectionMode(true);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           }}
           onPress={() => {
-            // A tap dismisses the native selection — re-enable scrolling to match.
+            // A tap finishes selecting — resume auto-follow.
             if (selectionMode) setSelectionMode(false);
           }}
         >
@@ -1127,12 +1140,6 @@ const styles = StyleSheet.create({
   },
   terminalLine: {
     // Inherits from parent Text
-  },
-  promptSeparator: {
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    marginTop: 6,
-    paddingTop: 4,
   },
   // Shortcut grid (shared by MSG and KB modes)
   kbGrid: {
