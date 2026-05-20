@@ -10,6 +10,7 @@ struct TerminalView: View {
     let isLoading: Bool
     var cursorX: Int = -1
     var cursorY: Int = -1
+    var paneHeight: Int = 50
 
     @State private var fontSize: CGFloat = 14
     @State private var isAtBottom = true
@@ -112,16 +113,19 @@ struct TerminalView: View {
 
     private func contentWithCursor() -> String {
         var lines = content.components(separatedBy: "\n")
-        guard cursorY < lines.count else {
+        // cursor_y is within the visible pane area; content includes full scrollback,
+        // so the actual line index = total_lines - pane_height + cursor_y.
+        let adjustedY = max(0, lines.count - paneHeight + cursorY)
+        guard adjustedY < lines.count else {
             return content + "▋"
         }
-        var chars = Array(lines[cursorY])
+        var chars = Array(lines[adjustedY])
         if cursorX < chars.count {
             chars[cursorX] = "▋"
         } else {
             chars += Array(repeating: " ", count: cursorX - chars.count) + ["▋"]
         }
-        lines[cursorY] = String(chars)
+        lines[adjustedY] = String(chars)
         return lines.joined(separator: "\n")
     }
 

@@ -24,7 +24,8 @@ struct SessionDetailView: View {
                 content: viewModel.sessionContent,
                 isLoading: viewModel.isLoading,
                 cursorX: viewModel.cursorX,
-                cursorY: viewModel.cursorY
+                cursorY: viewModel.cursorY,
+                paneHeight: viewModel.paneHeight
             )
 
             Divider()

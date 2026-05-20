@@ -26,6 +26,7 @@ final class SessionViewModel {
     private var pollingTask: Task<Void, Never>?
     private var useWebSocket = true
     private var activePaneId: String?
+    private(set) var paneHeight: Int = 50
 
     init(
         project: Project,
@@ -104,6 +105,7 @@ final class SessionViewModel {
                 let pane = topology.panes.filter { $0.sessionId == session.id }.first(where: { $0.active })
                        ?? topology.panes.first(where: { $0.sessionId == session.id })
                 activePaneId = pane?.id
+                paneHeight = pane?.height ?? 50
                 // Seed content from topology's pane (if available) so something shows immediately.
                 if sessionContent.isEmpty, let paneId = activePaneId {
                     if let content = try? await apiClient.getPaneContent(paneId: paneId) {
