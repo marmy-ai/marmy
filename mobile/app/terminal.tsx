@@ -12,7 +12,6 @@ import {
   AppState,
   Alert,
   ActivityIndicator,
-  ActionSheetIOS,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
@@ -456,23 +455,21 @@ export default function TerminalScreen() {
     await uploadImage({ uri: path, name: "pasted.png", type: "image/png" });
   };
 
-  // Toolbar image button — offer clipboard paste or the photo library.
-  const handleAddImage = () => {
+  // Toolbar image button — pick from the photo library.
+  const handlePickImage = () => {
     if (!api || !activePaneId || uploading) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: "Add an image",
-        options: ["Paste image from clipboard", "Choose from library", "Cancel"],
-        cancelButtonIndex: 2,
-      },
-      (idx) => {
-        const run =
-          idx === 0 ? pasteImageFromClipboard : idx === 1 ? pickImageFromLibrary : null;
-        run?.().catch((e) =>
-          Alert.alert("Image error", e instanceof Error ? e.message : String(e))
-        );
-      }
+    pickImageFromLibrary().catch((e) =>
+      Alert.alert("Image error", e instanceof Error ? e.message : String(e))
+    );
+  };
+
+  // Input-bar paste button — paste an image straight from the clipboard.
+  const handlePasteImage = () => {
+    if (!api || !activePaneId || uploading) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    pasteImageFromClipboard().catch((e) =>
+      Alert.alert("Image error", e instanceof Error ? e.message : String(e))
     );
   };
 
@@ -667,7 +664,7 @@ export default function TerminalScreen() {
 
         <TouchableOpacity
           style={styles.filesButton}
-          onPress={handleAddImage}
+          onPress={handlePickImage}
           disabled={uploading}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
@@ -988,6 +985,17 @@ export default function TerminalScreen() {
           onSubmitEditing={handleSubmitEditing}
           blurOnSubmit={!isKeyboardMode}
         />
+        <TouchableOpacity
+          style={styles.pasteBtn}
+          onPress={handlePasteImage}
+          disabled={uploading}
+        >
+          {uploading ? (
+            <ActivityIndicator size="small" color={theme.textSecondary} />
+          ) : (
+            <Ionicons name="clipboard-outline" size={20} color={theme.textSecondary} />
+          )}
+        </TouchableOpacity>
         {!isKeyboardMode && (
           <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
             <Text style={styles.sendBtnText}>Send</Text>
@@ -1234,6 +1242,14 @@ const styles = StyleSheet.create({
     height: 40,
   },
   sendBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  pasteBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: theme.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   // Segmented mode toggle
   segmentedToggle: {
     flexDirection: "row",
