@@ -17,8 +17,6 @@ import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import * as SecureStore from "expo-secure-store";
 import * as ImagePicker from "expo-image-picker";
-import PasteInput from "@mattermost/react-native-paste-input";
-import type { PastedFile } from "@mattermost/react-native-paste-input";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,11 +28,6 @@ import { VoiceSession } from "../src/services/voiceSession";
 import { theme } from "../src/theme";
 import type { VoiceState } from "../src/services/voiceSession";
 import VoiceCallBar from "../src/components/VoiceCallBar";
-import SttBar from "../src/components/SttBar";
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from "expo-speech-recognition";
 
 // Unified shortcut grid — shared by both MSG and KB modes
 const SHORTCUT_P1_ROW1 = [
@@ -75,7 +68,6 @@ const MIN_COLS = 40;
 const MAX_COLS = 200;
 const COLS_STEP = 10;
 const TERM_COLS_KEY = "marmy_termCols";
-const STT_ENABLED_KEY = "marmy_sttEnabled";
 const VOICE_KEEP_AWAKE_TAG = "marmy-voice-call";
 // SGR mouse-wheel sequences sent to the pane to scroll a full-screen TUI
 // (Claude Code) — it keeps its own scrollback, not visible to tmux's history.
@@ -252,9 +244,6 @@ export default function TerminalScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
-  const [sttEnabled, setSttEnabled] = useState(false);
-  const [sttActive, setSttActive] = useState(false);
-  const [sttTranscript, setSttTranscript] = useState("");
   const [codexNotifySupported, setCodexNotifySupported] = useState(false);
   const [codexNotifyOnDone, setCodexNotifyOnDone] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -266,9 +255,6 @@ export default function TerminalScreen() {
   useEffect(() => {
     SecureStore.getItemAsync(TERM_COLS_KEY).then((v) => {
       if (v) { const n = Number(v); if (n >= MIN_COLS && n <= MAX_COLS) setTermCols(n); }
-    });
-    SecureStore.getItemAsync(STT_ENABLED_KEY).then((v) => {
-      if (v === "true") setSttEnabled(true);
     });
   }, []);
 
@@ -364,51 +350,6 @@ export default function TerminalScreen() {
     setVoiceActive(false);
   };
 
-  // On-device STT. iOS finalizes the recognition task periodically (and on
-  // long speech), which resets results[0] — so accumulate finalized segments
-  // instead of replacing, or the transcript "deletes and starts fresh".
-  const sttCommittedRef = useRef("");
-  useSpeechRecognitionEvent("result", (event) => {
-    const text = event.results[0]?.transcript ?? "";
-    if (event.isFinal) {
-      sttCommittedRef.current = `${sttCommittedRef.current} ${text}`.trim();
-      setSttTranscript(sttCommittedRef.current);
-    } else {
-      setSttTranscript(`${sttCommittedRef.current} ${text}`.trim());
-    }
-  });
-
-  useSpeechRecognitionEvent("end", () => {
-    setSttActive(false);
-  });
-
-  useSpeechRecognitionEvent("error", (event) => {
-    console.error("[STT] Error:", event.error, event.message);
-    setSttActive(false);
-  });
-
-  const startStt = async () => {
-    setSttTranscript("");
-    sttCommittedRef.current = "";
-    setSttActive(true);
-    ExpoSpeechRecognitionModule.start({
-      lang: "en-US",
-      interimResults: true,
-      requiresOnDeviceRecognition: true,
-      continuous: true,
-    });
-  };
-
-  const stopStt = (confirm: boolean) => {
-    ExpoSpeechRecognitionModule.stop();
-    setSttActive(false);
-    if (confirm && sttTranscript.trim()) {
-      setInputText(sttTranscript.trim());
-      setIsKeyboardMode(false);
-    }
-    setSttTranscript("");
-  };
-
   const handleFiles = () => {
     if (!activeSessionId || !activeSessionName) return;
     router.push({
@@ -452,27 +393,6 @@ export default function TerminalScreen() {
     if (!api || !activePaneId || uploading) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     pickImageFromLibrary().catch((e) =>
-      Alert.alert("Image error", e instanceof Error ? e.message : String(e))
-    );
-  };
-
-  // Native image paste from the message box (PasteInput's onPaste callback) —
-  // triggered by the normal iOS double-tap → Paste menu.
-  const onInputPaste = (
-    error: string | null | undefined,
-    files: PastedFile[]
-  ) => {
-    if (error) {
-      Alert.alert("Paste failed", error);
-      return;
-    }
-    const f = files?.[0];
-    if (!f) return;
-    uploadImage({
-      uri: f.uri,
-      name: f.fileName || "pasted.png",
-      type: f.type || "image/png",
-    }).catch((e) =>
       Alert.alert("Image error", e instanceof Error ? e.message : String(e))
     );
   };
@@ -700,17 +620,14 @@ export default function TerminalScreen() {
 
         <TouchableOpacity
           style={styles.callButton}
-          onPress={sttEnabled
-            ? (sttActive ? () => stopStt(false) : startStt)
-            : (voiceActive ? stopVoice : startVoice)
-          }
+          onPress={voiceActive ? stopVoice : startVoice}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons
-            name={sttEnabled ? (sttActive ? "mic" : "mic-outline") : "call-outline"}
+            name="call-outline"
             size={22}
-            color={(sttEnabled ? sttActive : voiceActive) ? theme.error : theme.textSecondary}
-            style={(sttEnabled ? sttActive : voiceActive) ? { transform: [{ rotate: "135deg" }] } : undefined}
+            color={voiceActive ? theme.error : theme.textSecondary}
+            style={voiceActive ? { transform: [{ rotate: "135deg" }] } : undefined}
           />
         </TouchableOpacity>
 
@@ -779,22 +696,6 @@ export default function TerminalScreen() {
               <Text style={styles.settingsUnavailable}>Unavailable</Text>
             </View>
           )}
-
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={styles.settingsRow}
-            onPress={async () => {
-              const next = !sttEnabled;
-              setSttEnabled(next);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              await SecureStore.setItemAsync(STT_ENABLED_KEY, String(next));
-            }}
-          >
-            <Text style={styles.settingsLabel}>On-device STT</Text>
-            <View style={[styles.toggleTrack, sttEnabled && styles.toggleTrackActive]}>
-              <View style={[styles.toggleThumb, sttEnabled && styles.toggleThumbActive]} />
-            </View>
-          </TouchableOpacity>
 
           <View style={styles.settingsRow}>
             <Text style={styles.settingsLabel}>Width</Text>
@@ -992,7 +893,7 @@ export default function TerminalScreen() {
           </TouchableOpacity>
         </View>
 
-        <PasteInput
+        <TextInput
           style={[
             styles.textInput,
             !isKeyboardMode && { height: inputHeight },
@@ -1000,7 +901,6 @@ export default function TerminalScreen() {
           ]}
           value={inputText}
           onChangeText={handleChangeText}
-          onPaste={onInputPaste}
           onFocus={handleInputFocus}
           editable={!voiceActive}
           multiline={!isKeyboardMode}
@@ -1027,16 +927,6 @@ export default function TerminalScreen() {
           </TouchableOpacity>
         )}
       </View>
-      {/* Floating STT overlay */}
-      {sttActive && (
-        <View style={styles.voiceOverlayWrapper} pointerEvents="box-none">
-          <SttBar
-            transcript={sttTranscript}
-            onDone={() => stopStt(true)}
-            onCancel={() => stopStt(false)}
-          />
-        </View>
-      )}
 
       {/* Floating voice call overlay */}
       {voiceActive && (

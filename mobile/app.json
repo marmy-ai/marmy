@@ -15,7 +15,6 @@
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Marmy needs microphone access for voice mode to talk with your terminal sessions.",
         "NSPhotoLibraryUsageDescription": "Marmy needs photo library access so you can attach images to your terminal sessions.",
-        "NSSpeechRecognitionUsageDescription": "Marmy uses on-device speech recognition to transcribe your voice into terminal commands.",
         "NSLocalNetworkUsageDescription": "Marmy needs local network access to connect to your development machines.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
@@ -31,7 +30,6 @@
     },
     "plugins": [
       "expo-router",
-      "expo-speech-recognition",
       "expo-secure-store",
       "expo-asset",
       [

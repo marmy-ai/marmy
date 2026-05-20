@@ -51,8 +51,6 @@
     <string>Marmy needs microphone access for voice mode to talk with your terminal sessions.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Marmy needs photo library access so you can attach images to your terminal sessions.</string>
-    <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Marmy uses on-device speech recognition to transcribe your voice into terminal commands.</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
