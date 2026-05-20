@@ -6,114 +6,101 @@ struct MenuBarView: View {
     @State private var launchAtLogin = LaunchAtLoginController.isEnabled
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Group {
-                // Status
-                Text("\(manager.status.icon) Agent: \(manager.status.label)")
+        // Status
+        Text("\(manager.status.icon) Agent: \(manager.status.label)")
 
-                Divider()
+        Divider()
+
+        // Pairing info
+        if let info = manager.pairingInfo {
+            Text("LAN: \(info.address)")
+                .font(.system(.body, design: .monospaced))
+            if let tsAddr = info.tailscaleAddress {
+                Text("Tailscale: \(tsAddr)")
+                    .font(.system(.body, design: .monospaced))
             }
+            Text("Token: \(info.token)")
+                .font(.system(.body, design: .monospaced))
 
-            Group {
-                // Pairing info
-                if let info = manager.pairingInfo {
-                    Text("LAN: \(info.address)")
-                        .font(.system(.body, design: .monospaced))
-                    if let tsAddr = info.tailscaleAddress {
-                        Text("Tailscale: \(tsAddr)")
-                            .font(.system(.body, design: .monospaced))
-                    }
-                    Text("Token: \(info.token)")
-                        .font(.system(.body, design: .monospaced))
-
-                    Button("Copy LAN Address") {
-                        copyToClipboard(info.address)
-                    }
-                    if let tsAddr = info.tailscaleAddress {
-                        Button("Copy Tailscale Address") {
-                            copyToClipboard(tsAddr)
-                        }
-                    }
-                    Button("Copy Token") {
-                        copyToClipboard(info.token)
-                    }
-                } else {
-                    Text("No config found")
-                        .foregroundColor(.secondary)
-                    Text("Run: marmy-agent serve")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.secondary)
+            Button("Copy LAN Address") {
+                copyToClipboard(info.address)
+            }
+            if let tsAddr = info.tailscaleAddress {
+                Button("Copy Tailscale Address") {
+                    copyToClipboard(tsAddr)
                 }
-
-                Divider()
             }
+            Button("Copy Token") {
+                copyToClipboard(info.token)
+            }
+        } else {
+            Text("No config found")
+                .foregroundColor(.secondary)
+            Text("Run: marmy-agent serve")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary)
+        }
 
-            Group {
-                // Sessions (expandable submenu like Tailscale's "My Devices")
-                if manager.status == .running && !manager.sessions.isEmpty {
-                    Menu("Sessions (\(manager.sessions.count))") {
-                        ForEach(manager.sessions) { session in
-                            Button(action: { openSession(session.name) }) {
-                                HStack {
-                                    Text(session.name)
-                                    Spacer()
-                                    if session.unread {
-                                        Image(systemName: "circle.fill")
-                                    }
-                                    if session.attached {
-                                        Image(systemName: "desktopcomputer")
-                                    }
-                                }
+        Divider()
+
+        // Sessions (expandable submenu like Tailscale's "My Devices")
+        if manager.status == .running && !manager.sessions.isEmpty {
+            Menu("Sessions (\(manager.sessions.count))") {
+                ForEach(manager.sessions) { session in
+                    Button(action: { openSession(session.name) }) {
+                        HStack {
+                            Text(session.name)
+                            Spacer()
+                            if session.unread {
+                                Image(systemName: "circle.fill")
+                            }
+                            if session.attached {
+                                Image(systemName: "desktopcomputer")
                             }
                         }
                     }
-                    Divider()
                 }
-
-                // Controls
-                if manager.status == .running || manager.status == .starting {
-                    Button("Stop Agent") { manager.stop() }
-                } else {
-                    Button("Start Agent") { manager.start() }
-                }
-
-                Button("Reload Config") { manager.reloadConfig() }
-
-                Divider()
             }
+            Divider()
+        }
 
-            Group {
-                // Voice mode
-                if let info = manager.pairingInfo, let key = info.geminiApiKey, !key.isEmpty {
-                    Text("Voice Mode: Enabled")
-                        .foregroundColor(.secondary)
-                } else {
-                    Button("Set Up Voice Mode...") {
-                        promptForGeminiKey()
-                    }
-                }
+        // Controls
+        if manager.status == .running || manager.status == .starting {
+            Button("Stop Agent") { manager.stop() }
+        } else {
+            Button("Start Agent") { manager.start() }
+        }
 
-                Divider()
-            }
+        Button("Reload Config") { manager.reloadConfig() }
 
-            Group {
-                Toggle("Launch at Login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { newValue in
-                        setLaunchAtLogin(newValue)
-                    }
+        Divider()
 
-                Divider()
-
-                Button("Quit MacMarmy") {
-                    manager.stop()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        NSApplication.shared.terminate(nil)
-                    }
-                }
-                .keyboardShortcut("q")
+        // Voice mode
+        if let info = manager.pairingInfo, let key = info.geminiApiKey, !key.isEmpty {
+            Text("Voice Mode: Enabled")
+                .foregroundColor(.secondary)
+        } else {
+            Button("Set Up Voice Mode...") {
+                promptForGeminiKey()
             }
         }
-        .padding(12)
+
+        Divider()
+
+        Toggle("Launch at Login", isOn: $launchAtLogin)
+            .onChange(of: launchAtLogin) { newValue in
+                setLaunchAtLogin(newValue)
+            }
+
+        Divider()
+
+        Button("Quit MacMarmy") {
+            manager.stop()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+        .keyboardShortcut("q")
     }
 
     private func promptForGeminiKey() {

@@ -85,22 +85,6 @@ final class APIClient {
         )
     }
 
-    func getSessionContent(id: String) async throws -> SessionContent {
-        return try await request(
-            endpoint: "/api/sessions/\(id)/content",
-            method: "GET"
-        )
-    }
-
-    func submitToSession(id: String, text: String) async throws {
-        let body = SubmitRequest(text: text)
-        let _: EmptyResponse = try await request(
-            endpoint: "/api/sessions/\(id)/submit",
-            method: "POST",
-            body: body
-        )
-    }
-
     func deleteSession(id: String) async throws {
         let _: EmptyResponse = try await request(
             endpoint: "/api/sessions/\(id)",

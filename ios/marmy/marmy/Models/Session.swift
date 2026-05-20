@@ -33,7 +33,3 @@ struct SessionContent {
 struct SessionsResponse: Codable {
     let sessions: [Session]
 }
-
-struct SubmitRequest: Codable {
-    let text: String
-}

@@ -7,6 +7,7 @@ pub mod voice;
 pub mod ws;
 
 use axum::{
+    extract::DefaultBodyLimit,
     http::{header, Method},
     middleware,
     routing::{delete, get, post},
@@ -40,7 +41,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/files/tree", get(files::list_dir))
         .route("/api/files/content", get(files::read_file))
         .route("/api/files/raw", get(files::raw_file))
-        .route("/api/files/upload", post(files::upload_file))
+        // 25 MB cap — large enough for phone screenshots/photos, which exceed
+        // axum's 2 MB default request-body limit.
+        .route(
+            "/api/files/upload",
+            post(files::upload_file).layer(DefaultBodyLimit::max(25 * 1024 * 1024)),
+        )
         .route("/api/cc/sessions", get(cc::list_sessions))
         .route("/api/cc/sessions/:id/context", get(cc::get_session_context))
         .route("/api/cc/dashboard/start", post(cc::start_dashboard))
