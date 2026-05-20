@@ -12,11 +12,14 @@ import {
   AppState,
   Alert,
   ActivityIndicator,
+  ActionSheetIOS,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import * as SecureStore from "expo-secure-store";
 import * as ImagePicker from "expo-image-picker";
+import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system/legacy";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -75,6 +78,10 @@ const COLS_STEP = 10;
 const TERM_COLS_KEY = "marmy_termCols";
 const STT_ENABLED_KEY = "marmy_sttEnabled";
 const VOICE_KEEP_AWAKE_TAG = "marmy-voice-call";
+// SGR mouse-wheel sequences sent to the pane to scroll a full-screen TUI
+// (Claude Code) — it keeps its own scrollback, not visible to tmux's history.
+const WHEEL_UP = "\x1b[<64;10;20M";
+const WHEEL_DOWN = "\x1b[<65;10;20M";
 const TERMINAL_TEXT = "#f1f5f9";
 const TERMINAL_DIM_TEXT = "#a8b0bd";
 
@@ -252,7 +259,7 @@ export default function TerminalScreen() {
   const [codexNotifySupported, setCodexNotifySupported] = useState(false);
   const [codexNotifyOnDone, setCodexNotifyOnDone] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [reloadingScrollback, setReloadingScrollback] = useState(false);
+  const lastWheelRef = useRef(0);
 
   // Restore saved settings on mount
   useEffect(() => {
@@ -399,47 +406,74 @@ export default function TerminalScreen() {
     });
   };
 
-  // Re-fetch the full scrollback over REST. Useful when the live stream is
-  // showing a stale or partial buffer after reconnecting or switching machines.
-  const handleReloadScrollback = async () => {
-    if (!api || !activePaneId || reloadingScrollback) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setReloadingScrollback(true);
-    try {
-      const hist = await api.getPaneHistory(activePaneId);
-      lastContentRef.current = hist.content;
-      setContent(hist.content);
-      isScrolledUp.current = false;
-      setSettingsOpen(false);
-    } catch (e) {
-      Alert.alert("Reload failed", e instanceof Error ? e.message : String(e));
-    } finally {
-      setReloadingScrollback(false);
-    }
-  };
-
-  // Pick an image from the photo library and upload it to the agent, which
-  // puts it on the host clipboard and pastes it into the active pane.
-  const handleUploadImage = async () => {
-    if (!api || !activePaneId || uploading) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.9,
-    });
-    if (result.canceled || !result.assets?.length) return;
-    const asset = result.assets[0];
-    const name = asset.fileName || `image.${asset.uri.split(".").pop() || "jpg"}`;
-    const type = asset.mimeType || "image/jpeg";
+  // Upload an image to the agent, which puts it on the host clipboard and
+  // pastes it into the active pane (Claude Code then shows it as [Image #N]).
+  const uploadImage = async (file: { uri: string; name: string; type: string }) => {
+    if (!api || !activePaneId) return;
     setUploading(true);
     try {
-      await api.uploadFile(activePaneId, { uri: asset.uri, name, type });
+      await api.uploadFile(activePaneId, file);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       Alert.alert("Upload failed", e instanceof Error ? e.message : String(e));
     } finally {
       setUploading(false);
     }
+  };
+
+  // Pick an image from the photo library.
+  const pickImageFromLibrary = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+    await uploadImage({
+      uri: asset.uri,
+      name: asset.fileName || `image.${asset.uri.split(".").pop() || "jpg"}`,
+      type: asset.mimeType || "image/jpeg",
+    });
+  };
+
+  // Paste an image straight off the iOS clipboard.
+  const pasteImageFromClipboard = async () => {
+    if (!(await Clipboard.hasImageAsync())) {
+      Alert.alert("No image", "There's no image on the clipboard to paste.");
+      return;
+    }
+    const img = await Clipboard.getImageAsync({ format: "png" });
+    if (!img?.data) {
+      Alert.alert("Paste failed", "Could not read the image from the clipboard.");
+      return;
+    }
+    // img.data is a base64 data URI — write it to a temp file so it can upload.
+    const base64 = img.data.includes(",") ? img.data.split(",")[1] : img.data;
+    const path = `${FileSystem.cacheDirectory}marmy-paste-${Date.now()}.png`;
+    await FileSystem.writeAsStringAsync(path, base64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    await uploadImage({ uri: path, name: "pasted.png", type: "image/png" });
+  };
+
+  // Toolbar image button — offer clipboard paste or the photo library.
+  const handleAddImage = () => {
+    if (!api || !activePaneId || uploading) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: "Add an image",
+        options: ["Paste image from clipboard", "Choose from library", "Cancel"],
+        cancelButtonIndex: 2,
+      },
+      (idx) => {
+        const run =
+          idx === 0 ? pasteImageFromClipboard : idx === 1 ? pickImageFromLibrary : null;
+        run?.().catch((e) =>
+          Alert.alert("Image error", e instanceof Error ? e.message : String(e))
+        );
+      }
+    );
   };
 
   // Resize the tmux window whenever pane or cols changes
@@ -633,7 +667,7 @@ export default function TerminalScreen() {
 
         <TouchableOpacity
           style={styles.filesButton}
-          onPress={handleUploadImage}
+          onPress={handleAddImage}
           disabled={uploading}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
@@ -761,20 +795,6 @@ export default function TerminalScreen() {
             />
             <Text style={styles.settingsValue}>{termCols}</Text>
           </View>
-
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={styles.settingsRow}
-            onPress={handleReloadScrollback}
-            disabled={reloadingScrollback}
-          >
-            <Text style={styles.settingsLabel}>Reload scrollback</Text>
-            {reloadingScrollback ? (
-              <ActivityIndicator size="small" color={theme.textSecondary} />
-            ) : (
-              <Ionicons name="refresh" size={18} color={theme.textSecondary} />
-            )}
-          </TouchableOpacity>
         </View>
       )}
 
@@ -785,12 +805,26 @@ export default function TerminalScreen() {
         contentContainerStyle={styles.terminalContent}
         keyboardDismissMode="on-drag"
         scrollEnabled={!selectionMode}
+        alwaysBounceVertical
         onScroll={(e) => {
           const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
           const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
           isScrolledUp.current = distanceFromBottom > 50;
+          // The captured frame is only one screen — over-scrolling past an edge
+          // drives Claude Code's own scrollback by sending it wheel events.
+          if (selectionMode || !socket || !activePaneId) return;
+          const overTop = contentOffset.y < -8;
+          const overBottom = distanceFromBottom < -8;
+          if (!overTop && !overBottom) return;
+          const now = Date.now();
+          if (now - lastWheelRef.current < 60) return;
+          lastWheelRef.current = now;
+          const seq = overTop ? WHEEL_UP : WHEEL_DOWN;
+          socket.sendInput(activePaneId, seq);
+          socket.sendInput(activePaneId, seq);
+          socket.sendInput(activePaneId, seq);
         }}
-        scrollEventThrottle={100}
+        scrollEventThrottle={16}
       >
         <Text
           selectable
