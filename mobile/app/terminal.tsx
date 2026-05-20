@@ -259,6 +259,8 @@ export default function TerminalScreen() {
   const [codexNotifyOnDone, setCodexNotifyOnDone] = useState(false);
   const [uploading, setUploading] = useState(false);
   const lastWheelRef = useRef(0);
+  const wheelAccelRef = useRef({ dir: 0, ticks: 0, lastTime: 0 });
+  const scrolledHistoryRef = useRef(false);
 
   // Restore saved settings on mount
   useEffect(() => {
@@ -473,6 +475,18 @@ export default function TerminalScreen() {
     }).catch((e) =>
       Alert.alert("Image error", e instanceof Error ? e.message : String(e))
     );
+  };
+
+  // Tapping the message box jumps to the live bottom — both the local view
+  // and Claude Code itself, in case the user was reading scrollback.
+  const handleInputFocus = () => {
+    isScrolledUp.current = false;
+    scrollRef.current?.scrollToEnd({ animated: false });
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 350);
+    if (scrolledHistoryRef.current && socket && activePaneId) {
+      for (let i = 0; i < 60; i++) socket.sendInput(activePaneId, WHEEL_DOWN);
+      scrolledHistoryRef.current = false;
+    }
   };
 
   // Resize the tmux window whenever pane or cols changes
@@ -826,15 +840,20 @@ export default function TerminalScreen() {
           // drives Claude Code's own scrollback by sending it wheel events.
           if (selectionMode || !socket || !activePaneId) return;
           const overTop = contentOffset.y < -8;
-          const overBottom = distanceFromBottom < -8;
-          if (!overTop && !overBottom) return;
+          const dir = overTop ? -1 : distanceFromBottom < -8 ? 1 : 0;
+          if (dir === 0) return;
           const now = Date.now();
-          if (now - lastWheelRef.current < 60) return;
+          if (now - lastWheelRef.current < 50) return;
+          // Sustained scrolling in one direction accelerates.
+          const accel = wheelAccelRef.current;
+          if (dir === accel.dir && now - accel.lastTime < 600) accel.ticks += 1;
+          else { accel.dir = dir; accel.ticks = 0; }
+          accel.lastTime = now;
           lastWheelRef.current = now;
-          const seq = overTop ? WHEEL_UP : WHEEL_DOWN;
-          socket.sendInput(activePaneId, seq);
-          socket.sendInput(activePaneId, seq);
-          socket.sendInput(activePaneId, seq);
+          if (dir === -1) scrolledHistoryRef.current = true;
+          const count = Math.min(3 + accel.ticks, 8);
+          const seq = dir === -1 ? WHEEL_UP : WHEEL_DOWN;
+          for (let i = 0; i < count; i++) socket.sendInput(activePaneId, seq);
         }}
         scrollEventThrottle={16}
       >
@@ -982,6 +1001,7 @@ export default function TerminalScreen() {
           value={inputText}
           onChangeText={handleChangeText}
           onPaste={onInputPaste}
+          onFocus={handleInputFocus}
           editable={!voiceActive}
           multiline={!isKeyboardMode}
           onContentSizeChange={(e) => {
