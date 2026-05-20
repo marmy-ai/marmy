@@ -247,9 +247,8 @@ export default function TerminalScreen() {
   const [codexNotifySupported, setCodexNotifySupported] = useState(false);
   const [codexNotifyOnDone, setCodexNotifyOnDone] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const lastWheelRef = useRef(0);
-  const wheelAccelRef = useRef({ dir: 0, ticks: 0, lastTime: 0 });
   const scrolledHistoryRef = useRef(false);
+  const dragRef = useRef({ active: false, anchor: 0, mult: 1, lastEnd: 0 });
 
   // Restore saved settings on mount
   useEffect(() => {
@@ -725,6 +724,15 @@ export default function TerminalScreen() {
         onScrollBeginDrag={() => {
           // Scrolling means the user is done selecting — resume auto-follow.
           if (selectionMode) setSelectionMode(false);
+          const d = dragRef.current;
+          // Consecutive quick drags accelerate; a lone/slow drag stays at 1x.
+          d.mult = Date.now() - d.lastEnd < 450 ? Math.min(d.mult + 1, 4) : 1;
+          d.active = true;
+          d.anchor = 0;
+        }}
+        onScrollEndDrag={() => {
+          dragRef.current.active = false;
+          dragRef.current.lastEnd = Date.now();
         }}
         onContentSizeChange={() => {
           // Pin to the live bottom as content/layout settles (e.g. on open),
@@ -737,24 +745,26 @@ export default function TerminalScreen() {
           const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
           const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
           isScrolledUp.current = distanceFromBottom > 50;
-          // The captured frame is only one screen — over-scrolling past an edge
-          // drives Claude Code's own scrollback by sending it wheel events.
-          if (selectionMode || !socket || !activePaneId) return;
-          const overTop = contentOffset.y < -8;
-          const dir = overTop ? -1 : distanceFromBottom < -8 ? 1 : 0;
-          if (dir === 0) return;
-          const now = Date.now();
-          if (now - lastWheelRef.current < 50) return;
-          // Sustained scrolling in one direction accelerates.
-          const accel = wheelAccelRef.current;
-          if (dir === accel.dir && now - accel.lastTime < 600) accel.ticks += 1;
-          else { accel.dir = dir; accel.ticks = 0; }
-          accel.lastTime = now;
-          lastWheelRef.current = now;
+          // Over-scrolling past an edge drives Claude Code's own scrollback.
+          // Wheel events are sent in proportion to how far past the edge the
+          // finger has actually dragged — so a gentle pull scrolls slowly and
+          // a hard pull scrolls fast. Only while actively dragging, never on
+          // the passive rubber-band bounce.
+          const d = dragRef.current;
+          if (selectionMode || !socket || !activePaneId || !d.active) return;
+          const overTop = contentOffset.y < -6;
+          const overBottom = distanceFromBottom < -6;
+          const dir = overTop ? -1 : overBottom ? 1 : 0;
+          if (dir === 0) { d.anchor = 0; return; }
+          const overshoot = overTop ? -contentOffset.y : -distanceFromBottom;
+          if (overshoot < d.anchor) d.anchor = overshoot;
+          const steps = Math.floor((overshoot - d.anchor) / 16);
+          if (steps <= 0) return;
+          d.anchor += steps * 16;
           if (dir === -1) scrolledHistoryRef.current = true;
-          const count = Math.min(3 + accel.ticks, 8);
           const seq = dir === -1 ? WHEEL_UP : WHEEL_DOWN;
-          for (let i = 0; i < count; i++) socket.sendInput(activePaneId, seq);
+          const total = Math.min(steps * d.mult, 30);
+          for (let i = 0; i < total; i++) socket.sendInput(activePaneId, seq);
         }}
         scrollEventThrottle={16}
       >
