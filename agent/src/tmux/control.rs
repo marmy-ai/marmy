@@ -32,6 +32,21 @@ impl TmuxController {
             .run_tmux(&["set-environment", "-g", "-u", "CLAUDECODE"])
             .await;
 
+        // Remove NO_COLOR if set — it disables all terminal colors including
+        // Claude Code's suggestion text grey.
+        let _ = controller
+            .run_tmux(&["set-environment", "-g", "-u", "NO_COLOR"])
+            .await;
+
+        // Advertise true color support so Claude Code renders suggestion text
+        // as a distinct grey instead of the same color as regular input text.
+        let _ = controller
+            .run_tmux(&["set-environment", "-g", "COLORTERM", "truecolor"])
+            .await;
+        let _ = controller
+            .run_tmux(&["set-option", "-ga", "terminal-overrides", ",xterm*:Tc"])
+            .await;
+
         // Create the heartbeat session
         controller
             .run_tmux(&[
@@ -138,6 +153,25 @@ impl TmuxController {
 
         let panes = output.lines().filter_map(parse_pane_line).collect();
         Ok(panes)
+    }
+
+    /// Return the cursor position (col, row) within the visible pane area (0-based).
+    /// Row 0 is the top of the visible area. Use alongside pane height and scrollback
+    /// line count to locate the cursor in the full scrollback buffer.
+    pub async fn pane_cursor(&self, pane_id: &str) -> Result<(u32, u32)> {
+        let out = self
+            .run_tmux(&[
+                "display-message",
+                "-t",
+                pane_id,
+                "-p",
+                "#{pane_cursor_x},#{pane_cursor_y}",
+            ])
+            .await?;
+        let mut parts = out.trim().splitn(2, ',');
+        let x = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let y = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        Ok((x, y))
     }
 
     /// Capture the current visible content of a pane.

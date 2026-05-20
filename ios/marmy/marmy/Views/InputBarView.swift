@@ -3,7 +3,9 @@
 //  marmy
 //
 
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct InputBarView: View {
     @Binding var text: String
@@ -12,11 +14,29 @@ struct InputBarView: View {
     let canSubmit: Bool
     let onSubmit: () -> Void
     let onMicTap: () -> Void
+    var onImagePicked: ((Data, String) -> Void)? = nil
 
     @FocusState private var isFocused: Bool
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isUploadingImage = false
 
     var body: some View {
         HStack(spacing: 12) {
+            // Attachment button
+            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                Image(systemName: isUploadingImage ? "arrow.up.circle" : "paperclip")
+                    .font(.title3)
+                    .foregroundStyle(isUploadingImage ? Color.blue : Color.primary)
+                    .frame(width: 44, height: 44)
+            }
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                guard let item = newItem else { return }
+                Task {
+                    await loadAndForwardImage(item)
+                    selectedPhotoItem = nil
+                }
+            }
+
             // Microphone button
             Button(action: onMicTap) {
                 Image(systemName: isRecording ? "mic.fill" : "mic")
@@ -66,6 +86,29 @@ struct InputBarView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    private func loadAndForwardImage(_ item: PhotosPickerItem) async {
+        guard onImagePicked != nil else { return }
+        isUploadingImage = true
+        defer { isUploadingImage = false }
+
+        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+
+        // Determine extension from the picker item's declared content type.
+        let ext: String
+        if let contentType = item.supportedContentTypes.first {
+            if contentType.conforms(to: .jpeg) { ext = "jpg" }
+            else if contentType.conforms(to: .png) { ext = "png" }
+            else if contentType.conforms(to: UTType("public.heic") ?? .image) { ext = "heic" }
+            else if contentType.conforms(to: .gif) { ext = "gif" }
+            else if contentType.conforms(to: UTType("org.webmproject.webp") ?? .image) { ext = "webp" }
+            else { ext = "jpg" }
+        } else {
+            ext = "jpg"
+        }
+
+        onImagePicked?(data, ext)
     }
 }
 

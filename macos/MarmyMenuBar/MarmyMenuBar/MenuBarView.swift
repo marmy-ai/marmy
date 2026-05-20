@@ -3,7 +3,7 @@ import ServiceManagement
 
 struct MenuBarView: View {
     @ObservedObject var manager: AgentManager
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = LaunchAtLoginController.isEnabled
 
     var body: some View {
         // Status
@@ -151,14 +151,67 @@ struct MenuBarView: View {
     }
 
     private func setLaunchAtLogin(_ enabled: Bool) {
-        do {
-            if enabled {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-        } catch {
-            launchAtLogin = SMAppService.mainApp.status == .enabled
+        if !LaunchAtLoginController.setEnabled(enabled) {
+            launchAtLogin = LaunchAtLoginController.isEnabled
         }
+    }
+}
+
+enum LaunchAtLoginController {
+    private static let agentID = Bundle.main.bundleIdentifier ?? "com.marmy.macmarmy"
+    private static var launchAgentPlist: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/\(agentID).plist")
+    }
+
+    static var isEnabled: Bool {
+        if #available(macOS 13.0, *) {
+            return SMAppService.mainApp.status == .enabled
+        }
+        return FileManager.default.fileExists(atPath: launchAgentPlist.path)
+    }
+
+    @discardableResult
+    static func setEnabled(_ enabled: Bool) -> Bool {
+        if #available(macOS 13.0, *) {
+            do {
+                if enabled { try SMAppService.mainApp.register() }
+                else        { try SMAppService.mainApp.unregister() }
+                return true
+            } catch {
+                return false
+            }
+        }
+        return enabled ? writeLaunchAgent() : removeLaunchAgent()
+    }
+
+    private static func writeLaunchAgent() -> Bool {
+        guard let execPath = Bundle.main.executableURL?.path else { return false }
+        let xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>Label</key>
+                <string>\(agentID)</string>
+                <key>ProgramArguments</key>
+                <array>
+                    <string>\(execPath)</string>
+                </array>
+                <key>RunAtLoad</key>
+                <true/>
+                <key>KeepAlive</key>
+                <false/>
+            </dict>
+            </plist>
+            """
+        let dir = launchAgentPlist.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return (try? xml.write(to: launchAgentPlist, atomically: true, encoding: .utf8)) != nil
+    }
+
+    private static func removeLaunchAgent() -> Bool {
+        guard FileManager.default.fileExists(atPath: launchAgentPlist.path) else { return true }
+        return (try? FileManager.default.removeItem(at: launchAgentPlist)) != nil
     }
 }

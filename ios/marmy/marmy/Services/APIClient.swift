@@ -85,27 +85,91 @@ final class APIClient {
         )
     }
 
-    func getSessionContent(id: String) async throws -> SessionContent {
-        return try await request(
-            endpoint: "/api/sessions/\(id)/content",
-            method: "GET"
-        )
-    }
-
-    func submitToSession(id: String, text: String) async throws {
-        let body = SubmitRequest(text: text)
-        let _: EmptyResponse = try await request(
-            endpoint: "/api/sessions/\(id)/submit",
-            method: "POST",
-            body: body
-        )
-    }
-
     func deleteSession(id: String) async throws {
         let _: EmptyResponse = try await request(
             endpoint: "/api/sessions/\(id)",
             method: "DELETE"
         )
+    }
+
+    // MARK: - Topology
+
+    func getTopology() async throws -> Topology {
+        return try await request(endpoint: "/api/sessions", method: "GET")
+    }
+
+    // MARK: - Panes
+
+    func getPaneContent(paneId: String) async throws -> String {
+        struct PaneContentResponse: Decodable { let content: String }
+        let resp: PaneContentResponse = try await request(
+            endpoint: "/api/panes/\(paneId)/content",
+            method: "GET"
+        )
+        return resp.content
+    }
+
+    func sendInput(paneId: String, keys: String) async throws {
+        struct InputBody: Encodable { let keys: String }
+        let _: EmptyResponse = try await request(
+            endpoint: "/api/panes/\(paneId)/input",
+            method: "POST",
+            body: InputBody(keys: keys)
+        )
+    }
+
+    // MARK: - File Upload
+
+    func uploadFile(imageData: Data, fileExtension: String, sessionName: String) async throws -> UploadResponse {
+        guard config.isConfigured else { throw APIError.notConfigured }
+
+        let encodedName = sessionName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? sessionName
+        guard let url = URL(string: "/api/files/upload?session_name=\(encodedName)", relativeTo: config.baseURL) else {
+            throw APIError.invalidURL
+        }
+
+        let boundary = UUID().uuidString
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(config.authToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        let mimeType = imageMimeType(for: fileExtension)
+        let filename = "upload.\(fileExtension)"
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(imageData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+
+        #if DEBUG
+        logRequest(request)
+        #endif
+
+        let (data, response) = try await session.data(for: request)
+
+        #if DEBUG
+        logResponse(response, data: data)
+        #endif
+
+        guard let httpResponse = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.unexpectedStatusCode(httpResponse.statusCode)
+        }
+        return try decoder.decode(UploadResponse.self, from: data)
+    }
+
+    private func imageMimeType(for ext: String) -> String {
+        switch ext.lowercased() {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "heic": return "image/heic"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        default: return "application/octet-stream"
+        }
     }
 
     // MARK: - Private Request Handler
@@ -186,6 +250,11 @@ final class APIClient {
 // MARK: - Supporting Types
 
 struct EmptyResponse: Decodable {}
+
+struct UploadResponse: Decodable {
+    let path: String
+    let filename: String
+}
 
 enum APIError: LocalizedError {
     case notConfigured

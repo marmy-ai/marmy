@@ -8,10 +8,14 @@ import SwiftUI
 struct TerminalView: View {
     let content: String
     let isLoading: Bool
+    var cursorX: Int = -1
+    var cursorY: Int = -1
+    var paneHeight: Int = 50
 
     @State private var fontSize: CGFloat = 14
     @State private var isAtBottom = true
     @State private var showJumpToBottom = false
+    @State private var cursorOn = true
 
     private let minFontSize: CGFloat = 10
     private let maxFontSize: CGFloat = 24
@@ -38,6 +42,12 @@ struct TerminalView: View {
                     .padding()
                 }
                 .background(Color.terminalBackground)
+                .task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 530_000_000)
+                        cursorOn.toggle()
+                    }
+                }
                 .onChange(of: content) { _, _ in
                     if isAtBottom {
                         withAnimation {
@@ -85,11 +95,38 @@ struct TerminalView: View {
     // MARK: - Terminal Content
 
     private var terminalContent: some View {
-        Text(content)
+        Text(displayedContent)
             .font(.terminalFont(size: fontSize))
             .foregroundStyle(Color.terminalText)
             .textSelection(.enabled)
             .lineSpacing(2)
+    }
+
+    private var displayedContent: String {
+        // If we have a real cursor position from the server, place the cursor there.
+        if cursorX >= 0, cursorY >= 0 {
+            return cursorOn ? contentWithCursor() : content
+        }
+        // Fallback: append cursor at end (e.g. no WS connection yet).
+        return content + (cursorOn ? "▋" : " ")
+    }
+
+    private func contentWithCursor() -> String {
+        var lines = content.components(separatedBy: "\n")
+        // cursor_y is within the visible pane area; content includes full scrollback,
+        // so the actual line index = total_lines - pane_height + cursor_y.
+        let adjustedY = max(0, lines.count - paneHeight + cursorY)
+        guard adjustedY < lines.count else {
+            return content + "▋"
+        }
+        var chars = Array(lines[adjustedY])
+        if cursorX < chars.count {
+            chars[cursorX] = "▋"
+        } else {
+            chars += Array(repeating: " ", count: cursorX - chars.count) + ["▋"]
+        }
+        lines[adjustedY] = String(chars)
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Loading View

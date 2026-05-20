@@ -8,9 +8,9 @@ import Foundation
 @Observable
 final class WebSocketManager: NSObject {
     private var webSocket: URLSessionWebSocketTask?
-    private var session: URLSession?
+    private var urlSession: URLSession?
     private var config: ServerConfig = .default
-    private var currentSessionId: String?
+    private var pendingPaneId: String?
 
     private(set) var isConnected = false
     private(set) var lastError: Error?
@@ -23,7 +23,7 @@ final class WebSocketManager: NSObject {
 
     override init() {
         super.init()
-        self.session = URLSession(
+        self.urlSession = URLSession(
             configuration: .default,
             delegate: self,
             delegateQueue: OperationQueue()
@@ -38,7 +38,8 @@ final class WebSocketManager: NSObject {
 
     // MARK: - Connection Management
 
-    func connect(sessionId: String) {
+    /// Connect to the agent WebSocket and subscribe to the given pane.
+    func connect(paneId: String?) {
         disconnect()
 
         guard config.isConfigured else {
@@ -46,25 +47,25 @@ final class WebSocketManager: NSObject {
             return
         }
 
-        currentSessionId = sessionId
+        pendingPaneId = paneId
 
-        let urlString = "\(config.webSocketURL.absoluteString)/api/sessions/\(sessionId)/stream?token=\(config.authToken)"
+        let encodedToken = config.authToken.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? config.authToken
+        let urlString = "\(config.webSocketURL.absoluteString)/ws?token=\(encodedToken)"
         guard let url = URL(string: urlString) else {
             lastError = WebSocketError.invalidURL
             return
         }
 
-        webSocket = session?.webSocketTask(with: url)
+        webSocket = urlSession?.webSocketTask(with: url)
         webSocket?.resume()
 
-        isConnected = true
         reconnectAttempts = 0
         lastError = nil
 
         receiveMessage()
 
         #if DEBUG
-        print("🔌 WebSocket connecting to: \(sessionId)")
+        print("🔌 WebSocket connecting to /ws")
         #endif
     }
 
@@ -74,11 +75,19 @@ final class WebSocketManager: NSObject {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         isConnected = false
-        currentSessionId = nil
+        pendingPaneId = nil
 
         #if DEBUG
         print("🔌 WebSocket disconnected")
         #endif
+    }
+
+    // MARK: - Pane Subscription
+
+    func subscribePaneId(_ paneId: String) {
+        pendingPaneId = paneId
+        guard isConnected else { return }
+        sendMessage(["type": "subscribe_pane", "pane_id": paneId])
     }
 
     // MARK: - Message Handling
@@ -90,8 +99,7 @@ final class WebSocketManager: NSObject {
             switch result {
             case .success(let message):
                 self.handleMessage(message)
-                self.receiveMessage() // Continue listening
-
+                self.receiveMessage()
             case .failure(let error):
                 self.handleError(error)
             }
@@ -99,37 +107,44 @@ final class WebSocketManager: NSObject {
     }
 
     private func handleMessage(_ message: URLSessionWebSocketTask.Message) {
+        let text: String
         switch message {
-        case .string(let text):
-            parseMessage(text)
-        case .data(let data):
-            if let text = String(data: data, encoding: .utf8) {
-                parseMessage(text)
+        case .string(let s): text = s
+        case .data(let d): text = String(data: d, encoding: .utf8) ?? ""
+        @unknown default: return
+        }
+        parseMessage(text)
+    }
+
+    private func parseMessage(_ text: String) {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = json["type"] as? String else { return }
+
+        switch type {
+        case "pane_output":
+            guard let paneId = json["pane_id"] as? String,
+                  let content = json["data"] as? String else { return }
+            let cursorX = json["cursor_x"] as? Int ?? -1
+            let cursorY = json["cursor_y"] as? Int ?? -1
+            let sessionContent = SessionContent(
+                sessionId: paneId,
+                content: content,
+                cursorX: cursorX,
+                cursorY: cursorY
+            )
+            DispatchQueue.main.async {
+                self.onContentUpdate?(sessionContent)
             }
-        @unknown default:
+        default:
             break
         }
     }
 
-    private func parseMessage(_ text: String) {
-        guard let data = text.data(using: .utf8) else { return }
-
-        do {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-
-            let wrapper = try decoder.decode(WebSocketMessage.self, from: data)
-
-            if wrapper.type == "content" {
-                DispatchQueue.main.async {
-                    self.onContentUpdate?(wrapper.data)
-                }
-            }
-        } catch {
-            #if DEBUG
-            print("⚠️ WebSocket parse error: \(error)")
-            #endif
-        }
+    private func sendMessage(_ dict: [String: String]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let text = String(data: data, encoding: .utf8) else { return }
+        webSocket?.send(.string(text)) { _ in }
     }
 
     private func handleError(_ error: Error) {
@@ -148,26 +163,20 @@ final class WebSocketManager: NSObject {
     // MARK: - Reconnection
 
     private func attemptReconnect() {
-        guard reconnectAttempts < maxReconnectAttempts,
-              let sessionId = currentSessionId else {
-            return
-        }
+        guard reconnectAttempts < maxReconnectAttempts else { return }
 
         reconnectAttempts += 1
-
-        // Exponential backoff: 1s, 2s, 4s, 8s, 16s
         let delay = pow(2.0, Double(reconnectAttempts - 1))
 
         reconnectTask = Task {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
                 #if DEBUG
                 print("🔌 WebSocket reconnecting (attempt \(self.reconnectAttempts))...")
                 #endif
-                self.connect(sessionId: sessionId)
+                self.connect(paneId: self.pendingPaneId)
             }
         }
     }
@@ -187,6 +196,10 @@ extension WebSocketManager: URLSessionWebSocketDelegate {
             #if DEBUG
             print("🔌 WebSocket connected")
             #endif
+            // Subscribe to the pane now that the connection is live.
+            if let paneId = self.pendingPaneId {
+                self.sendMessage(["type": "subscribe_pane", "pane_id": paneId])
+            }
         }
     }
 
@@ -199,23 +212,17 @@ extension WebSocketManager: URLSessionWebSocketDelegate {
         DispatchQueue.main.async {
             self.isConnected = false
             #if DEBUG
-            print("🔌 WebSocket closed with code: \(closeCode)")
+            print("🔌 WebSocket closed: \(closeCode)")
             #endif
         }
 
-        // Attempt reconnect if not intentionally closed
         if closeCode != .goingAway {
             attemptReconnect()
         }
     }
 }
 
-// MARK: - Supporting Types
-
-struct WebSocketMessage: Codable {
-    let type: String
-    let data: SessionContent
-}
+// MARK: - Errors
 
 enum WebSocketError: LocalizedError {
     case notConfigured
@@ -224,12 +231,9 @@ enum WebSocketError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured:
-            return "Server not configured"
-        case .invalidURL:
-            return "Invalid WebSocket URL"
-        case .connectionFailed:
-            return "WebSocket connection failed"
+        case .notConfigured: return "Server not configured"
+        case .invalidURL: return "Invalid WebSocket URL"
+        case .connectionFailed: return "WebSocket connection failed"
         }
     }
 }

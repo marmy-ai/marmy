@@ -146,7 +146,7 @@ pub async fn create_session(
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
 
-    // If claude mode, launch Claude Code in the pane
+    // For claude/codex modes, launch the agent CLI in the pane
     if req.mode == "claude" {
         let pane_target = format!("{}:0.0", name);
         let skip_flag = if req.skip_permissions {
@@ -177,6 +177,19 @@ pub async fn create_session(
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("failed to start claude: {}", e),
+                )
+            })?;
+    } else if req.mode == "codex" {
+        // Codex has no skip-permissions flag exposed in the app — launch it plain.
+        let pane_target = format!("{}:0.0", name);
+        state
+            .tmux
+            .send_text_enter(&pane_target, "codex")
+            .await
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("failed to start codex: {}", e),
                 )
             })?;
     }

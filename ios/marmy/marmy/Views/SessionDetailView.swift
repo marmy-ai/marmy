@@ -22,7 +22,10 @@ struct SessionDetailView: View {
             // Terminal content
             TerminalView(
                 content: viewModel.sessionContent,
-                isLoading: viewModel.isLoading
+                isLoading: viewModel.isLoading,
+                cursorX: viewModel.cursorX,
+                cursorY: viewModel.cursorY,
+                paneHeight: viewModel.paneHeight
             )
 
             Divider()
@@ -40,6 +43,11 @@ struct SessionDetailView: View {
                 },
                 onMicTap: {
                     handleMicTap()
+                },
+                onImagePicked: { data, ext in
+                    Task {
+                        await viewModel.uploadImage(data: data, fileExtension: ext)
+                    }
                 }
             )
         }

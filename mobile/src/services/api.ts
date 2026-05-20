@@ -199,21 +199,32 @@ export class MarmyApi {
     });
   }
 
-  /** Enable/disable the Claude Code Stop hook for push notifications. */
-  async setNotifyHook(enabled: boolean): Promise<void> {
+  /** Enable/disable provider-specific completion hooks for push notifications. */
+  async setNotifyHook(enabled: boolean, provider: "claude" | "codex" = "claude"): Promise<void> {
     await this.fetch("/api/notifications/hook", {
       method: "POST",
-      body: JSON.stringify({ enabled }),
+      body: JSON.stringify({ enabled, provider }),
     });
   }
 
-  /** Check if the notification hook is currently enabled. */
-  async getNotifyHookStatus(): Promise<boolean> {
-    const debug = await this.fetch<{ hook_enabled: boolean }>("/api/notifications/debug");
-    return debug.hook_enabled;
+  /** Check if a provider notification hook is currently enabled. */
+  async getNotifyHookStatus(provider: "claude" | "codex" = "claude"): Promise<boolean> {
+    const debug = await this.fetch<{
+      hook_enabled: boolean;
+      hooks?: Record<string, { supported: boolean; enabled: boolean; reason?: string | null }>;
+    }>("/api/notifications/debug");
+    return debug.hooks?.[provider]?.enabled ?? (provider === "claude" ? debug.hook_enabled : false);
   }
 
-  /** Send a notification (called by Claude via curl, but also available here). */
+  /** Check whether a provider supports completion hooks. */
+  async getNotifyHookSupport(provider: "claude" | "codex" = "claude"): Promise<boolean> {
+    const debug = await this.fetch<{
+      hooks?: Record<string, { supported: boolean; enabled: boolean; reason?: string | null }>;
+    }>("/api/notifications/debug");
+    return debug.hooks?.[provider]?.supported ?? provider === "claude";
+  }
+
+  /** Send a notification (called by agent completion hooks, but also available here). */
   async sendNotification(session?: string, body?: string): Promise<void> {
     await this.fetch("/api/notifications/send", {
       method: "POST",

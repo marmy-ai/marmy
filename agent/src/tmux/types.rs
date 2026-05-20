@@ -101,7 +101,15 @@ pub enum ServerMessage {
     #[serde(rename = "topology")]
     Topology(EnrichedTopology),
     #[serde(rename = "pane_output")]
-    PaneOutput { pane_id: String, data: String },
+    PaneOutput {
+        pane_id: String,
+        data: String,
+        /// Cursor column within the visible pane area (0-based).
+        cursor_x: u32,
+        /// Cursor row within the visible pane area (0-based, 0 = top of visible area).
+        /// The cursor's line in the full scrollback is: total_lines - pane_height + cursor_y.
+        cursor_y: u32,
+    },
     #[serde(rename = "pong")]
     Pong,
     #[serde(rename = "error")]
