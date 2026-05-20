@@ -10,10 +10,14 @@ import {
   Platform,
   ScrollView,
   AppState,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import * as SecureStore from "expo-secure-store";
+import * as ImagePicker from "expo-image-picker";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -70,6 +74,7 @@ const MAX_COLS = 200;
 const COLS_STEP = 10;
 const TERM_COLS_KEY = "marmy_termCols";
 const STT_ENABLED_KEY = "marmy_sttEnabled";
+const VOICE_KEEP_AWAKE_TAG = "marmy-voice-call";
 const TERMINAL_TEXT = "#f1f5f9";
 const TERMINAL_DIM_TEXT = "#a8b0bd";
 
@@ -246,6 +251,8 @@ export default function TerminalScreen() {
   const [sttTranscript, setSttTranscript] = useState("");
   const [codexNotifySupported, setCodexNotifySupported] = useState(false);
   const [codexNotifyOnDone, setCodexNotifyOnDone] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [reloadingScrollback, setReloadingScrollback] = useState(false);
 
   // Restore saved settings on mount
   useEffect(() => {
@@ -291,6 +298,16 @@ export default function TerminalScreen() {
     });
     return () => sub.remove();
   }, []);
+
+  // Keep the screen awake during a voice call. Without this the display sleeps,
+  // iOS backgrounds the app, and the call is torn down mid-conversation.
+  useEffect(() => {
+    if (!voiceActive) return;
+    activateKeepAwakeAsync(VOICE_KEEP_AWAKE_TAG);
+    return () => {
+      deactivateKeepAwake(VOICE_KEEP_AWAKE_TAG);
+    };
+  }, [voiceActive]);
 
   const startVoice = async () => {
     if (!api || !activePaneId) return;
@@ -382,6 +399,49 @@ export default function TerminalScreen() {
     });
   };
 
+  // Re-fetch the full scrollback over REST. Useful when the live stream is
+  // showing a stale or partial buffer after reconnecting or switching machines.
+  const handleReloadScrollback = async () => {
+    if (!api || !activePaneId || reloadingScrollback) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setReloadingScrollback(true);
+    try {
+      const hist = await api.getPaneHistory(activePaneId);
+      lastContentRef.current = hist.content;
+      setContent(hist.content);
+      isScrolledUp.current = false;
+      setSettingsOpen(false);
+    } catch (e) {
+      Alert.alert("Reload failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setReloadingScrollback(false);
+    }
+  };
+
+  // Pick an image from the photo library and upload it to the agent, which
+  // puts it on the host clipboard and pastes it into the active pane.
+  const handleUploadImage = async () => {
+    if (!api || !activePaneId || uploading) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+    const name = asset.fileName || `image.${asset.uri.split(".").pop() || "jpg"}`;
+    const type = asset.mimeType || "image/jpeg";
+    setUploading(true);
+    try {
+      await api.uploadFile(activePaneId, { uri: asset.uri, name, type });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert("Upload failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   // Resize the tmux window whenever pane or cols changes
   useEffect(() => {
     if (!socket || !activePaneId) return;
@@ -423,9 +483,10 @@ export default function TerminalScreen() {
     };
   }, [socket, activePaneId]);
 
-  // Auto-scroll to bottom on new content, but only if user hasn't scrolled up
+  // Auto-scroll to bottom on new content, but only if user hasn't scrolled up.
+  // Suppressed while selecting so the view doesn't jump out from under a selection.
   useEffect(() => {
-    if (!isScrolledUp.current) {
+    if (!isScrolledUp.current && !selectionMode) {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
     }
   }, [content]);
@@ -571,6 +632,23 @@ export default function TerminalScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={styles.filesButton}
+          onPress={handleUploadImage}
+          disabled={uploading}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          {uploading ? (
+            <ActivityIndicator size="small" color={theme.textSecondary} />
+          ) : (
+            <Ionicons
+              name="image-outline"
+              size={22}
+              color={theme.textSecondary}
+            />
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.callButton}
           onPress={sttEnabled
             ? (sttActive ? () => stopStt(false) : startStt)
@@ -683,18 +761,21 @@ export default function TerminalScreen() {
             />
             <Text style={styles.settingsValue}>{termCols}</Text>
           </View>
-        </View>
-      )}
 
-      {/* Selection mode banner */}
-      {selectionMode && (
-        <TouchableOpacity
-          style={styles.selectionBanner}
-          onPress={() => setSelectionMode(false)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.selectionBannerText}>Selection mode — tap to exit</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.settingsRow}
+            onPress={handleReloadScrollback}
+            disabled={reloadingScrollback}
+          >
+            <Text style={styles.settingsLabel}>Reload scrollback</Text>
+            {reloadingScrollback ? (
+              <ActivityIndicator size="small" color={theme.textSecondary} />
+            ) : (
+              <Ionicons name="refresh" size={18} color={theme.textSecondary} />
+            )}
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* Terminal content with ANSI rendering */}
@@ -715,8 +796,14 @@ export default function TerminalScreen() {
           selectable
           style={styles.terminalTextContainer}
           onLongPress={() => {
+            // Long-press starts a selection; freeze scrolling so dragging the
+            // selection handles doesn't fight the ScrollView. No visible "mode".
             setSelectionMode(true);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }}
+          onPress={() => {
+            // A tap dismisses the native selection — re-enable scrolling to match.
+            if (selectionMode) setSelectionMode(false);
           }}
         >
           {renderedContent}
@@ -984,17 +1071,6 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     width: 28,
     textAlign: "right",
-  },
-  selectionBanner: {
-    backgroundColor: theme.primary,
-    paddingVertical: 7,
-    alignItems: "center",
-  },
-  selectionBannerText: {
-    color: "#fff",
-    fontSize: 12,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontWeight: "600",
   },
   terminalScroll: {
     flex: 1,
