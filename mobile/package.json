@@ -10,15 +10,14 @@
     "lint": "expo lint"
   },
   "dependencies": {
+    "@mattermost/react-native-paste-input": "^2.0.1",
     "@react-native-community/slider": "5.0.1",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@speechmatics/expo-two-way-audio": "^0.1.2",
     "@types/marked": "^5.0.2",
     "expo": "~54.0.0",
     "expo-asset": "~12.0.12",
-    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
-    "expo-file-system": "~19.0.22",
     "expo-haptics": "~15.0.8",
     "expo-image-picker": "~17.0.11",
     "expo-keep-awake": "~15.0.8",

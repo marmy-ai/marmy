@@ -17,8 +17,8 @@ import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import * as SecureStore from "expo-secure-store";
 import * as ImagePicker from "expo-image-picker";
-import * as Clipboard from "expo-clipboard";
-import * as FileSystem from "expo-file-system/legacy";
+import PasteInput from "@mattermost/react-native-paste-input";
+import type { PastedFile } from "@mattermost/react-native-paste-input";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -435,26 +435,6 @@ export default function TerminalScreen() {
     });
   };
 
-  // Paste an image straight off the iOS clipboard.
-  const pasteImageFromClipboard = async () => {
-    if (!(await Clipboard.hasImageAsync())) {
-      Alert.alert("No image", "There's no image on the clipboard to paste.");
-      return;
-    }
-    const img = await Clipboard.getImageAsync({ format: "png" });
-    if (!img?.data) {
-      Alert.alert("Paste failed", "Could not read the image from the clipboard.");
-      return;
-    }
-    // img.data is a base64 data URI — write it to a temp file so it can upload.
-    const base64 = img.data.includes(",") ? img.data.split(",")[1] : img.data;
-    const path = `${FileSystem.cacheDirectory}marmy-paste-${Date.now()}.png`;
-    await FileSystem.writeAsStringAsync(path, base64, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    await uploadImage({ uri: path, name: "pasted.png", type: "image/png" });
-  };
-
   // Toolbar image button — pick from the photo library.
   const handlePickImage = () => {
     if (!api || !activePaneId || uploading) return;
@@ -464,11 +444,23 @@ export default function TerminalScreen() {
     );
   };
 
-  // Input-bar paste button — paste an image straight from the clipboard.
-  const handlePasteImage = () => {
-    if (!api || !activePaneId || uploading) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    pasteImageFromClipboard().catch((e) =>
+  // Native image paste from the message box (PasteInput's onPaste callback) —
+  // triggered by the normal iOS double-tap → Paste menu.
+  const onInputPaste = (
+    error: string | null | undefined,
+    files: PastedFile[]
+  ) => {
+    if (error) {
+      Alert.alert("Paste failed", error);
+      return;
+    }
+    const f = files?.[0];
+    if (!f) return;
+    uploadImage({
+      uri: f.uri,
+      name: f.fileName || "pasted.png",
+      type: f.type || "image/png",
+    }).catch((e) =>
       Alert.alert("Image error", e instanceof Error ? e.message : String(e))
     );
   };
@@ -498,6 +490,9 @@ export default function TerminalScreen() {
     if (!socket || !activePaneId) return;
 
     socket.subscribePane(activePaneId);
+    // A freshly-opened session should follow the live bottom, not stay
+    // wherever a previous session was scrolled.
+    isScrolledUp.current = false;
 
     const unsub = socket.onMessage((msg) => {
       if (msg.type === "pane_output" && msg.pane_id === activePaneId) {
@@ -803,6 +798,13 @@ export default function TerminalScreen() {
         keyboardDismissMode="on-drag"
         scrollEnabled={!selectionMode}
         alwaysBounceVertical
+        onContentSizeChange={() => {
+          // Pin to the live bottom as content/layout settles (e.g. on open),
+          // unless the user has deliberately scrolled up.
+          if (!isScrolledUp.current && !selectionMode) {
+            scrollRef.current?.scrollToEnd({ animated: false });
+          }
+        }}
         onScroll={(e) => {
           const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
           const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
@@ -958,7 +960,7 @@ export default function TerminalScreen() {
           </TouchableOpacity>
         </View>
 
-        <TextInput
+        <PasteInput
           style={[
             styles.textInput,
             !isKeyboardMode && { height: inputHeight },
@@ -966,6 +968,7 @@ export default function TerminalScreen() {
           ]}
           value={inputText}
           onChangeText={handleChangeText}
+          onPaste={onInputPaste}
           editable={!voiceActive}
           multiline={!isKeyboardMode}
           onContentSizeChange={(e) => {
@@ -985,17 +988,6 @@ export default function TerminalScreen() {
           onSubmitEditing={handleSubmitEditing}
           blurOnSubmit={!isKeyboardMode}
         />
-        <TouchableOpacity
-          style={styles.pasteBtn}
-          onPress={handlePasteImage}
-          disabled={uploading}
-        >
-          {uploading ? (
-            <ActivityIndicator size="small" color={theme.textSecondary} />
-          ) : (
-            <Ionicons name="clipboard-outline" size={20} color={theme.textSecondary} />
-          )}
-        </TouchableOpacity>
         {!isKeyboardMode && (
           <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
             <Text style={styles.sendBtnText}>Send</Text>
@@ -1242,14 +1234,6 @@ const styles = StyleSheet.create({
     height: 40,
   },
   sendBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
-  pasteBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: theme.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   // Segmented mode toggle
   segmentedToggle: {
     flexDirection: "row",
