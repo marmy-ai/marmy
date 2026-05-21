@@ -74,6 +74,11 @@ export interface PaneContent {
   content: string;
 }
 
+export interface UploadResponse {
+  path: string;
+  filename: string;
+}
+
 // CC Dashboard types
 
 export interface CcSession {

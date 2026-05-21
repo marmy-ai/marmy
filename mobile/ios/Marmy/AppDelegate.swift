@@ -27,6 +27,10 @@ public class AppDelegate: ExpoAppDelegate {
       withModuleName: "main",
       in: window,
       launchOptions: launchOptions)
+
+    // Required by @mattermost/react-native-paste-input so the native module
+    // can locate the backing text views and deliver image-paste events.
+    PasteInputModule.setup(factory.rootViewFactory)
 #endif
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

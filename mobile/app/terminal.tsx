@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
@@ -10,10 +9,16 @@ import {
   Platform,
   ScrollView,
   AppState,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import * as SecureStore from "expo-secure-store";
+import * as ImagePicker from "expo-image-picker";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import PasteInput from "@mattermost/react-native-paste-input";
+import type { PastedFile } from "@mattermost/react-native-paste-input";
 import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -24,11 +29,6 @@ import { VoiceSession } from "../src/services/voiceSession";
 import { theme } from "../src/theme";
 import type { VoiceState } from "../src/services/voiceSession";
 import VoiceCallBar from "../src/components/VoiceCallBar";
-import SttBar from "../src/components/SttBar";
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from "expo-speech-recognition";
 
 // Unified shortcut grid — shared by both MSG and KB modes
 const SHORTCUT_P1_ROW1 = [
@@ -69,7 +69,11 @@ const MIN_COLS = 40;
 const MAX_COLS = 200;
 const COLS_STEP = 10;
 const TERM_COLS_KEY = "marmy_termCols";
-const STT_ENABLED_KEY = "marmy_sttEnabled";
+const VOICE_KEEP_AWAKE_TAG = "marmy-voice-call";
+// SGR mouse-wheel sequences sent to the pane to scroll a full-screen TUI
+// (Claude Code) — it keeps its own scrollback, not visible to tmux's history.
+const WHEEL_UP = "\x1b[<64;10;20M";
+const WHEEL_DOWN = "\x1b[<65;10;20M";
 const TERMINAL_TEXT = "#f1f5f9";
 const TERMINAL_DIM_TEXT = "#a8b0bd";
 
@@ -184,9 +188,9 @@ function renderContent(content: string) {
     const isPrompt = promptRegex.test(line);
 
     if (isPrompt && i > 0) {
-      elements.push(
-        <View key={`sep-${i}`} style={styles.promptSeparator} />
-      );
+      // Spacer line. Must be <Text>, not <View>: a View nested inside the
+      // selectable <Text> breaks iOS text selection across it.
+      elements.push(<Text key={`sep-${i}`}>{"\n"}</Text>);
     }
 
     const spans = parseAnsi(line);
@@ -240,20 +244,18 @@ export default function TerminalScreen() {
   const [termCols, setTermCols] = useState(DEFAULT_COLS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [sttEnabled, setSttEnabled] = useState(false);
-  const [sttActive, setSttActive] = useState(false);
-  const [sttTranscript, setSttTranscript] = useState("");
+  const interactingRef = useRef(false);
+  const interactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [codexNotifySupported, setCodexNotifySupported] = useState(false);
   const [codexNotifyOnDone, setCodexNotifyOnDone] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const scrolledHistoryRef = useRef(false);
+  const dragRef = useRef({ fired: false, swipes: 0, lastSwipe: 0 });
 
   // Restore saved settings on mount
   useEffect(() => {
     SecureStore.getItemAsync(TERM_COLS_KEY).then((v) => {
       if (v) { const n = Number(v); if (n >= MIN_COLS && n <= MAX_COLS) setTermCols(n); }
-    });
-    SecureStore.getItemAsync(STT_ENABLED_KEY).then((v) => {
-      if (v === "true") setSttEnabled(true);
     });
   }, []);
 
@@ -291,6 +293,16 @@ export default function TerminalScreen() {
     });
     return () => sub.remove();
   }, []);
+
+  // Keep the screen awake during a voice call. Without this the display sleeps,
+  // iOS backgrounds the app, and the call is torn down mid-conversation.
+  useEffect(() => {
+    if (!voiceActive) return;
+    activateKeepAwakeAsync(VOICE_KEEP_AWAKE_TAG);
+    return () => {
+      deactivateKeepAwake(VOICE_KEEP_AWAKE_TAG);
+    };
+  }, [voiceActive]);
 
   const startVoice = async () => {
     if (!api || !activePaneId) return;
@@ -339,46 +351,80 @@ export default function TerminalScreen() {
     setVoiceActive(false);
   };
 
-  // On-device STT
-  useSpeechRecognitionEvent("result", (event) => {
-    setSttTranscript(event.results[0]?.transcript ?? "");
-  });
-
-  useSpeechRecognitionEvent("end", () => {
-    setSttActive(false);
-  });
-
-  useSpeechRecognitionEvent("error", (event) => {
-    console.error("[STT] Error:", event.error, event.message);
-    setSttActive(false);
-  });
-
-  const startStt = async () => {
-    setSttTranscript("");
-    setSttActive(true);
-    ExpoSpeechRecognitionModule.start({
-      lang: "en-US",
-      interimResults: true,
-      requiresOnDeviceRecognition: true,
-      continuous: true,
-    });
-  };
-
-  const stopStt = (confirm: boolean) => {
-    ExpoSpeechRecognitionModule.stop();
-    setSttActive(false);
-    if (confirm && sttTranscript.trim()) {
-      setInputText(sttTranscript.trim());
-      setIsKeyboardMode(false);
-    }
-    setSttTranscript("");
-  };
-
   const handleFiles = () => {
     if (!activeSessionId || !activeSessionName) return;
     router.push({
       pathname: "/files",
       params: { sessionId: activeSessionId, sessionName: activeSessionName },
+    });
+  };
+
+  // Upload an image to the agent, which puts it on the host clipboard and
+  // pastes it into the active pane (Claude Code then shows it as [Image #N]).
+  const uploadImage = async (file: { uri: string; name: string; type: string }) => {
+    if (!api || !activePaneId) return;
+    setUploading(true);
+    try {
+      await api.uploadFile(activePaneId, file);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      Alert.alert("Upload failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Pick an image from the photo library.
+  const pickImageFromLibrary = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.7,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+    await uploadImage({
+      uri: asset.uri,
+      name: asset.fileName || `image.${asset.uri.split(".").pop() || "jpg"}`,
+      type: asset.mimeType || "image/jpeg",
+    });
+  };
+
+  // Toolbar image button — pick from the photo library.
+  const handlePickImage = () => {
+    if (!api || !activePaneId || uploading) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    pickImageFromLibrary().catch((e) =>
+      Alert.alert("Image error", e instanceof Error ? e.message : String(e))
+    );
+  };
+
+  // Tapping the message box jumps to the live bottom — both the local view
+  // and Claude Code itself, in case the user was reading scrollback.
+  const handleInputFocus = () => {
+    isScrolledUp.current = false;
+    scrollRef.current?.scrollToEnd({ animated: false });
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 350);
+    if (scrolledHistoryRef.current && socket && activePaneId) {
+      // Single batched message — heuristic depth; harmless no-op once at live.
+      socket.sendInput(activePaneId, WHEEL_DOWN.repeat(60));
+      scrolledHistoryRef.current = false;
+    }
+  };
+
+  // Native image paste into the message box (PasteInput's onPaste callback) —
+  // the standard iOS double-tap → Paste flow. Routes through the same upload
+  // pipeline as the photo-library picker.
+  const onInputPaste = (
+    error: string | null | undefined,
+    files: PastedFile[]
+  ) => {
+    if (error || !files?.length) return;
+    const f = files[0];
+    if (!f.type?.startsWith("image/")) return;
+    uploadImage({
+      uri: f.uri,
+      name: f.fileName || `pasted.${f.uri.split(".").pop() || "png"}`,
+      type: f.type,
     });
   };
 
@@ -407,6 +453,9 @@ export default function TerminalScreen() {
     if (!socket || !activePaneId) return;
 
     socket.subscribePane(activePaneId);
+    // A freshly-opened session should follow the live bottom, not stay
+    // wherever a previous session was scrolled.
+    isScrolledUp.current = false;
 
     const unsub = socket.onMessage((msg) => {
       if (msg.type === "pane_output" && msg.pane_id === activePaneId) {
@@ -423,9 +472,26 @@ export default function TerminalScreen() {
     };
   }, [socket, activePaneId]);
 
-  // Auto-scroll to bottom on new content, but only if user hasn't scrolled up
+  // Pause auto-scroll for a few seconds whenever the user touches the terminal,
+  // so a long-press selection / Copy menu isn't yanked away by streaming output.
+  const pauseAutoScroll = () => {
+    interactingRef.current = true;
+    if (interactionTimer.current) clearTimeout(interactionTimer.current);
+    interactionTimer.current = setTimeout(() => {
+      interactingRef.current = false;
+    }, 4000);
+  };
+  useEffect(
+    () => () => {
+      if (interactionTimer.current) clearTimeout(interactionTimer.current);
+    },
+    []
+  );
+
+  // Auto-scroll to bottom on new content, but only if user hasn't scrolled up.
+  // Suppressed while the user is interacting so a selection isn't yanked away.
   useEffect(() => {
-    if (!isScrolledUp.current) {
+    if (!isScrolledUp.current && !interactingRef.current) {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
     }
   }, [content]);
@@ -571,18 +637,32 @@ export default function TerminalScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={styles.filesButton}
+          onPress={handlePickImage}
+          disabled={uploading}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          {uploading ? (
+            <ActivityIndicator size="small" color={theme.textSecondary} />
+          ) : (
+            <Ionicons
+              name="image-outline"
+              size={22}
+              color={theme.textSecondary}
+            />
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.callButton}
-          onPress={sttEnabled
-            ? (sttActive ? () => stopStt(false) : startStt)
-            : (voiceActive ? stopVoice : startVoice)
-          }
+          onPress={voiceActive ? stopVoice : startVoice}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons
-            name={sttEnabled ? (sttActive ? "mic" : "mic-outline") : "call-outline"}
+            name="call-outline"
             size={22}
-            color={(sttEnabled ? sttActive : voiceActive) ? theme.error : theme.textSecondary}
-            style={(sttEnabled ? sttActive : voiceActive) ? { transform: [{ rotate: "135deg" }] } : undefined}
+            color={voiceActive ? theme.error : theme.textSecondary}
+            style={voiceActive ? { transform: [{ rotate: "135deg" }] } : undefined}
           />
         </TouchableOpacity>
 
@@ -652,22 +732,6 @@ export default function TerminalScreen() {
             </View>
           )}
 
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={styles.settingsRow}
-            onPress={async () => {
-              const next = !sttEnabled;
-              setSttEnabled(next);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              await SecureStore.setItemAsync(STT_ENABLED_KEY, String(next));
-            }}
-          >
-            <Text style={styles.settingsLabel}>On-device STT</Text>
-            <View style={[styles.toggleTrack, sttEnabled && styles.toggleTrackActive]}>
-              <View style={[styles.toggleThumb, sttEnabled && styles.toggleThumbActive]} />
-            </View>
-          </TouchableOpacity>
-
           <View style={styles.settingsRow}>
             <Text style={styles.settingsLabel}>Width</Text>
             <Slider
@@ -686,39 +750,52 @@ export default function TerminalScreen() {
         </View>
       )}
 
-      {/* Selection mode banner */}
-      {selectionMode && (
-        <TouchableOpacity
-          style={styles.selectionBanner}
-          onPress={() => setSelectionMode(false)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.selectionBannerText}>Selection mode — tap to exit</Text>
-        </TouchableOpacity>
-      )}
-
       {/* Terminal content with ANSI rendering */}
       <ScrollView
         ref={scrollRef}
         style={styles.terminalScroll}
         contentContainerStyle={styles.terminalContent}
         keyboardDismissMode="on-drag"
-        scrollEnabled={!selectionMode}
+        alwaysBounceVertical
+        onTouchStart={pauseAutoScroll}
+        onScrollBeginDrag={() => {
+          // A deliberate scroll means the user isn't mid-selection.
+          interactingRef.current = false;
+          dragRef.current.fired = false;
+        }}
+        onContentSizeChange={() => {
+          // Pin to the live bottom as content/layout settles (e.g. on open),
+          // unless the user has deliberately scrolled up.
+          if (!isScrolledUp.current && !interactingRef.current) {
+            scrollRef.current?.scrollToEnd({ animated: false });
+          }
+        }}
         onScroll={(e) => {
           const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
           const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
           isScrolledUp.current = distanceFromBottom > 50;
+          // Over-scrolling past an edge drives Claude Code's own scrollback.
+          // Each swipe that reaches an edge fires ONE fixed batch of wheel
+          // events; swiping rapidly ramps a multiplier — so speed is a function
+          // of how many swipes you fire in a window, not how hard you swipe.
+          const d = dragRef.current;
+          if (!socket || !activePaneId || d.fired) return;
+          const overTop = contentOffset.y < -10;
+          const dir = overTop ? -1 : distanceFromBottom < -10 ? 1 : 0;
+          if (dir === 0) return;
+          d.fired = true;
+          const now = Date.now();
+          d.swipes = now - d.lastSwipe < 600 ? Math.min(d.swipes + 1, 6) : 1;
+          d.lastSwipe = now;
+          if (dir === -1) scrolledHistoryRef.current = true;
+          const seq = dir === -1 ? WHEEL_UP : WHEEL_DOWN;
+          const count = Math.min(6 * d.swipes, 40);
+          // One WS message / one tmux subprocess for the whole batch.
+          socket.sendInput(activePaneId, seq.repeat(count));
         }}
-        scrollEventThrottle={100}
+        scrollEventThrottle={16}
       >
-        <Text
-          selectable
-          style={styles.terminalTextContainer}
-          onLongPress={() => {
-            setSelectionMode(true);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }}
-        >
+        <Text selectable style={styles.terminalTextContainer}>
           {renderedContent}
         </Text>
       </ScrollView>
@@ -840,7 +917,7 @@ export default function TerminalScreen() {
           </TouchableOpacity>
         </View>
 
-        <TextInput
+        <PasteInput
           style={[
             styles.textInput,
             !isKeyboardMode && { height: inputHeight },
@@ -848,6 +925,8 @@ export default function TerminalScreen() {
           ]}
           value={inputText}
           onChangeText={handleChangeText}
+          onPaste={onInputPaste}
+          onFocus={handleInputFocus}
           editable={!voiceActive}
           multiline={!isKeyboardMode}
           onContentSizeChange={(e) => {
@@ -873,16 +952,6 @@ export default function TerminalScreen() {
           </TouchableOpacity>
         )}
       </View>
-      {/* Floating STT overlay */}
-      {sttActive && (
-        <View style={styles.voiceOverlayWrapper} pointerEvents="box-none">
-          <SttBar
-            transcript={sttTranscript}
-            onDone={() => stopStt(true)}
-            onCancel={() => stopStt(false)}
-          />
-        </View>
-      )}
 
       {/* Floating voice call overlay */}
       {voiceActive && (
@@ -985,17 +1054,6 @@ const styles = StyleSheet.create({
     width: 28,
     textAlign: "right",
   },
-  selectionBanner: {
-    backgroundColor: theme.primary,
-    paddingVertical: 7,
-    alignItems: "center",
-  },
-  selectionBannerText: {
-    color: "#fff",
-    fontSize: 12,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    fontWeight: "600",
-  },
   terminalScroll: {
     flex: 1,
     backgroundColor: theme.bgDeep,
@@ -1017,12 +1075,6 @@ const styles = StyleSheet.create({
   },
   terminalLine: {
     // Inherits from parent Text
-  },
-  promptSeparator: {
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    marginTop: 6,
-    paddingTop: 4,
   },
   // Shortcut grid (shared by MSG and KB modes)
   kbGrid: {

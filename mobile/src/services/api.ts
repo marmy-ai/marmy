@@ -9,6 +9,7 @@ import type {
   DashboardStartResponse,
   CreateSessionResponse,
   VoiceTokenResponse,
+  UploadResponse,
 } from "../types";
 
 export class MarmyApi {
@@ -97,6 +98,37 @@ export class MarmyApi {
   async getPaneHistory(paneId: string): Promise<PaneContent> {
     const id = paneId.replace("%", "");
     return this.fetch<PaneContent>(`/api/panes/${id}/history`);
+  }
+
+  /** Upload an image/file; the agent pastes it into the given pane. */
+  async uploadFile(
+    paneId: string,
+    file: { uri: string; name: string; type: string }
+  ): Promise<UploadResponse> {
+    const id = paneId.replace("%", "");
+    const form = new FormData();
+    // React Native's FormData accepts a {uri,name,type} file descriptor; the
+    // cast satisfies the DOM-typed signature without changing runtime behaviour.
+    form.append("file", {
+      uri: file.uri,
+      name: file.name,
+      type: file.type,
+    } as unknown as Blob);
+    // Note: no Content-Type header — fetch sets the multipart boundary itself.
+    const res = await fetch(
+      `${this.baseUrl}/api/files/upload?pane_id=${encodeURIComponent(id)}`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.token}` },
+        body: form,
+      }
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`Upload failed ${res.status}: ${text}`);
+    }
+    const text = await res.text();
+    return text ? JSON.parse(text) : ({} as UploadResponse);
   }
 
   /** Send input to a pane. */
