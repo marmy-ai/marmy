@@ -2,7 +2,6 @@ import React, { useRef, useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
@@ -18,6 +17,8 @@ import * as Haptics from "expo-haptics";
 import * as SecureStore from "expo-secure-store";
 import * as ImagePicker from "expo-image-picker";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import PasteInput from "@mattermost/react-native-paste-input";
+import type { PastedFile } from "@mattermost/react-native-paste-input";
 import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -243,7 +244,8 @@ export default function TerminalScreen() {
   const [termCols, setTermCols] = useState(DEFAULT_COLS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [selectionMode, setSelectionMode] = useState(false);
+  const interactingRef = useRef(false);
+  const interactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [codexNotifySupported, setCodexNotifySupported] = useState(false);
   const [codexNotifyOnDone, setCodexNotifyOnDone] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -409,6 +411,23 @@ export default function TerminalScreen() {
     }
   };
 
+  // Native image paste into the message box (PasteInput's onPaste callback) —
+  // the standard iOS double-tap → Paste flow. Routes through the same upload
+  // pipeline as the photo-library picker.
+  const onInputPaste = (
+    error: string | null | undefined,
+    files: PastedFile[]
+  ) => {
+    if (error || !files?.length) return;
+    const f = files[0];
+    if (!f.type?.startsWith("image/")) return;
+    uploadImage({
+      uri: f.uri,
+      name: f.fileName || `pasted.${f.uri.split(".").pop() || "png"}`,
+      type: f.type,
+    });
+  };
+
   // Resize the tmux window whenever pane or cols changes
   useEffect(() => {
     if (!socket || !activePaneId) return;
@@ -453,13 +472,29 @@ export default function TerminalScreen() {
     };
   }, [socket, activePaneId]);
 
+  // Pause auto-scroll for a few seconds whenever the user touches the terminal,
+  // so a long-press selection / Copy menu isn't yanked away by streaming output.
+  const pauseAutoScroll = () => {
+    interactingRef.current = true;
+    if (interactionTimer.current) clearTimeout(interactionTimer.current);
+    interactionTimer.current = setTimeout(() => {
+      interactingRef.current = false;
+    }, 4000);
+  };
+  useEffect(
+    () => () => {
+      if (interactionTimer.current) clearTimeout(interactionTimer.current);
+    },
+    []
+  );
+
   // Auto-scroll to bottom on new content, but only if user hasn't scrolled up.
-  // Suppressed while selecting so the view doesn't jump out from under a selection.
+  // Suppressed while the user is interacting so a selection isn't yanked away.
   useEffect(() => {
-    if (!isScrolledUp.current && !selectionMode) {
+    if (!isScrolledUp.current && !interactingRef.current) {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
     }
-  }, [content, selectionMode]);
+  }, [content]);
 
 
   // Reset TextInput when switching to keyboard mode
@@ -722,15 +757,16 @@ export default function TerminalScreen() {
         contentContainerStyle={styles.terminalContent}
         keyboardDismissMode="on-drag"
         alwaysBounceVertical
+        onTouchStart={pauseAutoScroll}
         onScrollBeginDrag={() => {
-          // Scrolling means the user is done selecting — resume auto-follow.
-          if (selectionMode) setSelectionMode(false);
+          // A deliberate scroll means the user isn't mid-selection.
+          interactingRef.current = false;
           dragRef.current.fired = false;
         }}
         onContentSizeChange={() => {
           // Pin to the live bottom as content/layout settles (e.g. on open),
           // unless the user has deliberately scrolled up.
-          if (!isScrolledUp.current && !selectionMode) {
+          if (!isScrolledUp.current && !interactingRef.current) {
             scrollRef.current?.scrollToEnd({ animated: false });
           }
         }}
@@ -743,7 +779,7 @@ export default function TerminalScreen() {
           // events; swiping rapidly ramps a multiplier — so speed is a function
           // of how many swipes you fire in a window, not how hard you swipe.
           const d = dragRef.current;
-          if (selectionMode || !socket || !activePaneId || d.fired) return;
+          if (!socket || !activePaneId || d.fired) return;
           const overTop = contentOffset.y < -10;
           const dir = overTop ? -1 : distanceFromBottom < -10 ? 1 : 0;
           if (dir === 0) return;
@@ -759,20 +795,7 @@ export default function TerminalScreen() {
         }}
         scrollEventThrottle={16}
       >
-        <Text
-          selectable
-          style={styles.terminalTextContainer}
-          onLongPress={() => {
-            // Long-press starts a selection — pause auto-scroll-to-bottom so
-            // streaming output doesn't yank the view out from under it.
-            setSelectionMode(true);
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }}
-          onPress={() => {
-            // A tap finishes selecting — resume auto-follow.
-            if (selectionMode) setSelectionMode(false);
-          }}
-        >
+        <Text selectable style={styles.terminalTextContainer}>
           {renderedContent}
         </Text>
       </ScrollView>
@@ -894,7 +917,7 @@ export default function TerminalScreen() {
           </TouchableOpacity>
         </View>
 
-        <TextInput
+        <PasteInput
           style={[
             styles.textInput,
             !isKeyboardMode && { height: inputHeight },
@@ -902,6 +925,7 @@ export default function TerminalScreen() {
           ]}
           value={inputText}
           onChangeText={handleChangeText}
+          onPaste={onInputPaste}
           onFocus={handleInputFocus}
           editable={!voiceActive}
           multiline={!isKeyboardMode}
