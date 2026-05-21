@@ -19,6 +19,7 @@ import * as ImagePicker from "expo-image-picker";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import PasteInput from "@mattermost/react-native-paste-input";
 import type { PastedFile } from "@mattermost/react-native-paste-input";
+import * as Clipboard from "expo-clipboard";
 import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -428,6 +429,20 @@ export default function TerminalScreen() {
     });
   };
 
+  // Copy the visible terminal text to the clipboard. Deterministic and
+  // gesture-free — RN's New-Architecture <Text selectable> is unreliable here.
+  const copyTerminal = async () => {
+    const plain = content
+      .replace(/\x1b\][^\x07]*\x07/g, "") // OSC sequences
+      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "") // CSI / SGR sequences
+      .replace(/[ \t]+$/gm, "")
+      .trimEnd();
+    if (!plain) return;
+    await Clipboard.setStringAsync(plain);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert("Copied", "Terminal text copied to the clipboard.");
+  };
+
   // Resize the tmux window whenever pane or cols changes
   useEffect(() => {
     if (!socket || !activePaneId) return;
@@ -664,6 +679,14 @@ export default function TerminalScreen() {
             color={voiceActive ? theme.error : theme.textSecondary}
             style={voiceActive ? { transform: [{ rotate: "135deg" }] } : undefined}
           />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.filesButton}
+          onPress={copyTerminal}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="copy-outline" size={21} color={theme.textSecondary} />
         </TouchableOpacity>
 
         <TouchableOpacity
