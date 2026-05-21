@@ -376,7 +376,7 @@ export default function TerminalScreen() {
   const pickImageFromLibrary = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      quality: 0.9,
+      quality: 0.7,
     });
     if (result.canceled || !result.assets?.length) return;
     const asset = result.assets[0];
@@ -403,7 +403,8 @@ export default function TerminalScreen() {
     scrollRef.current?.scrollToEnd({ animated: false });
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 350);
     if (scrolledHistoryRef.current && socket && activePaneId) {
-      for (let i = 0; i < 60; i++) socket.sendInput(activePaneId, WHEEL_DOWN);
+      // Single batched message — heuristic depth; harmless no-op once at live.
+      socket.sendInput(activePaneId, WHEEL_DOWN.repeat(60));
       scrolledHistoryRef.current = false;
     }
   };
@@ -458,7 +459,7 @@ export default function TerminalScreen() {
     if (!isScrolledUp.current && !selectionMode) {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
     }
-  }, [content]);
+  }, [content, selectionMode]);
 
 
   // Reset TextInput when switching to keyboard mode
@@ -753,7 +754,8 @@ export default function TerminalScreen() {
           if (dir === -1) scrolledHistoryRef.current = true;
           const seq = dir === -1 ? WHEEL_UP : WHEEL_DOWN;
           const count = Math.min(6 * d.swipes, 40);
-          for (let i = 0; i < count; i++) socket.sendInput(activePaneId, seq);
+          // One WS message / one tmux subprocess for the whole batch.
+          socket.sendInput(activePaneId, seq.repeat(count));
         }}
         scrollEventThrottle={16}
       >
