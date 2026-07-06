@@ -250,6 +250,8 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.fab}
           onPress={() => setShowAdd(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Add machine"
         >
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>

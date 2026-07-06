@@ -159,7 +159,10 @@ export default function FilesScreen() {
     );
   }
 
-  if (loading) {
+  // Full-screen spinner only before anything has loaded; afterwards keep the
+  // current tree on screen and show a corner spinner so navigation doesn't
+  // blank the context on every tap.
+  if (loading && entries.length === 0 && roots.length === 0) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={theme.primary} />
@@ -247,6 +250,11 @@ export default function FilesScreen() {
         </View>
         {/* File viewer renders on top when active */}
         {isViewingFile && renderFileViewer()}
+        {loading && (
+          <View style={styles.loadingBadge} pointerEvents="none">
+            <ActivityIndicator size="small" color={theme.primary} />
+          </View>
+        )}
       </View>
     );
   }
@@ -295,6 +303,16 @@ function isPdfFile(name: string): boolean {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.bgDeep },
+  loadingBadge: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: theme.bgElevated,
+    borderColor: theme.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 6,
+  },
   center: {
     flex: 1,
     alignItems: "center",

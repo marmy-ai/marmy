@@ -632,6 +632,8 @@ export default function TerminalScreen() {
           style={styles.filesButton}
           onPress={handleFiles}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Browse files"
         >
           <Ionicons
             name="folder-outline"
@@ -645,6 +647,8 @@ export default function TerminalScreen() {
           onPress={handlePickImage}
           disabled={uploading}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Attach image"
         >
           {uploading ? (
             <ActivityIndicator size="small" color={theme.textSecondary} />
@@ -661,6 +665,8 @@ export default function TerminalScreen() {
           style={styles.callButton}
           onPress={voiceActive ? stopVoice : startVoice}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={voiceActive ? "End voice call" : "Start voice call"}
         >
           <Ionicons
             name="call-outline"
@@ -677,6 +683,8 @@ export default function TerminalScreen() {
             setSettingsOpen((prev) => !prev);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Terminal settings"
         >
           <Ionicons
             name={settingsOpen ? "settings" : "settings-outline"}
