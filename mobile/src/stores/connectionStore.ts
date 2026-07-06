@@ -32,7 +32,7 @@ interface ConnectionState {
 
   hydrate: () => Promise<void>;
   addMachine: (machine: Omit<Machine, "id" | "online">) => void;
-  updateMachine: (id: string, updates: Partial<Pick<Machine, "name" | "address" | "token">>) => void;
+  updateMachine: (id: string, updates: Partial<Pick<Machine, "name" | "address" | "addresses" | "token">>) => void;
   removeMachine: (id: string) => void;
   connectToMachine: (machine: Machine) => Promise<void>;
   disconnect: () => void;
@@ -85,7 +85,30 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       oldSocket.disconnect();
     }
 
-    const api = new MarmyApi(machine.address, machine.token);
+    // Pick the best address: probe candidates in priority order (Tailscale
+    // first when paired via QR) and take the first that answers. Falls back
+    // to the stored primary so the socket's retry loop still gets a target.
+    let address = machine.address;
+    const candidates = [
+      ...new Set([...(machine.addresses ?? []), machine.address]),
+    ];
+    if (candidates.length > 1) {
+      for (const candidate of candidates) {
+        if (await MarmyApi.probeAddress(candidate, machine.token)) {
+          address = candidate;
+          break;
+        }
+      }
+      if (address !== machine.address) {
+        const machines = get().machines.map((m) =>
+          m.id === machine.id ? { ...m, address } : m
+        );
+        set({ machines });
+        saveMachines(machines);
+      }
+    }
+
+    const api = new MarmyApi(address, machine.token);
     const wsUrl = api.getWsUrl();
     const socket = new MarmySocket(wsUrl);
 
@@ -103,7 +126,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     socket.connect();
 
     set({
-      activeMachine: { ...machine, online: true },
+      activeMachine: { ...machine, address, online: true },
       api,
       socket,
       connected: true,

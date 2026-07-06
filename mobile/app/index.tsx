@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -10,14 +10,34 @@ import {
   StyleSheet,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Haptics from "expo-haptics";
+import { Ionicons } from "@expo/vector-icons";
 import { useConnectionStore } from "../src/stores/connectionStore";
 import { theme } from "../src/theme";
 import RetroComputer from "../src/components/RetroComputer";
 import type { Machine } from "../src/types";
+
+// Payload MacMarmy encodes in its pairing QR:
+// {"marmy":1,"name":"<host>","addrs":["<tailscale ip:port>","<lan ip:port>"],"token":"..."}
+function parsePairingQr(data: string): { name: string; addrs: string[]; token: string } | null {
+  try {
+    const obj = JSON.parse(data);
+    if (obj?.marmy !== 1 || typeof obj.token !== "string" || !obj.token) return null;
+    const addrs = Array.isArray(obj.addrs)
+      ? obj.addrs.filter((a: unknown): a is string => typeof a === "string" && a.length > 0)
+      : [];
+    if (addrs.length === 0) return null;
+    return { name: typeof obj.name === "string" ? obj.name : "", addrs, token: obj.token };
+  } catch {
+    return null;
+  }
+}
 
 export default function HomeScreen() {
   const { machines, addMachine, updateMachine, removeMachine, connectToMachine } =
@@ -29,6 +49,13 @@ export default function HomeScreen() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [token, setToken] = useState("");
+  // All addresses from a scanned QR (Tailscale first); cleared if the user
+  // edits the address field manually afterwards.
+  const [scannedAddrs, setScannedAddrs] = useState<string[] | null>(null);
+
+  const [showScanner, setShowScanner] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const scanHandled = useRef(false);
 
   const [editMachine, setEditMachine] = useState<Machine | null>(null);
   const [editName, setEditName] = useState("");
@@ -40,11 +67,50 @@ export default function HomeScreen() {
       Alert.alert("Error", "All fields are required");
       return;
     }
-    addMachine({ name: name.trim(), address: address.trim(), token: token.trim() });
+    addMachine({
+      name: name.trim(),
+      address: address.trim(),
+      addresses: scannedAddrs ?? undefined,
+      token: token.trim(),
+    });
     setName("");
     setAddress("");
     setToken("");
+    setScannedAddrs(null);
     setShowAdd(false);
+  };
+
+  const openScanner = async () => {
+    if (!cameraPermission?.granted) {
+      const res = await requestCameraPermission();
+      if (!res.granted) {
+        Alert.alert(
+          "Camera access needed",
+          "Allow camera access to scan the pairing QR code from MacMarmy.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ]
+        );
+        return;
+      }
+    }
+    scanHandled.current = false;
+    setShowScanner(true);
+  };
+
+  const handleScanned = ({ data }: { data: string }) => {
+    if (scanHandled.current) return;
+    const pairing = parsePairingQr(data);
+    if (!pairing) return; // not a Marmy QR — keep scanning
+    scanHandled.current = true;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowScanner(false);
+    setShowAdd(true);
+    if (pairing.name && !name.trim()) setName(pairing.name);
+    setAddress(pairing.addrs[0]);
+    setToken(pairing.token);
+    setScannedAddrs(pairing.addrs);
   };
 
   const handleEdit = (machine: Machine) => {
@@ -56,9 +122,12 @@ export default function HomeScreen() {
 
   const handleSaveEdit = () => {
     if (!editMachine) return;
+    const newAddress = editAddress.trim() || editMachine.address;
     updateMachine(editMachine.id, {
       name: editName.trim() || editMachine.name,
-      address: editAddress.trim() || editMachine.address,
+      address: newAddress,
+      // A manual address edit overrides any QR-scanned candidate list.
+      ...(newAddress !== editMachine.address ? { addresses: undefined } : {}),
       token: editToken.trim() || editMachine.token,
     });
     setEditMachine(null);
@@ -95,7 +164,8 @@ export default function HomeScreen() {
               <Text style={styles.offBrand}>MARMY</Text>
             </View>
             <Text style={styles.emptySubtext}>
-              Run `marmy-agent pair` on your machine to get connection details.
+              In MacMarmy's menu, choose "Pair iPhone…" and scan the QR — or run
+              `marmy-agent pair` for the details.
             </Text>
           </View>
         }
@@ -120,6 +190,20 @@ export default function HomeScreen() {
 
       {showAdd ? (
         <View style={styles.addForm}>
+          <TouchableOpacity
+            style={styles.scanBtn}
+            onPress={openScanner}
+            accessibilityRole="button"
+            accessibilityLabel="Scan pairing QR code"
+          >
+            <Ionicons name="qr-code-outline" size={18} color={theme.primary} />
+            <Text style={styles.scanBtnText}>Scan QR from MacMarmy</Text>
+          </TouchableOpacity>
+          {scannedAddrs && scannedAddrs.length > 1 && (
+            <Text style={styles.scanHint}>
+              {scannedAddrs.length} addresses scanned — Tailscale preferred, LAN as fallback.
+            </Text>
+          )}
           <TextInput
             style={styles.input}
             placeholder="Machine name"
@@ -132,7 +216,10 @@ export default function HomeScreen() {
             placeholder="Address (host:port)"
             placeholderTextColor={theme.textDim}
             value={address}
-            onChangeText={setAddress}
+            onChangeText={(v) => {
+              setAddress(v);
+              setScannedAddrs(null);
+            }}
             autoCapitalize="none"
             keyboardType="url"
           />
@@ -148,7 +235,10 @@ export default function HomeScreen() {
           <View style={styles.addButtons}>
             <TouchableOpacity
               style={styles.cancelBtn}
-              onPress={() => setShowAdd(false)}
+              onPress={() => {
+                setShowAdd(false);
+                setScannedAddrs(null);
+              }}
             >
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
@@ -165,6 +255,35 @@ export default function HomeScreen() {
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       )}
+      <Modal
+        visible={showScanner}
+        animationType="slide"
+        onRequestClose={() => setShowScanner(false)}
+      >
+        <View style={styles.scannerContainer}>
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={handleScanned}
+          />
+          <View style={[styles.scannerOverlay, { paddingTop: insets.top + 12 }]} pointerEvents="box-none">
+            <Text style={styles.scannerTitle}>
+              Scan the QR from MacMarmy's "Pair iPhone…" window
+            </Text>
+            <View style={styles.scannerFrame} />
+            <TouchableOpacity
+              style={[styles.scannerClose, { marginBottom: insets.bottom + 24 }]}
+              onPress={() => setShowScanner(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close scanner"
+            >
+              <Text style={styles.scannerCloseText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={!!editMachine}
         transparent
@@ -263,6 +382,56 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.border,
   },
+  scanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: theme.primary,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  scanBtnText: { color: theme.primary, fontSize: 15, fontWeight: "600" },
+  scanHint: {
+    color: theme.textTertiary,
+    fontSize: 12,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  scannerContainer: { flex: 1, backgroundColor: "#000" },
+  scannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+  },
+  scannerTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    overflow: "hidden",
+  },
+  scannerFrame: {
+    width: 230,
+    height: 230,
+    borderRadius: 16,
+    borderWidth: 3,
+    borderColor: "rgba(255,255,255,0.85)",
+  },
+  scannerClose: {
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+  },
+  scannerCloseText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   input: {
     backgroundColor: theme.bgDeep,
     borderWidth: 1,

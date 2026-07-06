@@ -17,6 +17,8 @@
     "@types/marked": "^5.0.2",
     "expo": "~54.0.0",
     "expo-asset": "~12.0.12",
+    "expo-camera": "~17.0.10",
+    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-haptics": "~15.0.8",
     "expo-image-picker": "~17.0.11",
