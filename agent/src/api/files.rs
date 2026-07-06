@@ -398,16 +398,35 @@ fn is_path_allowed(path: &Path, allowed: &[String]) -> bool {
 
 /// Check if a pane's cwd is itself under one of the configured allowed_paths.
 /// Returns false if allowed_paths is empty (file browsing disabled).
-fn is_pane_cwd_within_allowed(pane_canonical: &std::path::Path, allowed_paths: &[String]) -> bool {
+fn is_pane_cwd_within_allowed(pane_path: &std::path::Path, allowed_paths: &[String]) -> bool {
     for allowed_path in allowed_paths {
         let allowed = resolve_path(allowed_path);
         if let Ok(allowed_canonical) = allowed.canonicalize() {
-            if pane_canonical.starts_with(&allowed_canonical) {
+            if pane_path.starts_with(&allowed_canonical) {
                 return true;
             }
         }
     }
     false
+}
+
+/// A pane's `#{pane_current_path}` as reported by tmux is the kernel-resolved
+/// cwd of the pane process: absolute and symlink-free. Using it lexically
+/// (instead of canonicalize(), which stats every component) matters on macOS:
+/// stat'ing a pane cwd inside ~/Downloads, ~/Documents, or ~/Desktop fires a
+/// synchronous TCC permission prompt attributed to the parent app, blocking
+/// the request until the user answers — even when the requested file is
+/// somewhere else entirely. Only the *requested* path gets canonicalized (to
+/// stop ../ and symlink escapes); pane cwds are compared as-is.
+fn pane_cwd(pane_current_path: &str) -> Option<PathBuf> {
+    if pane_current_path.is_empty() || pane_current_path == "/" {
+        return None;
+    }
+    let path = PathBuf::from(pane_current_path);
+    if !path.is_absolute() {
+        return None;
+    }
+    Some(path)
 }
 
 /// Dynamic path validation: checks static allowed_paths first, then pane working directories.
@@ -434,19 +453,16 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
     };
 
     for pane in &topology.panes {
-        let pane_path = PathBuf::from(&pane.current_path);
-        if let Ok(pane_canonical) = pane_path.canonicalize() {
-            if pane_canonical == PathBuf::from("/") {
-                continue;
-            }
-            // If allowed_paths is configured, pane cwds must be under an allowed path.
-            // If allowed_paths is empty (default), any pane cwd is permitted.
-            if canonical.starts_with(&pane_canonical)
-                && (allowed_paths.is_empty()
-                    || is_pane_cwd_within_allowed(&pane_canonical, allowed_paths))
-            {
-                return true;
-            }
+        let Some(pane_path) = pane_cwd(&pane.current_path) else {
+            continue;
+        };
+        // If allowed_paths is configured, pane cwds must be under an allowed path.
+        // If allowed_paths is empty (default), any pane cwd is permitted.
+        if canonical.starts_with(&pane_path)
+            && (allowed_paths.is_empty()
+                || is_pane_cwd_within_allowed(&pane_path, allowed_paths))
+        {
+            return true;
         }
     }
 
@@ -474,14 +490,14 @@ async fn is_path_allowed_for_browsing(path: &Path, state: &AppState) -> bool {
     };
 
     for pane in &topology.panes {
-        let pane_path = PathBuf::from(&pane.current_path);
-        if let Ok(pane_canonical) = pane_path.canonicalize() {
-            if pane_canonical.starts_with(&canonical)
-                && (allowed_paths.is_empty()
-                    || is_pane_cwd_within_allowed(&pane_canonical, allowed_paths))
-            {
-                return true;
-            }
+        let Some(pane_path) = pane_cwd(&pane.current_path) else {
+            continue;
+        };
+        if pane_path.starts_with(&canonical)
+            && (allowed_paths.is_empty()
+                || is_pane_cwd_within_allowed(&pane_path, allowed_paths))
+        {
+            return true;
         }
     }
 
