@@ -12,6 +12,7 @@
 		A10000010000000000000003 /* ConfigReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000020000000000000003 /* ConfigReader.swift */; };
 		A10000010000000000000004 /* PairingInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000020000000000000004 /* PairingInfo.swift */; };
 		A10000010000000000000005 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000020000000000000005 /* MenuBarView.swift */; };
+		A1000001000000000000000A /* AuxWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002000000000000000A /* AuxWindows.swift */; };
 		A10000010000000000000009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000020000000000000009 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -21,6 +22,7 @@
 		A10000020000000000000003 /* ConfigReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigReader.swift; sourceTree = "<group>"; };
 		A10000020000000000000004 /* PairingInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingInfo.swift; sourceTree = "<group>"; };
 		A10000020000000000000005 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		A1000002000000000000000A /* AuxWindows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxWindows.swift; sourceTree = "<group>"; };
 		A10000020000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000020000000000000007 /* build-agent.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "build-agent.sh"; sourceTree = "<group>"; };
 		A10000020000000000000008 /* MacMarmy.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MacMarmy.entitlements; sourceTree = "<group>"; };
@@ -56,6 +58,7 @@
 				A10000020000000000000003 /* ConfigReader.swift */,
 				A10000020000000000000004 /* PairingInfo.swift */,
 				A10000020000000000000005 /* MenuBarView.swift */,
+				A1000002000000000000000A /* AuxWindows.swift */,
 				A10000020000000000000006 /* Info.plist */,
 				A10000020000000000000008 /* MacMarmy.entitlements */,
 				A10000020000000000000009 /* Assets.xcassets */,
@@ -172,6 +175,7 @@
 				A10000010000000000000003 /* ConfigReader.swift in Sources */,
 				A10000010000000000000004 /* PairingInfo.swift in Sources */,
 				A10000010000000000000005 /* MenuBarView.swift in Sources */,
+				A1000001000000000000000A /* AuxWindows.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -47,6 +47,8 @@ final class AgentManager: ObservableObject {
     private var process: Process?
     private var healthTimer: Timer?
     private var isStopping = false
+    private var restartAttempts = 0
+    private static let maxRestartAttempts = 3
 
     init() {
         reloadConfig()
@@ -99,14 +101,25 @@ final class AgentManager: ObservableObject {
                 Task { @MainActor [weak self] in
                     guard let self = self else { return }
                     self.stopHealthCheck()
+                    self.process = nil
                     if self.isStopping {
                         self.status = .stopped
-                    } else if p.terminationStatus != 0 {
+                        return
+                    }
+                    if p.terminationStatus != 0 {
                         self.status = .error("Exit code \(p.terminationStatus)")
                     } else {
                         self.status = .stopped
                     }
-                    self.process = nil
+                    // A crash while we weren't stopping: respawn with a cap so a
+                    // broken binary doesn't loop forever. Reset once healthy.
+                    if self.restartAttempts < Self.maxRestartAttempts {
+                        self.restartAttempts += 1
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                            guard let self = self, self.process == nil, !self.isStopping else { return }
+                            self.start()
+                        }
+                    }
                 }
             }
 
@@ -184,6 +197,7 @@ final class AgentManager: ObservableObject {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                restartAttempts = 0
                 if status != .running {
                     status = .running
                     reloadConfig()
