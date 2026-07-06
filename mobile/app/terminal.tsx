@@ -26,6 +26,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useConnectionStore } from "../src/stores/connectionStore";
 import { useSessionStore } from "../src/stores/sessionStore";
 import { VoiceSession } from "../src/services/voiceSession";
+import { useTerminalSelection } from "../src/components/TerminalSelection";
 import { theme } from "../src/theme";
 import type { VoiceState } from "../src/services/voiceSession";
 import VoiceCallBar from "../src/components/VoiceCallBar";
@@ -251,6 +252,9 @@ export default function TerminalScreen() {
   const [uploading, setUploading] = useState(false);
   const scrolledHistoryRef = useRef(false);
   const dragRef = useRef({ fired: false, swipes: 0, lastSwipe: 0 });
+
+  // Long-press selection + copy. Content is frozen while a selection is up.
+  const selection = useTerminalSelection(content);
 
   // Restore saved settings on mount
   useEffect(() => {
@@ -491,10 +495,10 @@ export default function TerminalScreen() {
   // Auto-scroll to bottom on new content, but only if user hasn't scrolled up.
   // Suppressed while the user is interacting so a selection isn't yanked away.
   useEffect(() => {
-    if (!isScrolledUp.current && !interactingRef.current) {
+    if (!isScrolledUp.current && !interactingRef.current && !selection.active) {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 50);
     }
-  }, [content]);
+  }, [content, selection.active]);
 
 
   // Reset TextInput when switching to keyboard mode
@@ -587,7 +591,7 @@ export default function TerminalScreen() {
 
   const renderedContent = useMemo(() => {
     // Strip trailing blank lines (tmux pane includes full screen height of empty lines)
-    const lines = content.split("\n");
+    const lines = selection.displayContent.split("\n");
     while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
       lines.pop();
     }
@@ -595,7 +599,7 @@ export default function TerminalScreen() {
     const MAX_LINES = 500;
     const capped = lines.length > MAX_LINES ? lines.slice(-MAX_LINES) : lines;
     return renderContent(capped.join("\n"));
-  }, [content]);
+  }, [selection.displayContent]);
 
   if (!connected) {
     return (
@@ -751,12 +755,14 @@ export default function TerminalScreen() {
       )}
 
       {/* Terminal content with ANSI rendering */}
+      <View style={styles.terminalArea}>
       <ScrollView
         ref={scrollRef}
         style={styles.terminalScroll}
         contentContainerStyle={styles.terminalContent}
         keyboardDismissMode="on-drag"
         alwaysBounceVertical
+        scrollEnabled={!selection.active}
         onTouchStart={pauseAutoScroll}
         onScrollBeginDrag={() => {
           // A deliberate scroll means the user isn't mid-selection.
@@ -766,7 +772,7 @@ export default function TerminalScreen() {
         onContentSizeChange={() => {
           // Pin to the live bottom as content/layout settles (e.g. on open),
           // unless the user has deliberately scrolled up.
-          if (!isScrolledUp.current && !interactingRef.current) {
+          if (!isScrolledUp.current && !interactingRef.current && !selection.active) {
             scrollRef.current?.scrollToEnd({ animated: false });
           }
         }}
@@ -795,10 +801,23 @@ export default function TerminalScreen() {
         }}
         scrollEventThrottle={16}
       >
-        <Text selectable style={styles.terminalTextContainer}>
-          {renderedContent}
-        </Text>
+        <View
+          collapsable={false}
+          onTouchStart={selection.touchHandlers.onTouchStart}
+          onTouchMove={selection.touchHandlers.onTouchMove}
+          onTouchEnd={selection.touchHandlers.onTouchEnd}
+        >
+          {selection.highlightOverlay}
+          <Text
+            style={styles.terminalTextContainer}
+            onTextLayout={selection.onTextLayout}
+          >
+            {renderedContent}
+          </Text>
+        </View>
       </ScrollView>
+      {selection.toolbar}
+      </View>
 
       {/* Shortcut bar — unified paginated grid for both modes */}
       <View
@@ -1053,6 +1072,9 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     width: 28,
     textAlign: "right",
+  },
+  terminalArea: {
+    flex: 1,
   },
   terminalScroll: {
     flex: 1,

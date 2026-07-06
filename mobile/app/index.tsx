@@ -164,8 +164,7 @@ export default function HomeScreen() {
               <Text style={styles.offBrand}>MARMY</Text>
             </View>
             <Text style={styles.emptySubtext}>
-              In MacMarmy's menu, choose "Pair iPhone…" and scan the QR — or run
-              `marmy-agent pair` for the details.
+              {'In MacMarmy\'s menu, choose "Pair iPhone…" and scan the QR — or run `marmy-agent pair` for the details.'}
             </Text>
           </View>
         }
@@ -269,7 +268,7 @@ export default function HomeScreen() {
           />
           <View style={[styles.scannerOverlay, { paddingTop: insets.top + 12 }]} pointerEvents="box-none">
             <Text style={styles.scannerTitle}>
-              Scan the QR from MacMarmy's "Pair iPhone…" window
+              {'Scan the QR from MacMarmy\'s "Pair iPhone…" window'}
             </Text>
             <View style={styles.scannerFrame} />
             <TouchableOpacity
