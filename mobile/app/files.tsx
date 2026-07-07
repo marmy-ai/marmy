@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -35,6 +35,9 @@ export default function FilesScreen() {
   const [currentPath, setCurrentPath] = useState("");
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  // Monotonic navigation token: since the tree stays interactive while a
+  // listDir is in flight, a stale response must not overwrite a newer one.
+  const navSeq = useRef(0);
 
   // Auto-load session roots on mount
   useEffect(() => {
@@ -61,15 +64,17 @@ export default function FilesScreen() {
   const loadDirectory = useCallback(
     async (path: string) => {
       if (!api) return;
+      const seq = ++navSeq.current;
       setLoading(true);
       try {
         const listing = await api.listDir(path);
+        if (seq !== navSeq.current) return;
         setEntries(listing.entries);
         setCurrentPath(listing.path);
       } catch (e: any) {
-        Alert.alert("Error", e.message);
+        if (seq === navSeq.current) Alert.alert("Error", e.message);
       } finally {
-        setLoading(false);
+        if (seq === navSeq.current) setLoading(false);
       }
     },
     [api]
@@ -78,9 +83,11 @@ export default function FilesScreen() {
   const selectRoot = useCallback(
     async (root: SessionRoot) => {
       if (!api) return;
+      const seq = ++navSeq.current;
       setLoading(true);
       try {
         const listing = await api.listDir(root.path);
+        if (seq !== navSeq.current) return;
         setEntries(listing.entries);
         setCurrentPath(listing.path);
         setPhase((prev) =>
@@ -89,9 +96,9 @@ export default function FilesScreen() {
             : prev
         );
       } catch (e: any) {
-        Alert.alert("Error", e.message);
+        if (seq === navSeq.current) Alert.alert("Error", e.message);
       } finally {
-        setLoading(false);
+        if (seq === navSeq.current) setLoading(false);
       }
     },
     [api]
@@ -112,18 +119,20 @@ export default function FilesScreen() {
         return;
       }
 
+      const seq = ++navSeq.current;
       setLoading(true);
       try {
         const file = await api.readFile(path);
+        if (seq !== navSeq.current) return;
         if (isMarkdownFile(filename)) {
           setPhase({ kind: "markdown", path: file.path, content: file.content });
         } else {
           setPhase({ kind: "file", path: file.path, content: file.content });
         }
       } catch (e: any) {
-        Alert.alert("Error", e.message);
+        if (seq === navSeq.current) Alert.alert("Error", e.message);
       } finally {
-        setLoading(false);
+        if (seq === navSeq.current) setLoading(false);
       }
     },
     [api]
@@ -272,6 +281,7 @@ export default function FilesScreen() {
           <TouchableOpacity
             style={styles.entry}
             onPress={() => selectRoot(item)}
+            disabled={loading}
           >
             <View style={styles.entryContent}>
               <Text style={styles.entryTitle} numberOfLines={1}>
@@ -289,6 +299,11 @@ export default function FilesScreen() {
           </View>
         }
       />
+      {loading && (
+        <View style={styles.loadingBadge} pointerEvents="none">
+          <ActivityIndicator size="small" color={theme.primary} />
+        </View>
+      )}
     </View>
   );
 }

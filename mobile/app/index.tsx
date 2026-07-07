@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Modal,
   StyleSheet,
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Linking,
@@ -133,12 +134,18 @@ export default function HomeScreen() {
     setEditMachine(null);
   };
 
+  const [connectingId, setConnectingId] = useState<string | null>(null);
+
   const handleConnect = async (machine: (typeof machines)[0]) => {
+    if (connectingId) return; // one connect at a time
+    setConnectingId(machine.id);
     try {
       await connectToMachine(machine);
       router.push("/workers");
     } catch (e: any) {
       Alert.alert("Connection failed", e.message);
+    } finally {
+      setConnectingId(null);
     }
   };
 
@@ -256,6 +263,13 @@ export default function HomeScreen() {
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       )}
+      {connectingId && (
+        <View style={styles.connectingOverlay}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={styles.connectingText}>Connecting…</Text>
+        </View>
+      )}
+
       <Modal
         visible={showScanner}
         animationType="slide"
@@ -433,6 +447,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   scannerCloseText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  connectingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15, 15, 26, 0.75)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  connectingText: { color: theme.textSecondary, fontSize: 15 },
   input: {
     backgroundColor: theme.bgDeep,
     borderWidth: 1,

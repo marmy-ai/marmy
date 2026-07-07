@@ -364,7 +364,7 @@ fn has_hidden_component(path: &Path) -> bool {
 }
 
 /// Resolve ~ and relative paths to absolute.
-fn resolve_path(path: &str) -> PathBuf {
+pub(crate) fn resolve_path(path: &str) -> PathBuf {
     if path.starts_with('~') {
         if let Some(home) = dirs::home_dir() {
             return home.join(&path[1..].trim_start_matches('/'));
@@ -374,7 +374,9 @@ fn resolve_path(path: &str) -> PathBuf {
 }
 
 /// Check if a path is within one of the allowed directories.
-fn is_path_allowed(path: &Path, allowed: &[String]) -> bool {
+/// `allowed` is pre-canonicalized at startup (state.allowed_paths_canonical) —
+/// no filesystem access happens here beyond canonicalizing the requested path.
+fn is_path_allowed(path: &Path, allowed: &[PathBuf]) -> bool {
     if allowed.is_empty() {
         return false;
     }
@@ -384,30 +386,12 @@ fn is_path_allowed(path: &Path, allowed: &[String]) -> bool {
         Err(_) => return false,
     };
 
-    for allowed_path in allowed {
-        let allowed = resolve_path(allowed_path);
-        if let Ok(allowed) = allowed.canonicalize() {
-            if path.starts_with(&allowed) {
-                return true;
-            }
-        }
-    }
-
-    false
+    allowed.iter().any(|a| path.starts_with(a))
 }
 
-/// Check if a pane's cwd is itself under one of the configured allowed_paths.
-/// Returns false if allowed_paths is empty (file browsing disabled).
-fn is_pane_cwd_within_allowed(pane_path: &std::path::Path, allowed_paths: &[String]) -> bool {
-    for allowed_path in allowed_paths {
-        let allowed = resolve_path(allowed_path);
-        if let Ok(allowed_canonical) = allowed.canonicalize() {
-            if pane_path.starts_with(&allowed_canonical) {
-                return true;
-            }
-        }
-    }
-    false
+/// Check if a pane's cwd is itself under one of the pre-canonicalized allowed_paths.
+fn is_pane_cwd_within_allowed(pane_path: &std::path::Path, allowed: &[PathBuf]) -> bool {
+    allowed.iter().any(|a| pane_path.starts_with(a))
 }
 
 /// A pane's `#{pane_current_path}` as reported by tmux is the kernel-resolved
@@ -419,11 +403,13 @@ fn is_pane_cwd_within_allowed(pane_path: &std::path::Path, allowed_paths: &[Stri
 /// somewhere else entirely. Only the *requested* path gets canonicalized (to
 /// stop ../ and symlink escapes); pane cwds are compared as-is.
 fn pane_cwd(pane_current_path: &str) -> Option<PathBuf> {
-    if pane_current_path.is_empty() || pane_current_path == "/" {
+    if pane_current_path.is_empty() {
         return None;
     }
     let path = PathBuf::from(pane_current_path);
-    if !path.is_absolute() {
+    // parent().is_none() catches every root-only spelling ("/", "//", "/."),
+    // any of which would lexically prefix-match the whole filesystem.
+    if !path.is_absolute() || path.parent().is_none() {
         return None;
     }
     Some(path)
@@ -434,10 +420,13 @@ fn pane_cwd(pane_current_path: &str) -> Option<PathBuf> {
 /// allowed_path. When allowed_paths is empty (default), any pane cwd is allowed — this is
 /// the sane default for a single-user tool.
 async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
-    let allowed_paths = &state.config.files.allowed_paths;
+    // Configured-ness comes from the raw config: if the user configured paths
+    // but none resolved at startup, we must fail closed, not open everything.
+    let allowed_configured = !state.config.files.allowed_paths.is_empty();
+    let allowed = state.allowed_paths_canonical.as_slice();
 
     // Static config check first
-    if is_path_allowed(path, allowed_paths) {
+    if is_path_allowed(path, allowed) {
         return true;
     }
 
@@ -459,8 +448,7 @@ async fn is_path_allowed_dynamic(path: &Path, state: &AppState) -> bool {
         // If allowed_paths is configured, pane cwds must be under an allowed path.
         // If allowed_paths is empty (default), any pane cwd is permitted.
         if canonical.starts_with(&pane_path)
-            && (allowed_paths.is_empty()
-                || is_pane_cwd_within_allowed(&pane_path, allowed_paths))
+            && (!allowed_configured || is_pane_cwd_within_allowed(&pane_path, allowed))
         {
             return true;
         }
@@ -481,7 +469,8 @@ async fn is_path_allowed_for_browsing(path: &Path, state: &AppState) -> bool {
         Err(_) => return false,
     };
 
-    let allowed_paths = &state.config.files.allowed_paths;
+    let allowed_configured = !state.config.files.allowed_paths.is_empty();
+    let allowed = state.allowed_paths_canonical.as_slice();
 
     // Allow ancestors of pane working directories so users can navigate down
     let topology = match state.get_topology().await {
@@ -494,24 +483,14 @@ async fn is_path_allowed_for_browsing(path: &Path, state: &AppState) -> bool {
             continue;
         };
         if pane_path.starts_with(&canonical)
-            && (allowed_paths.is_empty()
-                || is_pane_cwd_within_allowed(&pane_path, allowed_paths))
+            && (!allowed_configured || is_pane_cwd_within_allowed(&pane_path, allowed))
         {
             return true;
         }
     }
 
     // Also allow ancestors of static allowed_paths
-    for allowed_path in allowed_paths {
-        let allowed = resolve_path(allowed_path);
-        if let Ok(allowed_canonical) = allowed.canonicalize() {
-            if allowed_canonical.starts_with(&canonical) {
-                return true;
-            }
-        }
-    }
-
-    false
+    allowed.iter().any(|a| a.starts_with(&canonical))
 }
 
 /// Map file extension to MIME type for raw serving.
@@ -655,27 +634,27 @@ mod tests {
 
     #[test]
     fn path_allowed_empty_list_rejects_everything() {
-        let allowed: Vec<String> = vec![];
+        let allowed: Vec<PathBuf> = vec![];
         assert!(!is_path_allowed(Path::new("/tmp"), &allowed));
     }
 
     #[test]
     fn path_allowed_nonexistent_path_rejected() {
         // canonicalize will fail on a path that doesn't exist
-        let allowed = vec!["/tmp".to_string()];
+        let allowed = vec![PathBuf::from("/tmp").canonicalize().unwrap()];
         assert!(!is_path_allowed(Path::new("/nonexistent/fake/path"), &allowed));
     }
 
     #[test]
     fn path_allowed_within_allowed_dir() {
         // Use /tmp itself — canonicalizes to /private/tmp on macOS
-        let allowed = vec!["/tmp".to_string()];
+        let allowed = vec![PathBuf::from("/tmp").canonicalize().unwrap()];
         assert!(is_path_allowed(Path::new("/tmp"), &allowed));
     }
 
     #[test]
     fn path_allowed_outside_allowed_dir() {
-        let allowed = vec!["/tmp".to_string()];
+        let allowed = vec![PathBuf::from("/tmp").canonicalize().unwrap()];
         // /usr is not under /tmp
         assert!(!is_path_allowed(Path::new("/usr"), &allowed));
     }
@@ -688,7 +667,7 @@ mod tests {
         let child = parent.path().join("sub");
         std::fs::create_dir(&child).unwrap();
 
-        let allowed = vec![parent.path().to_string_lossy().to_string()];
+        let allowed = vec![parent.path().canonicalize().unwrap()];
         assert!(is_path_allowed(&child, &allowed));
     }
 
@@ -698,7 +677,7 @@ mod tests {
         let child = parent.path().join("sub");
         std::fs::create_dir(&child).unwrap();
 
-        let allowed = vec![child.to_string_lossy().to_string()];
+        let allowed = vec![child.canonicalize().unwrap()];
         assert!(!is_path_allowed(parent.path(), &allowed));
     }
 
@@ -710,7 +689,7 @@ mod tests {
         let link_path = link_parent.path().join("link");
         std::os::unix::fs::symlink(real_dir.path(), &link_path).unwrap();
 
-        let allowed = vec![real_dir.path().to_string_lossy().to_string()];
+        let allowed = vec![real_dir.path().canonicalize().unwrap()];
         assert!(is_path_allowed(&link_path, &allowed));
     }
 
@@ -721,12 +700,29 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
 
         let allowed = vec![
-            dir_a.path().to_string_lossy().to_string(),
-            dir_b.path().to_string_lossy().to_string(),
+            dir_a.path().canonicalize().unwrap(),
+            dir_b.path().canonicalize().unwrap(),
         ];
         assert!(is_path_allowed(dir_a.path(), &allowed));
         assert!(is_path_allowed(dir_b.path(), &allowed));
         assert!(!is_path_allowed(outside.path(), &allowed));
+    }
+
+    // --- pane_cwd ---
+
+    #[test]
+    fn pane_cwd_rejects_root_spellings_and_relative() {
+        // Any root-only spelling would lexically prefix-match the whole filesystem.
+        assert!(pane_cwd("").is_none());
+        assert!(pane_cwd("/").is_none());
+        assert!(pane_cwd("//").is_none());
+        assert!(pane_cwd("///").is_none());
+        assert!(pane_cwd("/.").is_none());
+        assert!(pane_cwd("relative/path").is_none());
+        assert_eq!(
+            pane_cwd("/Users/me/project"),
+            Some(PathBuf::from("/Users/me/project"))
+        );
     }
 
     // --- is_pane_cwd_within_allowed ---
@@ -737,7 +733,7 @@ mod tests {
         let pane_dir = parent.path().join("project");
         std::fs::create_dir(&pane_dir).unwrap();
 
-        let allowed = vec![parent.path().to_string_lossy().to_string()];
+        let allowed = vec![parent.path().canonicalize().unwrap()];
         let pane_canonical = pane_dir.canonicalize().unwrap();
         assert!(is_pane_cwd_within_allowed(&pane_canonical, &allowed));
     }
@@ -747,7 +743,7 @@ mod tests {
         let allowed_dir = tempfile::tempdir().unwrap();
         let pane_dir = tempfile::tempdir().unwrap();
 
-        let allowed = vec![allowed_dir.path().to_string_lossy().to_string()];
+        let allowed = vec![allowed_dir.path().canonicalize().unwrap()];
         let pane_canonical = pane_dir.path().canonicalize().unwrap();
         assert!(!is_pane_cwd_within_allowed(&pane_canonical, &allowed));
     }
@@ -762,7 +758,7 @@ mod tests {
     #[test]
     fn pane_cwd_exact_match_allowed() {
         let dir = tempfile::tempdir().unwrap();
-        let allowed = vec![dir.path().to_string_lossy().to_string()];
+        let allowed = vec![dir.path().canonicalize().unwrap()];
         let canonical = dir.path().canonicalize().unwrap();
         assert!(is_pane_cwd_within_allowed(&canonical, &allowed));
     }

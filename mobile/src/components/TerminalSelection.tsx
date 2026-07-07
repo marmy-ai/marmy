@@ -43,12 +43,6 @@ const MOVE_SLOP = 10;
 const FALLBACK_CHAR_WIDTH = 6.63; // Menlo at fontSize 11
 const SELECTION_BG = "rgba(232, 97, 60, 0.30)"; // theme.primary @ 30%
 
-function stripAnsi(raw: string): string {
-  return raw
-    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
-    .replace(/\x1b\][^\x07]*\x07/g, "");
-}
-
 export function useTerminalSelection(content: string) {
   const [active, setActive] = useState(false);
   const [frozen, setFrozen] = useState<string | null>(null);
@@ -58,6 +52,12 @@ export function useTerminalSelection(content: string) {
   const linesRef = useRef<VisualLine[]>([]);
   const contentRef = useRef(content);
   contentRef.current = content;
+  // The content string the current linesRef geometry describes. During
+  // streaming, `content` can be one snapshot ahead of the last delivered
+  // layout event — freezing THIS string (not contentRef) at activation keeps
+  // highlight, extraction, and display consistent with each other.
+  const layoutContentRef = useRef(content);
+  const charWidthRef = useRef(FALLBACK_CHAR_WIDTH);
 
   const touchRef = useRef({
     x: 0,
@@ -85,21 +85,27 @@ export function useTerminalSelection(content: string) {
           height: l.height,
         };
       });
+      layoutContentRef.current = contentRef.current;
+      // One char width per layout (monospace): widest visible line wins.
+      // Layout width excludes trailing whitespace, so divide by visible chars.
+      let bestLen = 0;
+      let bestWidth = 0;
+      for (const l of linesRef.current) {
+        const visible = l.clean.replace(/\s+$/, "").length;
+        if (visible > bestLen && l.width > 0) {
+          bestLen = visible;
+          bestWidth = l.width;
+        }
+      }
+      if (bestLen > 3) charWidthRef.current = bestWidth / bestLen;
     },
     [active]
   );
 
   const charWidth = useCallback((line: VisualLine): number => {
-    // Layout width excludes trailing whitespace, so divide by visible chars.
     const visible = line.clean.replace(/\s+$/, "").length;
     if (visible > 0 && line.width > 0) return line.width / visible;
-    let best: VisualLine | null = null;
-    for (const l of linesRef.current) {
-      const len = l.clean.replace(/\s+$/, "").length;
-      if (len > 3 && (!best || len > best.clean.length)) best = l;
-    }
-    if (best) return best.width / best.clean.replace(/\s+$/, "").length;
-    return FALLBACK_CHAR_WIDTH;
+    return charWidthRef.current;
   }, []);
 
   const pointAt = useCallback(
@@ -152,10 +158,9 @@ export function useTerminalSelection(content: string) {
   const extractText = useCallback((): string => {
     const range = ordered();
     const lines = linesRef.current;
-    if (!range || lines.length === 0) {
-      // No layout info (shouldn't happen) — fall back to everything.
-      return stripAnsi(frozen ?? contentRef.current);
-    }
+    // Without layout geometry there is no meaningful selection — return
+    // nothing rather than surprise the user with the whole raw buffer.
+    if (!range || lines.length === 0) return "";
     const [s, e] = range;
     let out = "";
     for (let r = s.row; r <= e.row && r < lines.length; r++) {
@@ -169,7 +174,7 @@ export function useTerminalSelection(content: string) {
       if (r < e.row && line.hard) out += "\n";
     }
     return out;
-  }, [ordered, frozen]);
+  }, [ordered]);
 
   const deactivate = useCallback(() => {
     setActive(false);
@@ -214,10 +219,15 @@ export function useTerminalSelection(content: string) {
         t.timer = setTimeout(() => {
           t.timer = null;
           if (t.moved) return;
+          // No layout geometry yet (fresh mount / pane switch) — a selection
+          // would have nothing to anchor to or highlight.
+          if (linesRef.current.length === 0) return;
           const p = pointAt(t.x, t.y);
           const [a, f] = wordRangeAt(p.row, t.x);
           t.activatedByThisTouch = true;
-          setFrozen(contentRef.current);
+          // Freeze the content the current geometry describes (it can lag
+          // contentRef by one streaming snapshot).
+          setFrozen(layoutContentRef.current);
           setAnchor(a);
           setFocus(f);
           setActive(true);
@@ -245,7 +255,12 @@ export function useTerminalSelection(content: string) {
         }
       }
       if (active && t.moved) {
-        setFocus(pointAt(locationX, locationY));
+        const p = pointAt(locationX, locationY);
+        // Bail out when the point hasn't changed — touch events arrive at
+        // ~60Hz and each setFocus re-renders the highlight overlay.
+        setFocus((prev) =>
+          prev && prev.row === p.row && prev.col === p.col ? prev : p
+        );
       }
     },
     [active, pointAt]
@@ -263,6 +278,20 @@ export function useTerminalSelection(content: string) {
     }
     t.activatedByThisTouch = false;
   }, [active, deactivate]);
+
+  // iOS CANCELS (not ends) the content view's touches when the ScrollView
+  // claims a pan — without this, the long-press timer survives a flick and
+  // spuriously activates selection mid-scroll. Also called from
+  // onScrollBeginDrag, since the pan can win before slop is exceeded.
+  const onTouchCancel = useCallback(() => {
+    const t = touchRef.current;
+    if (t.timer) {
+      clearTimeout(t.timer);
+      t.timer = null;
+    }
+    t.activatedByThisTouch = false;
+    t.moved = false;
+  }, []);
 
   // --- Overlay + toolbar ---
 
@@ -341,7 +370,7 @@ export function useTerminalSelection(content: string) {
     active,
     displayContent: frozen ?? content,
     onTextLayout,
-    touchHandlers: { onTouchStart, onTouchMove, onTouchEnd },
+    touchHandlers: { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel },
     highlightOverlay,
     toolbar,
   };

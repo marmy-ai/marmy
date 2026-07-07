@@ -7,6 +7,12 @@ import { registerForPushNotifications } from "../services/notifications";
 
 const MACHINES_KEY = "marmy_machines";
 
+// Monotonic connect token. connectToMachine suspends on network probes, so
+// overlapping calls (double-tap, switch machines mid-connect) must be able to
+// tell they've been superseded — otherwise the loser's socket leaks and its
+// later set() clobbers the winner's connection.
+let connectSeq = 0;
+
 async function loadMachines(): Promise<Machine[]> {
   try {
     const raw = await SecureStore.getItemAsync(MACHINES_KEY);
@@ -80,25 +86,37 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   },
 
   connectToMachine: async (machine) => {
+    const seq = ++connectSeq;
     const { socket: oldSocket } = get();
     if (oldSocket) {
       oldSocket.disconnect();
     }
 
-    // Pick the best address: probe candidates in priority order (Tailscale
-    // first when paired via QR) and take the first that answers. Falls back
-    // to the stored primary so the socket's retry loop still gets a target.
+    // Pick the best address. Order: last-known-good first (it usually still
+    // works, so reconnects are instant), then the QR candidate list
+    // (Tailscale before LAN). All probes launch concurrently; the first
+    // candidate in priority order that answered wins, so the worst case is
+    // one probe timeout, not one per candidate.
     let address = machine.address;
     const candidates = [
-      ...new Set([...(machine.addresses ?? []), machine.address]),
+      ...new Set([machine.address, ...(machine.addresses ?? [])]),
     ];
     if (candidates.length > 1) {
-      for (const candidate of candidates) {
-        if (await MarmyApi.probeAddress(candidate, machine.token)) {
-          address = candidate;
+      const probes = candidates.map((c) =>
+        MarmyApi.probeAddress(c, machine.token)
+      );
+      let reachable: string | null = null;
+      for (let i = 0; i < candidates.length; i++) {
+        if (await probes[i]) {
+          reachable = candidates[i];
           break;
         }
       }
+      if (seq !== connectSeq) return; // superseded by a newer connect
+      if (!reachable) {
+        throw new Error(`No address is reachable (tried ${candidates.join(", ")})`);
+      }
+      address = reachable;
       if (address !== machine.address) {
         const machines = get().machines.map((m) =>
           m.id === machine.id ? { ...m, address } : m
@@ -107,6 +125,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         saveMachines(machines);
       }
     }
+    if (seq !== connectSeq) return;
 
     const api = new MarmyApi(address, machine.token);
     const wsUrl = api.getWsUrl();
@@ -135,7 +154,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     // Fetch initial topology
     try {
       const topology = await api.getSessions();
-      set({ topology });
+      if (seq === connectSeq) set({ topology });
     } catch {
       // WebSocket will provide topology on connect
     }
@@ -145,6 +164,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   },
 
   disconnect: () => {
+    connectSeq++; // abort any in-flight connect
     const { socket } = get();
     if (socket) {
       socket.disconnect();

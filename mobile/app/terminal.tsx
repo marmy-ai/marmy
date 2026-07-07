@@ -189,8 +189,9 @@ function renderContent(content: string) {
     const isPrompt = promptRegex.test(line);
 
     if (isPrompt && i > 0) {
-      // Spacer line. Must be <Text>, not <View>: a View nested inside the
-      // selectable <Text> breaks iOS text selection across it.
+      // Spacer line. Must be <Text>, not <View>: the whole terminal must stay
+      // one Text tree so onTextLayout (which drives TerminalSelection's
+      // row geometry) reports every visual line, spacers included.
       elements.push(<Text key={`sep-${i}`}>{"\n"}</Text>);
     }
 
@@ -773,7 +774,9 @@ export default function TerminalScreen() {
         scrollEnabled={!selection.active}
         onTouchStart={pauseAutoScroll}
         onScrollBeginDrag={() => {
-          // A deliberate scroll means the user isn't mid-selection.
+          // A deliberate scroll means the user isn't mid-selection: also kill
+          // any pending long-press timer so a flick can't activate selection.
+          selection.touchHandlers.onTouchCancel();
           interactingRef.current = false;
           dragRef.current.fired = false;
         }}
@@ -814,6 +817,7 @@ export default function TerminalScreen() {
           onTouchStart={selection.touchHandlers.onTouchStart}
           onTouchMove={selection.touchHandlers.onTouchMove}
           onTouchEnd={selection.touchHandlers.onTouchEnd}
+          onTouchCancel={selection.touchHandlers.onTouchCancel}
         >
           {selection.highlightOverlay}
           <Text
