@@ -13,6 +13,7 @@ import { useConnectionStore } from "../src/stores/connectionStore";
 import { theme } from "../src/theme";
 import FileTree from "../src/components/FileTree";
 import CodeViewer from "../src/components/CodeViewer";
+import HtmlViewer from "../src/components/HtmlViewer";
 import ImageViewer, { isImageFile } from "../src/components/ImageViewer";
 import MarkdownViewer from "../src/components/MarkdownViewer";
 import PdfViewer from "../src/components/PdfViewer";
@@ -24,7 +25,8 @@ type Phase =
   | { kind: "file"; path: string; content: string }
   | { kind: "image"; path: string }
   | { kind: "markdown"; path: string; content: string }
-  | { kind: "pdf"; path: string };
+  | { kind: "pdf"; path: string }
+  | { kind: "html"; path: string };
 
 export default function FilesScreen() {
   const { sessionId, sessionName } = useLocalSearchParams<{ sessionId: string; sessionName: string }>();
@@ -119,6 +121,13 @@ export default function FilesScreen() {
         return;
       }
 
+      // Agents produce HTML reports/dashboards as a read-back channel —
+      // render them, don't show source (a Source tab is in the viewer).
+      if (isHtmlFile(filename)) {
+        setPhase({ kind: "html", path });
+        return;
+      }
+
       const seq = ++navSeq.current;
       setLoading(true);
       try {
@@ -154,6 +163,7 @@ export default function FilesScreen() {
       case "image":
       case "markdown":
       case "pdf":
+      case "html":
         // Go back to browse — entries/currentPath are still in state
         setPhase({ kind: "browse", sessionId: sessionId || "" });
         break;
@@ -179,7 +189,12 @@ export default function FilesScreen() {
     );
   }
 
-  const isViewingFile = phase.kind === "file" || phase.kind === "image" || phase.kind === "markdown" || phase.kind === "pdf";
+  const isViewingFile =
+    phase.kind === "file" ||
+    phase.kind === "image" ||
+    phase.kind === "markdown" ||
+    phase.kind === "pdf" ||
+    phase.kind === "html";
   const isBrowsing = phase.kind === "browse";
 
   // Render file viewer overlay when viewing a file
@@ -207,6 +222,23 @@ export default function FilesScreen() {
             <Text style={styles.backBtnText}>Back to files</Text>
           </TouchableOpacity>
           <MarkdownViewer content={phase.content} filename={filename} />
+        </>
+      );
+    }
+    if (phase.kind === "html") {
+      const filename = phase.path.split("/").pop() || phase.path;
+      const path = phase.path;
+      return (
+        <>
+          <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+            <Text style={styles.backBtnText}>Back to files</Text>
+          </TouchableOpacity>
+          <HtmlViewer
+            uri={api!.getRawFileUrl(path)}
+            headers={api!.getAuthHeaders()}
+            filename={filename}
+            loadSource={() => api!.readFile(path).then((f) => f.content)}
+          />
         </>
       );
     }
@@ -310,6 +342,10 @@ export default function FilesScreen() {
 
 function isMarkdownFile(name: string): boolean {
   return /\.(md|mdx)$/i.test(name);
+}
+
+function isHtmlFile(name: string): boolean {
+  return /\.(html?|xhtml)$/i.test(name);
 }
 
 function isPdfFile(name: string): boolean {

@@ -513,6 +513,7 @@ fn guess_content_type(path: &Path) -> &'static str {
         Some("js" | "mjs") => "text/javascript",
         Some("css") => "text/css",
         Some("html" | "htm") => "text/html",
+        Some("xhtml") => "application/xhtml+xml",
         Some("txt" | "md" | "rs" | "toml" | "yaml" | "yml") => "text/plain",
         _ => "application/octet-stream",
     }
