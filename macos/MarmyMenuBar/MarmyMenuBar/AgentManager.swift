@@ -263,6 +263,52 @@ final class AgentManager: ObservableObject {
         }
     }
 
+    // MARK: - Session creation
+
+    struct AgentApiError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    /// POST /api/sessions on the local agent. Mirrors the phone's create flow:
+    /// mode is "claude" | "codex" | "terminal"; workingDir optional.
+    func createSession(
+        name: String,
+        mode: String,
+        workingDir: String?,
+        skipPermissions: Bool
+    ) async throws {
+        guard let info = pairingInfo else {
+            throw AgentApiError(message: "Agent config not loaded")
+        }
+        guard let url = URL(string: "http://127.0.0.1:\(info.port)/api/sessions") else {
+            throw AgentApiError(message: "Bad agent URL")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(info.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+
+        var body: [String: Any] = [
+            "name": name,
+            "mode": mode,
+            "skip_permissions": skipPermissions,
+        ]
+        if let dir = workingDir, !dir.isEmpty {
+            body["working_dir"] = dir
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let detail = String(data: data, encoding: .utf8) ?? ""
+            throw AgentApiError(message: detail.isEmpty ? "Create failed" : detail)
+        }
+        // Refresh the sessions list right away so the new session shows up.
+        await checkHealth()
+    }
+
     // MARK: - Helpers
 
     private func agentBinaryPath() -> String {

@@ -162,6 +162,14 @@ struct PairingQRView: View {
 struct DashboardView: View {
     @ObservedObject var manager: AgentManager
 
+    @State private var showNewSession = false
+    @State private var newName = ""
+    @State private var newMode = "claude"
+    @State private var newDir = ""
+    @State private var skipPermissions = false
+    @State private var creating = false
+    @State private var createError: String?
+
     var body: some View {
         Group {
             if manager.status != .running {
@@ -173,35 +181,171 @@ struct DashboardView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if manager.sessions.isEmpty {
-                VStack(spacing: 6) {
-                    Text("No sessions running")
-                        .font(.headline)
-                    Text("Sessions started from the phone or via tmux show up here.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("\(manager.sessions.count) session\(manager.sessions.count == 1 ? "" : "s") — click one to open it in Terminal")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                    Divider()
-                    ScrollView {
-                        LazyVStack(spacing: 2) {
-                            ForEach(manager.sessions) { session in
-                                SessionRow(session: session)
-                            }
+                    HStack {
+                        Text(headerText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button {
+                            showNewSession.toggle()
+                            createError = nil
+                        } label: {
+                            Label(
+                                showNewSession ? "Cancel" : "New Session",
+                                systemImage: showNewSession ? "xmark" : "plus"
+                            )
                         }
-                        .padding(8)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+
+                    if showNewSession {
+                        newSessionForm
+                    }
+
+                    Divider()
+
+                    if manager.sessions.isEmpty {
+                        VStack(spacing: 6) {
+                            Text("No sessions running")
+                                .font(.headline)
+                            Text("Create one above, or start one from the phone or tmux.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 2) {
+                                ForEach(manager.sessions) { session in
+                                    SessionRow(session: session)
+                                }
+                            }
+                            .padding(8)
+                        }
                     }
                 }
             }
         }
-        .frame(minWidth: 400, minHeight: 320)
+        .frame(minWidth: 440, minHeight: 320)
+    }
+
+    private var headerText: String {
+        if manager.sessions.isEmpty {
+            return "Marmy Agents"
+        }
+        let n = manager.sessions.count
+        return "\(n) session\(n == 1 ? "" : "s") — click one to open it in Terminal"
+    }
+
+    private var newSessionForm: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                TextField("session-name", text: $newName)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: newName) { value in
+                        // Agent rule: alphanumeric, underscore, hyphen, ≤64.
+                        let cleaned = String(
+                            value.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+                                .prefix(64)
+                        )
+                        if cleaned != value { newName = cleaned }
+                    }
+                Picker("", selection: $newMode) {
+                    Text("Claude").tag("claude")
+                    Text("Codex").tag("codex")
+                    Text("Terminal").tag("terminal")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 210)
+            }
+            HStack(spacing: 8) {
+                Button {
+                    chooseFolder()
+                } label: {
+                    Label(
+                        newDir.isEmpty
+                            ? "Start in folder…"
+                            : (newDir as NSString).abbreviatingWithTildeInPath,
+                        systemImage: "folder"
+                    )
+                    .lineLimit(1)
+                }
+                if !newDir.isEmpty {
+                    Button {
+                        newDir = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                    .help("Use the default directory")
+                }
+                Spacer()
+                if newMode != "terminal" {
+                    Toggle("Skip permissions", isOn: $skipPermissions)
+                        .toggleStyle(.checkbox)
+                }
+                Button(action: create) {
+                    if creating {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Create")
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(newName.isEmpty || creating)
+            }
+            if let err = createError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        panel.prompt = "Choose"
+        NSApp.activate(ignoringOtherApps: true)
+        if panel.runModal() == .OK, let url = panel.url {
+            newDir = url.path
+        }
+    }
+
+    private func create() {
+        guard !newName.isEmpty, !creating else { return }
+        creating = true
+        createError = nil
+        let name = newName
+        let mode = newMode
+        let dir = newDir
+        let skip = skipPermissions
+        Task { @MainActor in
+            do {
+                try await manager.createSession(
+                    name: name,
+                    mode: mode,
+                    workingDir: dir.isEmpty ? nil : dir,
+                    skipPermissions: skip
+                )
+                newName = ""
+                newDir = ""
+                showNewSession = false
+            } catch {
+                createError = error.localizedDescription
+            }
+            creating = false
+        }
     }
 }
 
