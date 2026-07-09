@@ -81,6 +81,7 @@ async fn cmd_serve(bind_override: Option<String>, port_override: Option<u16>) ->
 
     // Rewrite notification hook if already enabled (picks up new token/port)
     api::notifications::refresh_hook_if_enabled(port, &config.auth.token);
+    api::notifications::spawn_codex_watcher(state.clone());
 
     // Refresh topology on startup
     if let Err(e) = state.refresh_topology().await {

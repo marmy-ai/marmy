@@ -57,23 +57,25 @@ xcodebuild \
     -scheme MarmyMenuBar \
     -configuration Release \
     -derivedDataPath "$BUILD_DIR/derived" \
+    ARCHS="x86_64" \
+    ONLY_ACTIVE_ARCH=NO \
     PRODUCT_NAME="$APP_NAME" \
     CODE_SIGN_IDENTITY="-" \
     CODE_SIGNING_REQUIRED=NO \
     CODE_SIGNING_ALLOWED=NO \
-    clean build 2>&1 | tail -5
+    clean build
 
 APP_PATH=$(find "$BUILD_DIR/derived" -name "$APP_NAME.app" -type d | head -1)
 [ -d "$APP_PATH" ] || error "Failed to find $APP_NAME.app in build output"
 info "Built: $APP_PATH"
 
-# --- Step 2: Build agent binary (Apple Silicon) ---
-info "Building agent binary (arm64)..."
+# --- Step 2: Build agent binary (Intel macOS) ---
+info "Building agent binary (x86_64)..."
 cd "$AGENT_DIR"
 
-cargo build --release --target aarch64-apple-darwin 2>&1 | tail -3
+cargo build --release 2>&1 | tail -3
 
-AGENT_BIN="$AGENT_DIR/target/aarch64-apple-darwin/release/marmy-agent"
+AGENT_BIN="$AGENT_DIR/target/release/marmy-agent"
 [ -f "$AGENT_BIN" ] || error "Agent binary not found at $AGENT_BIN"
 info "Agent binary: $(file "$AGENT_BIN")"
 

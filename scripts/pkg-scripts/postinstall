@@ -11,9 +11,15 @@ if ! command -v tmux >/dev/null 2>&1; then
     echo ""
 fi
 
-# Open MacMarmy after install
+# Open MacMarmy after install. Installer scripts usually run as root, so use
+# the active console user instead of $USER.
 if [ -d "/Applications/MacMarmy.app" ]; then
-    sudo -u "$USER" open "/Applications/MacMarmy.app" 2>/dev/null || true
+    CONSOLE_USER="$(stat -f '%Su' /dev/console 2>/dev/null || true)"
+    if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+        sudo -u "$CONSOLE_USER" open "/Applications/MacMarmy.app" 2>/dev/null || true
+    else
+        open "/Applications/MacMarmy.app" 2>/dev/null || true
+    fi
 fi
 
 exit 0

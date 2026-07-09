@@ -1,106 +1,132 @@
-import SwiftUI
 import ServiceManagement
+import SwiftUI
 
 struct MenuBarView: View {
     @ObservedObject var manager: AgentManager
     @State private var launchAtLogin = LaunchAtLoginController.isEnabled
 
     var body: some View {
-        // Status
-        Text("\(manager.status.icon) Agent: \(manager.status.label)")
-
-        Divider()
-
-        // Pairing info
-        if let info = manager.pairingInfo {
-            Text("LAN: \(info.address)")
-                .font(.system(.body, design: .monospaced))
-            if let tsAddr = info.tailscaleAddress {
-                Text("Tailscale: \(tsAddr)")
-                    .font(.system(.body, design: .monospaced))
-            }
-            Text("Token: \(info.token)")
-                .font(.system(.body, design: .monospaced))
-
-            Button("Copy LAN Address") {
-                copyToClipboard(info.address)
-            }
-            if let tsAddr = info.tailscaleAddress {
-                Button("Copy Tailscale Address") {
-                    copyToClipboard(tsAddr)
-                }
-            }
-            Button("Copy Token") {
-                copyToClipboard(info.token)
-            }
-        } else {
-            Text("No config found")
-                .foregroundColor(.secondary)
-            Text("Run: marmy-agent serve")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            statusSection
+            pairingSection
+            sessionsSection
+            voiceSection
+            appControlsSection
         }
+        .padding(12)
+    }
 
-        Divider()
+    private var statusSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(manager.status.icon) Agent: \(manager.status.label)")
+            Divider()
+        }
+    }
 
-        // Sessions (expandable submenu like Tailscale's "My Devices")
-        if manager.status == .running && !manager.sessions.isEmpty {
-            Menu("Sessions (\(manager.sessions.count))") {
-                ForEach(manager.sessions) { session in
-                    Button(action: { openSession(session.name) }) {
-                        HStack {
-                            Text(session.name)
-                            Spacer()
-                            if session.unread {
-                                Image(systemName: "circle.fill")
-                            }
-                            if session.attached {
-                                Image(systemName: "desktopcomputer")
+    private var pairingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let info = manager.pairingInfo {
+                Text("LAN: \(info.address)")
+                    .font(.system(.body, design: .monospaced))
+
+                if let tsAddr = info.tailscaleAddress {
+                    Text("Tailscale: \(tsAddr)")
+                        .font(.system(.body, design: .monospaced))
+                }
+
+                Text("Token: \(info.token)")
+                    .font(.system(.body, design: .monospaced))
+
+                Button("Copy LAN Address") {
+                    copyToClipboard(info.address)
+                }
+
+                if let tsAddr = info.tailscaleAddress {
+                    Button("Copy Tailscale Address") {
+                        copyToClipboard(tsAddr)
+                    }
+                }
+
+                Button("Copy Token") {
+                    copyToClipboard(info.token)
+                }
+            } else {
+                Text("No config found")
+                    .foregroundColor(.secondary)
+                Text("Run: marmy-agent serve")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+
+            Divider()
+        }
+    }
+
+    private var sessionsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if manager.status == .running && !manager.sessions.isEmpty {
+                Menu("Sessions (\(manager.sessions.count))") {
+                    ForEach(manager.sessions) { session in
+                        Button(action: { openSession(session.name) }) {
+                            HStack {
+                                Text(session.name)
+                                Spacer()
+                                if session.unread {
+                                    Image(systemName: "circle.fill")
+                                }
+                                if session.attached {
+                                    Image(systemName: "desktopcomputer")
+                                }
                             }
                         }
                     }
                 }
+                Divider()
             }
+
+            if manager.status == .running || manager.status == .starting {
+                Button("Stop Agent") { manager.stop() }
+            } else {
+                Button("Start Agent") { manager.start() }
+            }
+
+            Button("Reload Config") { manager.reloadConfig() }
             Divider()
         }
+    }
 
-        // Controls
-        if manager.status == .running || manager.status == .starting {
-            Button("Stop Agent") { manager.stop() }
-        } else {
-            Button("Start Agent") { manager.start() }
-        }
-
-        Button("Reload Config") { manager.reloadConfig() }
-
-        Divider()
-
-        // Voice mode
-        if let info = manager.pairingInfo, let key = info.geminiApiKey, !key.isEmpty {
-            Text("Voice Mode: Enabled")
-                .foregroundColor(.secondary)
-        } else {
-            Button("Set Up Voice Mode...") {
-                promptForGeminiKey()
-            }
-        }
-
-        Divider()
-
-        Toggle("Launch at Login", isOn: $launchAtLogin)
-            .onChange(of: launchAtLogin) { newValue in
-                setLaunchAtLogin(newValue)
+    private var voiceSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let info = manager.pairingInfo, let key = info.geminiApiKey, !key.isEmpty {
+                Text("Voice Mode: Enabled")
+                    .foregroundColor(.secondary)
+            } else {
+                Button("Set Up Voice Mode...") {
+                    promptForGeminiKey()
+                }
             }
 
-        Divider()
-
-        Button("Quit MacMarmy") {
-            manager.stop()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NSApplication.shared.terminate(nil)
-            }
+            Divider()
         }
-        .keyboardShortcut("q")
+    }
+
+    private var appControlsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Launch at Login", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) { newValue in
+                    setLaunchAtLogin(newValue)
+                }
+
+            Divider()
+
+            Button("Quit MacMarmy") {
+                manager.stop()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    NSApplication.shared.terminate(nil)
+                }
+            }
+            .keyboardShortcut("q")
+        }
     }
 
     private func promptForGeminiKey() {
@@ -115,7 +141,6 @@ struct MenuBarView: View {
         input.placeholderString = "Paste Gemini API key here"
         alert.accessoryView = input
 
-        // Bring app to front for the dialog
         NSApp.activate(ignoringOtherApps: true)
 
         let response = alert.runModal()
@@ -133,11 +158,9 @@ struct MenuBarView: View {
     }
 
     private func openSession(_ name: String) {
-        // Sanitize session name (agent already validates: alphanumeric, underscore, hyphen).
         let sanitized = name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
         guard !sanitized.isEmpty else { return }
 
-        // Use osascript subprocess instead of NSAppleScript to avoid silent permission failures.
         let script = "tell application \"Terminal\" to do script \"tmux attach-session -t \(sanitized)\""
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
@@ -175,8 +198,11 @@ enum LaunchAtLoginController {
     static func setEnabled(_ enabled: Bool) -> Bool {
         if #available(macOS 13.0, *) {
             do {
-                if enabled { try SMAppService.mainApp.register() }
-                else        { try SMAppService.mainApp.unregister() }
+                if enabled {
+                    try SMAppService.mainApp.register()
+                } else {
+                    try SMAppService.mainApp.unregister()
+                }
                 return true
             } catch {
                 return false

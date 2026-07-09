@@ -12,6 +12,8 @@ import type {
   UploadResponse,
 } from "../types";
 
+const API_TIMEOUT_MS = 8000;
+
 export class MarmyApi {
   private baseUrl: string;
   private token: string;
@@ -24,14 +26,28 @@ export class MarmyApi {
   }
 
   private async fetch<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        "Content-Type": "application/json",
-        ...init?.headers,
-      },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+          ...init?.headers,
+        },
+      });
+    } catch (e: any) {
+      if (e?.name === "AbortError") {
+        throw new Error(`Connection timed out after ${API_TIMEOUT_MS / 1000}s`);
+      }
+      throw e;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!res.ok) {
       const text = await res.text().catch(() => res.statusText);

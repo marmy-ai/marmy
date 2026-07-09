@@ -11,7 +11,7 @@ set -euo pipefail
 #   4. Open MacMarmy
 
 APP_NAME="MacMarmy"
-REPO="harajlim/marmy"
+REPO="marmy-ai/marmy"
 PKG_NAME="MacMarmy.*\\.pkg"
 
 RED='\033[0;31m'
@@ -39,6 +39,9 @@ case "$ARCH" in
     x86_64)        info "Detected Intel (x86_64)" ;;
     *)             error "Unsupported architecture: $ARCH" ;;
 esac
+if [ "$ARCH" = "aarch64" ]; then
+    ARCH="arm64"
+fi
 
 # --- Homebrew ---
 if command -v brew >/dev/null 2>&1; then
@@ -85,6 +88,18 @@ trap 'rm -rf "$TMPDIR"' EXIT
 PKG_PATH="$TMPDIR/MacMarmy.pkg"
 curl -fSL --progress-bar "$DOWNLOAD_URL" -o "$PKG_PATH"
 info "Downloaded $(du -h "$PKG_PATH" | cut -f1)"
+
+# --- Verify package supports this Mac before asking for sudo ---
+info "Verifying package architecture..."
+EXPANDED_PKG="$TMPDIR/expanded"
+pkgutil --expand-full "$PKG_PATH" "$EXPANDED_PKG" >/dev/null
+APP_EXEC="$EXPANDED_PKG/Payload/Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME"
+[ -f "$APP_EXEC" ] || error "$APP_NAME executable not found in package"
+APP_ARCHS="$(lipo -archs "$APP_EXEC" 2>/dev/null || true)"
+case " $APP_ARCHS " in
+    *" $ARCH "*) info "$APP_NAME supports $ARCH" ;;
+    *) error "$APP_NAME package supports [$APP_ARCHS], but this Mac is $ARCH" ;;
+esac
 
 # --- Install ---
 info "Installing $APP_NAME (requires sudo)..."

@@ -84,8 +84,23 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     if (oldSocket) {
       oldSocket.disconnect();
     }
+    set({
+      activeMachine: null,
+      api: null,
+      socket: null,
+      topology: null,
+      connected: false,
+    });
 
     const api = new MarmyApi(machine.address, machine.token);
+    let topology: TmuxTopology;
+    try {
+      topology = await api.getSessions();
+    } catch (e: any) {
+      const detail = e?.message ? ` ${e.message}` : "";
+      throw new Error(`Could not connect to ${machine.address}.${detail}`);
+    }
+
     const wsUrl = api.getWsUrl();
     const socket = new MarmySocket(wsUrl);
 
@@ -106,16 +121,9 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       activeMachine: { ...machine, online: true },
       api,
       socket,
+      topology,
       connected: true,
     });
-
-    // Fetch initial topology
-    try {
-      const topology = await api.getSessions();
-      set({ topology });
-    } catch {
-      // WebSocket will provide topology on connect
-    }
 
     // Register for push notifications (fire and forget)
     registerForPushNotifications(api).catch(() => {});

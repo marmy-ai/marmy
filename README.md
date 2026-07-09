@@ -114,7 +114,7 @@ cargo build --release
 ```bash
 cd macos/MarmyMenuBar
 xcodebuild -scheme MarmyMenuBar -configuration Release build CODE_SIGNING_ALLOWED=NO
-open ~/Library/Developer/Xcode/DerivedData/MarmyMenuBar-*/Build/Products/Release/MarmyMenuBar.app
+open ~/Library/Developer/Xcode/DerivedData/MarmyMenuBar-*/Build/Products/Release/MacMarmy.app
 ```
 
 ### iOS app
