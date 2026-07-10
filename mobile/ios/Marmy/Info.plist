@@ -47,6 +47,8 @@
     <string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Marmy needs local network access to connect to your development machines.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Marmy uses the camera to scan the pairing QR code shown by MacMarmy.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Marmy needs microphone access for voice mode to talk with your terminal sessions.</string>
     <key>NSPhotoLibraryUsageDescription</key>

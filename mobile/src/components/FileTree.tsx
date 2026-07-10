@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../theme";
 import type { DirEntry } from "../types";
 
@@ -40,8 +41,15 @@ export default function FileTree({
             <TouchableOpacity
               style={styles.entry}
               onPress={() => onNavigate(parentPath)}
+              accessibilityRole="button"
+              accessibilityLabel="Go to parent directory"
             >
-              <Text style={styles.dirIcon}>..</Text>
+              <Ionicons
+                name="arrow-up-outline"
+                size={16}
+                color={theme.primary}
+                style={styles.entryIcon}
+              />
               <Text style={styles.dirName}>Parent directory</Text>
             </TouchableOpacity>
           ) : null
@@ -52,10 +60,15 @@ export default function FileTree({
             onPress={() =>
               item.is_dir ? onNavigate(item.path) : onFileSelect(item.path)
             }
+            accessibilityRole="button"
+            accessibilityLabel={`${item.is_dir ? "Folder" : "File"}: ${item.name}`}
           >
-            <Text style={item.is_dir ? styles.dirIcon : styles.fileIcon}>
-              {item.is_dir ? "D" : "F"}
-            </Text>
+            <Ionicons
+              name={item.is_dir ? "folder-outline" : "document-text-outline"}
+              size={16}
+              color={item.is_dir ? theme.primary : theme.textTertiary}
+              style={styles.entryIcon}
+            />
             <Text
               style={item.is_dir ? styles.dirName : styles.fileName}
               numberOfLines={1}
@@ -83,32 +96,20 @@ const styles = StyleSheet.create({
   breadcrumb: {
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#2a2a3e",
-    backgroundColor: "#1a1a2e",
+    borderBottomColor: theme.border,
+    backgroundColor: theme.bgCard,
   },
-  breadcrumbText: { color: "#888", fontSize: 12, fontFamily: "monospace" },
+  breadcrumbText: { color: theme.textSecondary, fontSize: 12, fontFamily: "monospace" },
   entry: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#1a1a2e",
+    borderBottomColor: theme.bgCard,
   },
-  dirIcon: {
-    color: theme.primary,
-    fontSize: 14,
-    fontWeight: "700",
-    width: 24,
-    fontFamily: "monospace",
-  },
-  fileIcon: {
-    color: "#555",
-    fontSize: 14,
-    width: 24,
-    fontFamily: "monospace",
-  },
+  entryIcon: { width: 24 },
   dirName: { color: theme.primary, fontSize: 15, flex: 1 },
-  fileName: { color: "#d0d0d0", fontSize: 15, flex: 1 },
-  fileSize: { color: "#555", fontSize: 12, fontFamily: "monospace" },
+  fileName: { color: theme.textPrimary, fontSize: 15, flex: 1 },
+  fileSize: { color: theme.textTertiary, fontSize: 12, fontFamily: "monospace" },
 });

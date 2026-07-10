@@ -92,10 +92,60 @@ struct ConfigReader {
         return String(cString: buffer)
     }
 
+    /// Tailscale assigns addresses from the CGNAT range 100.64.0.0/10, so the
+    /// tailnet IP can be read straight off the network interfaces. This must
+    /// not depend on finding the `tailscale` CLI: Finder-launched apps get a
+    /// minimal PATH without Homebrew or Tailscale.app's binary, which is why
+    /// the pairing QR used to silently fall back to LAN-only.
     private static func detectTailscaleIP() -> String? {
+        if let ip = tailscaleIPFromInterfaces() {
+            return ip
+        }
+        // Fallback: ask the CLI at its known install locations.
+        let candidates = [
+            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+            "/opt/homebrew/bin/tailscale",
+            "/usr/local/bin/tailscale",
+        ]
+        for binary in candidates where FileManager.default.isExecutableFile(atPath: binary) {
+            if let ip = runTailscaleIP(binary: binary) {
+                return ip
+            }
+        }
+        return nil
+    }
+
+    private static func tailscaleIPFromInterfaces() -> String? {
+        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddrPtr) == 0, let first = ifaddrPtr else { return nil }
+        defer { freeifaddrs(ifaddrPtr) }
+
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let ifa = cursor {
+            cursor = ifa.pointee.ifa_next
+
+            guard (ifa.pointee.ifa_flags & UInt32(IFF_UP)) != 0,
+                  let sa = ifa.pointee.ifa_addr,
+                  sa.pointee.sa_family == sa_family_t(AF_INET) else { continue }
+
+            var sin = sockaddr_in()
+            memcpy(&sin, sa, MemoryLayout<sockaddr_in>.size)
+            let host = UInt32(bigEndian: sin.sin_addr.s_addr)
+            // 100.64.0.0/10
+            guard (host & 0xFFC0_0000) == 0x6440_0000 else { continue }
+
+            var addr = sin.sin_addr
+            var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            guard inet_ntop(AF_INET, &addr, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else { continue }
+            return String(cString: buffer)
+        }
+        return nil
+    }
+
+    private static func runTailscaleIP(binary: String) -> String? {
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        proc.arguments = ["tailscale", "ip", "-4"]
+        proc.executableURL = URL(fileURLWithPath: binary)
+        proc.arguments = ["ip", "-4"]
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = FileHandle.nullDevice
@@ -104,7 +154,10 @@ struct ConfigReader {
             proc.waitUntilExit()
             guard proc.terminationStatus == 0 else { return nil }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let ip = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let ip = String(data: data, encoding: .utf8)?
+                .split(separator: "\n")
+                .first
+                .map { $0.trimmingCharacters(in: .whitespaces) }
             return (ip?.isEmpty == false) ? ip : nil
         } catch {
             return nil

@@ -18,44 +18,15 @@ pub(crate) fn is_valid_session_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-/// Check if a working directory is within one of the configured allowed_paths.
+/// Check if a working directory is within one of the allowed_paths
+/// (pre-canonicalized at startup — see AppState::allowed_paths_canonical).
 /// Rejects paths outside the allowed set to prevent pane-cwd-based file browsing bypass.
-fn is_working_dir_allowed(dir: &str, allowed_paths: &[String]) -> bool {
-    // Resolve ~ in the requested dir
-    let dir_path = if dir.starts_with('~') {
-        if let Some(home) = dirs::home_dir() {
-            home.join(dir[1..].trim_start_matches('/'))
-        } else {
-            PathBuf::from(dir)
-        }
-    } else {
-        PathBuf::from(dir)
-    };
-
-    let canonical = match dir_path.canonicalize() {
+fn is_working_dir_allowed(dir: &str, allowed_canonical: &[PathBuf]) -> bool {
+    let canonical = match crate::api::files::resolve_path(dir).canonicalize() {
         Ok(p) => p,
         Err(_) => return false,
     };
-
-    for allowed in allowed_paths {
-        let allowed_path = if allowed.starts_with('~') {
-            if let Some(home) = dirs::home_dir() {
-                home.join(allowed[1..].trim_start_matches('/'))
-            } else {
-                PathBuf::from(allowed)
-            }
-        } else {
-            PathBuf::from(allowed)
-        };
-
-        if let Ok(allowed_canonical) = allowed_path.canonicalize() {
-            if canonical.starts_with(&allowed_canonical) {
-                return true;
-            }
-        }
-    }
-
-    false
+    allowed_canonical.iter().any(|a| canonical.starts_with(a))
 }
 
 #[derive(Deserialize)]
@@ -126,7 +97,7 @@ pub async fn create_session(
     // Create session — with optional working directory
     if let Some(ref dir) = req.working_dir {
         if !state.config.files.allowed_paths.is_empty()
-            && !is_working_dir_allowed(dir, &state.config.files.allowed_paths)
+            && !is_working_dir_allowed(dir, &state.allowed_paths_canonical)
         {
             return Err((
                 StatusCode::BAD_REQUEST,
@@ -360,7 +331,7 @@ mod tests {
         let child = parent.path().join("project");
         std::fs::create_dir(&child).unwrap();
 
-        let allowed = vec![parent.path().to_string_lossy().to_string()];
+        let allowed = vec![parent.path().canonicalize().unwrap()];
         assert!(is_working_dir_allowed(&child.to_string_lossy(), &allowed));
     }
 
@@ -369,20 +340,20 @@ mod tests {
         let allowed_dir = tempfile::tempdir().unwrap();
         let other_dir = tempfile::tempdir().unwrap();
 
-        let allowed = vec![allowed_dir.path().to_string_lossy().to_string()];
+        let allowed = vec![allowed_dir.path().canonicalize().unwrap()];
         assert!(!is_working_dir_allowed(&other_dir.path().to_string_lossy(), &allowed));
     }
 
     #[test]
     fn working_dir_rejected_nonexistent_path() {
-        let allowed = vec!["/tmp".to_string()];
+        let allowed = vec![PathBuf::from("/tmp").canonicalize().unwrap()];
         assert!(!is_working_dir_allowed("/nonexistent/fake/path/xyz", &allowed));
     }
 
     #[test]
     fn working_dir_exact_match_is_allowed() {
         let dir = tempfile::tempdir().unwrap();
-        let allowed = vec![dir.path().to_string_lossy().to_string()];
+        let allowed = vec![dir.path().canonicalize().unwrap()];
         assert!(is_working_dir_allowed(&dir.path().to_string_lossy(), &allowed));
     }
 
@@ -393,7 +364,7 @@ mod tests {
         let child = parent.path().join("child");
         std::fs::create_dir(&child).unwrap();
 
-        let allowed = vec![child.to_string_lossy().to_string()];
+        let allowed = vec![child.canonicalize().unwrap()];
         assert!(!is_working_dir_allowed(&parent.path().to_string_lossy(), &allowed));
     }
 
@@ -404,8 +375,8 @@ mod tests {
         let dir_c = tempfile::tempdir().unwrap();
 
         let allowed = vec![
-            dir_a.path().to_string_lossy().to_string(),
-            dir_b.path().to_string_lossy().to_string(),
+            dir_a.path().canonicalize().unwrap(),
+            dir_b.path().canonicalize().unwrap(),
         ];
 
         // dir_b is in allowed list

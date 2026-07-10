@@ -33,6 +33,12 @@ struct MenuBarView: View {
             Button("Copy Token") {
                 copyToClipboard(info.token)
             }
+
+            Button("Pair iPhone…") {
+                AuxWindows.shared.show(id: "pair", title: "Pair iPhone", width: 320, height: 420) {
+                    PairingQRView(manager: manager)
+                }
+            }
         } else {
             Text("No config found")
                 .foregroundColor(.secondary)
@@ -43,11 +49,17 @@ struct MenuBarView: View {
 
         Divider()
 
+        Button("Agents Dashboard…") {
+            AuxWindows.shared.show(id: "dashboard", title: "Marmy Agents", width: 440, height: 380, resizable: true) {
+                DashboardView(manager: manager)
+            }
+        }
+
         // Sessions (expandable submenu like Tailscale's "My Devices")
         if manager.status == .running && !manager.sessions.isEmpty {
             Menu("Sessions (\(manager.sessions.count))") {
                 ForEach(manager.sessions) { session in
-                    Button(action: { openSession(session.name) }) {
+                    Button(action: { TerminalLauncher.openSession(session.name) }) {
                         HStack {
                             Text(session.name)
                             Spacer()
@@ -130,19 +142,6 @@ struct MenuBarView: View {
                 }
             }
         }
-    }
-
-    private func openSession(_ name: String) {
-        // Sanitize session name (agent already validates: alphanumeric, underscore, hyphen).
-        let sanitized = name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
-        guard !sanitized.isEmpty else { return }
-
-        // Use osascript subprocess instead of NSAppleScript to avoid silent permission failures.
-        let script = "tell application \"Terminal\" to do script \"tmux attach-session -t \(sanitized)\""
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-e", script, "-e", "tell application \"Terminal\" to activate"]
-        try? proc.run()
     }
 
     private func copyToClipboard(_ text: String) {

@@ -47,6 +47,13 @@ final class AgentManager: ObservableObject {
     private var process: Process?
     private var healthTimer: Timer?
     private var isStopping = false
+    private var restartAttempts = 0
+    private var pendingRestart: DispatchWorkItem?
+    private var lastSpawn: Date?
+    private static let maxRestartAttempts = 3
+    // Signals that indicate a genuine crash (respawn-worthy). SIGTERM/SIGKILL/
+    // SIGINT mean someone chose to stop the agent — honor that.
+    private static let crashSignals: Set<Int32> = [SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGTRAP, SIGFPE]
 
     init() {
         reloadConfig()
@@ -63,6 +70,8 @@ final class AgentManager: ObservableObject {
         guard status == .stopped || isError else { return }
         status = .starting
         isStopping = false
+        pendingRestart?.cancel()
+        pendingRestart = nil
 
         let agentPath = agentBinaryPath()
         guard FileManager.default.fileExists(atPath: agentPath) else {
@@ -70,7 +79,8 @@ final class AgentManager: ObservableObject {
             return
         }
 
-        // Launch on a background thread to avoid blocking main actor
+        // pkill + settle-sleep on a background thread (they block); the actual
+        // launch hops back to the main actor so a Stop clicked meanwhile wins.
         let path = agentPath
         let env = buildEnv()
         DispatchQueue.global().async { [weak self] in
@@ -82,54 +92,105 @@ final class AgentManager: ObservableObject {
             kill.waitUntilExit()
             Thread.sleep(forTimeInterval: 1.0)
 
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: path)
-            proc.arguments = ["serve"]
-            proc.environment = env
-
-            // Write output to log file — never use Pipe (causes deadlock)
-            let logPath = NSHomeDirectory() + "/Library/Logs/marmy-agent.log"
-            FileManager.default.createFile(atPath: logPath, contents: nil)
-            if let logFile = FileHandle(forWritingAtPath: logPath) {
-                proc.standardOutput = logFile
-                proc.standardError = logFile
-            }
-
-            proc.terminationHandler = { [weak self] p in
-                Task { @MainActor [weak self] in
-                    guard let self = self else { return }
-                    self.stopHealthCheck()
-                    if self.isStopping {
-                        self.status = .stopped
-                    } else if p.terminationStatus != 0 {
-                        self.status = .error("Exit code \(p.terminationStatus)")
-                    } else {
-                        self.status = .stopped
-                    }
-                    self.process = nil
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                guard !self.isStopping, self.process == nil else {
+                    if self.process == nil { self.status = .stopped }
+                    return
                 }
-            }
-
-            do {
-                try proc.run()
-                Task { @MainActor [weak self] in
-                    self?.process = proc
-                    self?.startHealthCheck()
-                }
-            } catch {
-                Task { @MainActor [weak self] in
-                    self?.status = .error(error.localizedDescription)
-                }
+                self.launch(path: path, env: env)
             }
         }
     }
 
+    private func launch(path: String, env: [String: String]) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: path)
+        proc.arguments = ["serve"]
+        proc.environment = env
+
+        // Write output to log file — never use Pipe (causes deadlock)
+        let logPath = NSHomeDirectory() + "/Library/Logs/marmy-agent.log"
+        FileManager.default.createFile(atPath: logPath, contents: nil)
+        if let logFile = FileHandle(forWritingAtPath: logPath) {
+            proc.standardOutput = logFile
+            proc.standardError = logFile
+        }
+
+        proc.terminationHandler = { [weak self] p in
+            Task { @MainActor [weak self] in
+                self?.handleTermination(of: p)
+            }
+        }
+
+        do {
+            try proc.run()
+            lastSpawn = Date()
+            process = proc
+            startHealthCheck()
+        } catch {
+            status = .error(error.localizedDescription)
+        }
+    }
+
+    private func handleTermination(of p: Process) {
+        stopHealthCheck()
+        process = nil
+        if isStopping {
+            status = .stopped
+            return
+        }
+
+        // Only genuine crashes respawn: abnormal exit codes and crash signals.
+        // Clean exit-0 and external SIGTERM/SIGKILL (someone deliberately
+        // stopped the agent — e.g. another MacMarmy instance or a user pkill)
+        // must stay down, or two app instances ping-pong pkilling each other.
+        let isCrash: Bool
+        switch p.terminationReason {
+        case .exit:
+            isCrash = p.terminationStatus != 0
+        case .uncaughtSignal:
+            isCrash = Self.crashSignals.contains(p.terminationStatus)
+        @unknown default:
+            isCrash = false
+        }
+
+        if p.terminationStatus != 0 {
+            status = .error("Exit code \(p.terminationStatus)")
+        } else {
+            status = .stopped
+        }
+        guard isCrash else { return }
+
+        // An agent that ran for a while before crashing is a fresh failure,
+        // not a boot loop — reset the attempt budget. (Never reset from the
+        // health check: an agent that serves one probe then dies would
+        // otherwise crash-loop forever.)
+        if let spawned = lastSpawn, Date().timeIntervalSince(spawned) > 60 {
+            restartAttempts = 0
+        }
+        guard restartAttempts < Self.maxRestartAttempts else { return }
+        restartAttempts += 1
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.process == nil, !self.isStopping else { return }
+            self.start()
+        }
+        pendingRestart = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+    }
+
     func stop() {
+        // Sticky: set before any early return so a pending or in-flight
+        // start()/restart sees it and aborts. Cleared only by an explicit start().
+        isStopping = true
+        pendingRestart?.cancel()
+        pendingRestart = nil
+
         guard let proc = process, proc.isRunning else {
             status = .stopped
             return
         }
-        isStopping = true
         status = .stopped
         sessions = []
         stopHealthCheck()
@@ -200,6 +261,52 @@ final class AgentManager: ObservableObject {
             if status == .running { status = .starting }
             sessions = []
         }
+    }
+
+    // MARK: - Session creation
+
+    struct AgentApiError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    /// POST /api/sessions on the local agent. Mirrors the phone's create flow:
+    /// mode is "claude" | "codex" | "terminal"; workingDir optional.
+    func createSession(
+        name: String,
+        mode: String,
+        workingDir: String?,
+        skipPermissions: Bool
+    ) async throws {
+        guard let info = pairingInfo else {
+            throw AgentApiError(message: "Agent config not loaded")
+        }
+        guard let url = URL(string: "http://127.0.0.1:\(info.port)/api/sessions") else {
+            throw AgentApiError(message: "Bad agent URL")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(info.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+
+        var body: [String: Any] = [
+            "name": name,
+            "mode": mode,
+            "skip_permissions": skipPermissions,
+        ]
+        if let dir = workingDir, !dir.isEmpty {
+            body["working_dir"] = dir
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let detail = String(data: data, encoding: .utf8) ?? ""
+            throw AgentApiError(message: detail.isEmpty ? "Create failed" : detail)
+        }
+        // Refresh the sessions list right away so the new session shows up.
+        await checkHealth()
     }
 
     // MARK: - Helpers
