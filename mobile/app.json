@@ -18,7 +18,8 @@
         "NSLocalNetworkUsageDescription": "Marmy needs local network access to connect to your development machines.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
+        },
+        "NSCameraUsageDescription": "Marmy uses the camera to scan the pairing QR code shown by MacMarmy."
       }
     },
     "android": {

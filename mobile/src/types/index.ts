@@ -3,7 +3,10 @@
 export interface Machine {
   id: string;
   name: string;
-  address: string; // host:port
+  address: string; // host:port — the address used for the last connection
+  // Candidate addresses in priority order (Tailscale first when paired via
+  // QR). connectToMachine probes these and uses the first one that answers.
+  addresses?: string[];
   token: string;
   online: boolean;
 }

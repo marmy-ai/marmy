@@ -9,11 +9,13 @@ import {
   Modal,
   Switch,
   StyleSheet,
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useConnectionStore } from "../src/stores/connectionStore";
 import { useSessionStore, type AgentMode } from "../src/stores/sessionStore";
 import { theme } from "../src/theme";
@@ -66,6 +68,7 @@ export default function WorkersScreen() {
   const { api, topology, activeMachine, connected } = useConnectionStore();
   const { setActivePane, setActiveSession, setActiveSessionName, setActiveAgentMode } = useSessionStore();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [showNewSession, setShowNewSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState("");
   const [startingManager, setStartingManager] = useState(false);
@@ -212,14 +215,20 @@ export default function WorkersScreen() {
         style={styles.managerBtn}
         onPress={handleStartManager}
         disabled={startingManager}
+        accessibilityRole="button"
+        accessibilityLabel="Start manager session"
       >
-        <Text style={styles.managerBtnText}>
-          {startingManager ? "..." : "Start Manager"}
-        </Text>
+        {startingManager ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.managerBtnText}>Start Manager</Text>
+        )}
       </TouchableOpacity>
       <TouchableOpacity
         style={styles.addBtn}
         onPress={() => setShowNewSession(true)}
+        accessibilityRole="button"
+        accessibilityLabel="New session"
       >
         <Text style={styles.addBtnText}>+</Text>
       </TouchableOpacity>
@@ -447,7 +456,7 @@ export default function WorkersScreen() {
         data={otherSessions}
         keyExtractor={(item) => item.id}
         numColumns={2}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: Math.max(10, insets.bottom) }]}
         ListHeaderComponent={
           managerSession ? (
             <View style={styles.managerSection}>

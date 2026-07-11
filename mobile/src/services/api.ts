@@ -69,6 +69,30 @@ export class MarmyApi {
     }
   }
 
+  /** Probe an address with a bounded timeout. Used to pick the best
+   *  candidate (Tailscale vs LAN) before connecting. */
+  static async probeAddress(
+    address: string,
+    token: string,
+    timeoutMs = 2500
+  ): Promise<boolean> {
+    const base = address.replace(/\/$/, "");
+    const url = `${base.startsWith("http") ? base : `http://${base}`}/api/sessions`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /** Get full tmux topology. */
   async getSessions(): Promise<TmuxTopology> {
     return this.fetch<TmuxTopology>("/api/sessions");

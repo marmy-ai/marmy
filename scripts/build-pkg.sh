@@ -163,6 +163,11 @@ else
     fi
 fi
 
+# --- Step 8: Clean intermediates ---
+# Leave only the .pkg. The derived/pkg-stage app copies otherwise show up in
+# Spotlight next to /Applications/MacMarmy.app and get launched by mistake.
+rm -rf "$BUILD_DIR/derived" "$STAGE_DIR" "$COMPONENT_PLIST"
+
 echo ""
 info "Build complete: $PKG_SIGNED"
 info "Size: $(du -h "$PKG_SIGNED" | cut -f1)"

@@ -6,5 +6,7 @@
 	<string>MacMarmy</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>MacMarmy opens Terminal to attach to your tmux sessions.</string>
 </dict>
 </plist>

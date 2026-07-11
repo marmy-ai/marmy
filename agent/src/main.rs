@@ -57,7 +57,51 @@ async fn main() -> Result<()> {
     }
 }
 
+/// Raise the file-descriptor soft limit so everything we spawn — most
+/// importantly the tmux server, and through it every session it hosts —
+/// inherits a workable limit. When MacMarmy (or any GUI parent) launches the
+/// agent, the inherited soft limit can be as low as 256/2560, which Claude
+/// Code exhausts and dies on. Must run before the tmux controller starts.
+#[cfg(unix)]
+fn raise_fd_limit() {
+    unsafe {
+        let mut lim = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 {
+            return;
+        }
+        // macOS caps the soft limit at kern.maxfilesperproc even when the
+        // hard limit reports unlimited, so walk down until one sticks.
+        for target in [65536, 32768, 10240 as libc::rlim_t] {
+            let want = libc::rlimit {
+                rlim_cur: if lim.rlim_max == libc::RLIM_INFINITY {
+                    target
+                } else {
+                    target.min(lim.rlim_max)
+                },
+                rlim_max: lim.rlim_max,
+            };
+            if want.rlim_cur <= lim.rlim_cur {
+                info!("fd limit already {} — leaving as-is", lim.rlim_cur);
+                return;
+            }
+            if libc::setrlimit(libc::RLIMIT_NOFILE, &want) == 0 {
+                info!("raised fd soft limit {} -> {}", lim.rlim_cur, want.rlim_cur);
+                return;
+            }
+        }
+        error!("failed to raise fd soft limit (still {})", lim.rlim_cur);
+    }
+}
+
+#[cfg(not(unix))]
+fn raise_fd_limit() {}
+
 async fn cmd_serve(bind_override: Option<String>, port_override: Option<u16>) -> Result<()> {
+    raise_fd_limit();
+
     let config = Config::load().context("failed to load config")?;
 
     let bind = bind_override.unwrap_or_else(|| config.server.bind.clone());

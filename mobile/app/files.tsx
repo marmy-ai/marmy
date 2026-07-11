@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import { useConnectionStore } from "../src/stores/connectionStore";
 import { theme } from "../src/theme";
 import FileTree from "../src/components/FileTree";
 import CodeViewer from "../src/components/CodeViewer";
+import HtmlViewer from "../src/components/HtmlViewer";
 import ImageViewer, { isImageFile } from "../src/components/ImageViewer";
 import MarkdownViewer from "../src/components/MarkdownViewer";
 import PdfViewer from "../src/components/PdfViewer";
@@ -24,7 +25,8 @@ type Phase =
   | { kind: "file"; path: string; content: string }
   | { kind: "image"; path: string }
   | { kind: "markdown"; path: string; content: string }
-  | { kind: "pdf"; path: string };
+  | { kind: "pdf"; path: string }
+  | { kind: "html"; path: string };
 
 export default function FilesScreen() {
   const { sessionId, sessionName } = useLocalSearchParams<{ sessionId: string; sessionName: string }>();
@@ -35,6 +37,9 @@ export default function FilesScreen() {
   const [currentPath, setCurrentPath] = useState("");
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  // Monotonic navigation token: since the tree stays interactive while a
+  // listDir is in flight, a stale response must not overwrite a newer one.
+  const navSeq = useRef(0);
 
   // Auto-load session roots on mount
   useEffect(() => {
@@ -61,15 +66,17 @@ export default function FilesScreen() {
   const loadDirectory = useCallback(
     async (path: string) => {
       if (!api) return;
+      const seq = ++navSeq.current;
       setLoading(true);
       try {
         const listing = await api.listDir(path);
+        if (seq !== navSeq.current) return;
         setEntries(listing.entries);
         setCurrentPath(listing.path);
       } catch (e: any) {
-        Alert.alert("Error", e.message);
+        if (seq === navSeq.current) Alert.alert("Error", e.message);
       } finally {
-        setLoading(false);
+        if (seq === navSeq.current) setLoading(false);
       }
     },
     [api]
@@ -78,9 +85,11 @@ export default function FilesScreen() {
   const selectRoot = useCallback(
     async (root: SessionRoot) => {
       if (!api) return;
+      const seq = ++navSeq.current;
       setLoading(true);
       try {
         const listing = await api.listDir(root.path);
+        if (seq !== navSeq.current) return;
         setEntries(listing.entries);
         setCurrentPath(listing.path);
         setPhase((prev) =>
@@ -89,9 +98,9 @@ export default function FilesScreen() {
             : prev
         );
       } catch (e: any) {
-        Alert.alert("Error", e.message);
+        if (seq === navSeq.current) Alert.alert("Error", e.message);
       } finally {
-        setLoading(false);
+        if (seq === navSeq.current) setLoading(false);
       }
     },
     [api]
@@ -112,18 +121,27 @@ export default function FilesScreen() {
         return;
       }
 
+      // Agents produce HTML reports/dashboards as a read-back channel —
+      // render them, don't show source (a Source tab is in the viewer).
+      if (isHtmlFile(filename)) {
+        setPhase({ kind: "html", path });
+        return;
+      }
+
+      const seq = ++navSeq.current;
       setLoading(true);
       try {
         const file = await api.readFile(path);
+        if (seq !== navSeq.current) return;
         if (isMarkdownFile(filename)) {
           setPhase({ kind: "markdown", path: file.path, content: file.content });
         } else {
           setPhase({ kind: "file", path: file.path, content: file.content });
         }
       } catch (e: any) {
-        Alert.alert("Error", e.message);
+        if (seq === navSeq.current) Alert.alert("Error", e.message);
       } finally {
-        setLoading(false);
+        if (seq === navSeq.current) setLoading(false);
       }
     },
     [api]
@@ -145,6 +163,7 @@ export default function FilesScreen() {
       case "image":
       case "markdown":
       case "pdf":
+      case "html":
         // Go back to browse — entries/currentPath are still in state
         setPhase({ kind: "browse", sessionId: sessionId || "" });
         break;
@@ -159,7 +178,10 @@ export default function FilesScreen() {
     );
   }
 
-  if (loading) {
+  // Full-screen spinner only before anything has loaded; afterwards keep the
+  // current tree on screen and show a corner spinner so navigation doesn't
+  // blank the context on every tap.
+  if (loading && entries.length === 0 && roots.length === 0) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={theme.primary} />
@@ -167,7 +189,12 @@ export default function FilesScreen() {
     );
   }
 
-  const isViewingFile = phase.kind === "file" || phase.kind === "image" || phase.kind === "markdown" || phase.kind === "pdf";
+  const isViewingFile =
+    phase.kind === "file" ||
+    phase.kind === "image" ||
+    phase.kind === "markdown" ||
+    phase.kind === "pdf" ||
+    phase.kind === "html";
   const isBrowsing = phase.kind === "browse";
 
   // Render file viewer overlay when viewing a file
@@ -195,6 +222,23 @@ export default function FilesScreen() {
             <Text style={styles.backBtnText}>Back to files</Text>
           </TouchableOpacity>
           <MarkdownViewer content={phase.content} filename={filename} />
+        </>
+      );
+    }
+    if (phase.kind === "html") {
+      const filename = phase.path.split("/").pop() || phase.path;
+      const path = phase.path;
+      return (
+        <>
+          <TouchableOpacity style={styles.backBtn} onPress={goBack}>
+            <Text style={styles.backBtnText}>Back to files</Text>
+          </TouchableOpacity>
+          <HtmlViewer
+            uri={api!.getRawFileUrl(path)}
+            headers={api!.getAuthHeaders()}
+            filename={filename}
+            loadSource={() => api!.readFile(path).then((f) => f.content)}
+          />
         </>
       );
     }
@@ -247,6 +291,11 @@ export default function FilesScreen() {
         </View>
         {/* File viewer renders on top when active */}
         {isViewingFile && renderFileViewer()}
+        {loading && (
+          <View style={styles.loadingBadge} pointerEvents="none">
+            <ActivityIndicator size="small" color={theme.primary} />
+          </View>
+        )}
       </View>
     );
   }
@@ -264,6 +313,7 @@ export default function FilesScreen() {
           <TouchableOpacity
             style={styles.entry}
             onPress={() => selectRoot(item)}
+            disabled={loading}
           >
             <View style={styles.entryContent}>
               <Text style={styles.entryTitle} numberOfLines={1}>
@@ -281,6 +331,11 @@ export default function FilesScreen() {
           </View>
         }
       />
+      {loading && (
+        <View style={styles.loadingBadge} pointerEvents="none">
+          <ActivityIndicator size="small" color={theme.primary} />
+        </View>
+      )}
     </View>
   );
 }
@@ -289,12 +344,26 @@ function isMarkdownFile(name: string): boolean {
   return /\.(md|mdx)$/i.test(name);
 }
 
+function isHtmlFile(name: string): boolean {
+  return /\.(html?|xhtml)$/i.test(name);
+}
+
 function isPdfFile(name: string): boolean {
   return /\.pdf$/i.test(name);
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.bgDeep },
+  loadingBadge: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: theme.bgElevated,
+    borderColor: theme.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 6,
+  },
   center: {
     flex: 1,
     alignItems: "center",

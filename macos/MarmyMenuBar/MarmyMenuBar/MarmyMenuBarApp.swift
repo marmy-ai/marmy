@@ -187,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         addPairingItems(to: menu)
         menu.addItem(.separator())
 
+        addDashboardItem(to: menu)
         addSessionItems(to: menu)
         addAgentControlItems(to: menu)
         menu.addItem(.separator())
@@ -233,6 +234,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             addCopyItem(title: "Copy Tailscale Address", value: tsAddr, to: menu)
         }
         addCopyItem(title: "Copy Token", value: info.token, to: menu)
+
+        let pair = NSMenuItem(title: "Pair iPhone...", action: #selector(showPairingWindow), keyEquivalent: "")
+        pair.target = self
+        menu.addItem(pair)
+    }
+
+    private func addDashboardItem(to menu: NSMenu) {
+        let dashboard = NSMenuItem(title: "Agents Dashboard...", action: #selector(showDashboard), keyEquivalent: "")
+        dashboard.target = self
+        menu.addItem(dashboard)
     }
 
     private func addSessionItems(to menu: NSMenu) {
@@ -303,14 +314,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSession(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
-        let sanitized = name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
-        guard !sanitized.isEmpty else { return }
+        TerminalLauncher.openSession(name)
+    }
 
-        let script = "tell application \"Terminal\" to do script \"tmux attach-session -t \(sanitized)\""
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-e", script, "-e", "tell application \"Terminal\" to activate"]
-        try? proc.run()
+    @objc private func showPairingWindow() {
+        AuxWindows.shared.show(id: "pair", title: "Pair iPhone", width: 320, height: 420) {
+            PairingQRView(manager: manager)
+        }
+    }
+
+    @objc private func showDashboard() {
+        AuxWindows.shared.show(id: "dashboard", title: "Marmy Agents", width: 440, height: 380, resizable: true) {
+            DashboardView(manager: manager)
+        }
     }
 
     @objc private func startAgent() {

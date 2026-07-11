@@ -9,7 +9,9 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 8) {
             statusSection
             pairingSection
+            dashboardSection
             sessionsSection
+            agentControlsSection
             voiceSection
             appControlsSection
         }
@@ -50,6 +52,12 @@ struct MenuBarView: View {
                 Button("Copy Token") {
                     copyToClipboard(info.token)
                 }
+
+                Button("Pair iPhone…") {
+                    AuxWindows.shared.show(id: "pair", title: "Pair iPhone", width: 320, height: 420) {
+                        PairingQRView(manager: manager)
+                    }
+                }
             } else {
                 Text("No config found")
                     .foregroundColor(.secondary)
@@ -62,12 +70,23 @@ struct MenuBarView: View {
         }
     }
 
+    private var dashboardSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button("Agents Dashboard…") {
+                AuxWindows.shared.show(id: "dashboard", title: "Marmy Agents", width: 440, height: 380, resizable: true) {
+                    DashboardView(manager: manager)
+                }
+            }
+            Divider()
+        }
+    }
+
     private var sessionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             if manager.status == .running && !manager.sessions.isEmpty {
                 Menu("Sessions (\(manager.sessions.count))") {
                     ForEach(manager.sessions) { session in
-                        Button(action: { openSession(session.name) }) {
+                        Button(action: { TerminalLauncher.openSession(session.name) }) {
                             HStack {
                                 Text(session.name)
                                 Spacer()
@@ -83,7 +102,11 @@ struct MenuBarView: View {
                 }
                 Divider()
             }
+        }
+    }
 
+    private var agentControlsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
             if manager.status == .running || manager.status == .starting {
                 Button("Stop Agent") { manager.stop() }
             } else {
@@ -155,17 +178,6 @@ struct MenuBarView: View {
                 }
             }
         }
-    }
-
-    private func openSession(_ name: String) {
-        let sanitized = name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
-        guard !sanitized.isEmpty else { return }
-
-        let script = "tell application \"Terminal\" to do script \"tmux attach-session -t \(sanitized)\""
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-e", script, "-e", "tell application \"Terminal\" to activate"]
-        try? proc.run()
     }
 
     private func copyToClipboard(_ text: String) {

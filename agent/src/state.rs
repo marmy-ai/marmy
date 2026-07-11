@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::{watch, RwLock};
@@ -13,6 +14,12 @@ pub struct AppState {
     pub inner: Arc<RwLock<AppStateInner>>,
     pub tmux: TmuxController,
     pub config: Config,
+    /// allowed_paths canonicalized once at startup. Canonicalizing stats every
+    /// path component, and doing that per request on a TCC-protected dir
+    /// (~/Documents etc.) fires a blocking macOS permission prompt — so it
+    /// must not happen on the request path. Entries that fail to resolve at
+    /// startup are dropped (warned), never silently treated as "no allowlist".
+    pub allowed_paths_canonical: Arc<Vec<PathBuf>>,
     /// Notifies WebSocket clients when topology changes.
     pub topology_tx: watch::Sender<Option<TmuxTopology>>,
     pub topology_rx: watch::Receiver<Option<TmuxTopology>>,
@@ -35,6 +42,21 @@ impl AppState {
         let push_tokens = notifications::load_push_tokens();
         let unread_sessions = notifications::load_unread_sessions();
         let sender = NotificationSender::new(&config.notifications);
+        let allowed_paths_canonical: Vec<PathBuf> = config
+            .files
+            .allowed_paths
+            .iter()
+            .filter_map(|p| {
+                let resolved = crate::api::files::resolve_path(p);
+                match resolved.canonicalize() {
+                    Ok(c) => Some(c),
+                    Err(e) => {
+                        tracing::warn!(path = %p, error = %e, "allowed_path does not resolve — ignoring");
+                        None
+                    }
+                }
+            })
+            .collect();
         Self {
             inner: Arc::new(RwLock::new(AppStateInner {
                 topology: None,
@@ -43,6 +65,7 @@ impl AppState {
             })),
             tmux,
             config,
+            allowed_paths_canonical: Arc::new(allowed_paths_canonical),
             topology_tx,
             topology_rx,
             sender: Arc::new(sender),
