@@ -263,7 +263,7 @@ final class AgentManager: ObservableObject {
         }
     }
 
-    // MARK: - Session creation
+    // MARK: - Session management
 
     struct AgentApiError: LocalizedError {
         let message: String
@@ -306,6 +306,30 @@ final class AgentManager: ObservableObject {
             throw AgentApiError(message: detail.isEmpty ? "Create failed" : detail)
         }
         // Refresh the sessions list right away so the new session shows up.
+        await checkHealth()
+    }
+
+    /// DELETE /api/sessions/:name on the local agent.
+    func deleteSession(name: String) async throws {
+        guard let info = pairingInfo else {
+            throw AgentApiError(message: "Agent config not loaded")
+        }
+        guard let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "http://127.0.0.1:\(info.port)/api/sessions/\(encoded)") else {
+            throw AgentApiError(message: "Bad agent URL")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(info.token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let detail = String(data: data, encoding: .utf8) ?? ""
+            throw AgentApiError(message: detail.isEmpty ? "Delete failed" : detail)
+        }
+
+        sessions.removeAll { $0.name == name }
         await checkHealth()
     }
 

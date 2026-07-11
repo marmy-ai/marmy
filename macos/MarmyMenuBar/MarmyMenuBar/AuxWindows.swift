@@ -169,6 +169,8 @@ struct DashboardView: View {
     @State private var skipPermissions = false
     @State private var creating = false
     @State private var createError: String?
+    @State private var deletingSessionID: String?
+    @State private var deleteError: String?
 
     var body: some View {
         Group {
@@ -220,11 +222,24 @@ struct DashboardView: View {
                         ScrollView {
                             LazyVStack(spacing: 2) {
                                 ForEach(manager.sessions) { session in
-                                    SessionRow(session: session)
+                                    SessionRow(
+                                        session: session,
+                                        isDeleting: deletingSessionID == session.id,
+                                        onDelete: { confirmAndDelete(session) }
+                                    )
                                 }
                             }
                             .padding(8)
                         }
+                    }
+                    if let err = deleteError {
+                        Divider()
+                        Text(err)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .lineLimit(2)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
                     }
                 }
             }
@@ -341,20 +356,52 @@ struct DashboardView: View {
                 newName = ""
                 newDir = ""
                 showNewSession = false
+                deleteError = nil
             } catch {
                 createError = error.localizedDescription
             }
             creating = false
         }
     }
+
+    private func confirmAndDelete(_ session: MarmySession) {
+        guard deletingSessionID == nil else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Kill session \"\(session.name)\"?"
+        alert.informativeText = "This will terminate the tmux session and any process running inside it."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Kill Session")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        deletingSessionID = session.id
+        deleteError = nil
+        Task { @MainActor in
+            do {
+                try await manager.deleteSession(name: session.name)
+            } catch {
+                deleteError = error.localizedDescription
+            }
+            deletingSessionID = nil
+        }
+    }
 }
 
 private struct SessionRow: View {
     let session: MarmySession
+    let isDeleting: Bool
+    let onDelete: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        Button(action: { TerminalLauncher.openSession(session.name) }) {
+        Button(action: {
+            if !isDeleting {
+                TerminalLauncher.openSession(session.name)
+            }
+        }) {
             HStack(spacing: 10) {
                 Circle()
                     .fill(session.unread ? Color.orange : Color.green)
@@ -377,8 +424,13 @@ private struct SessionRow: View {
                         .foregroundColor(.secondary)
                         .help("Attached in a terminal")
                 }
-                Image(systemName: "arrow.up.forward.square")
-                    .foregroundColor(hovering ? .primary : Color.secondary.opacity(0.5))
+                if isDeleting {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.up.forward.square")
+                        .foregroundColor(hovering ? .primary : Color.secondary.opacity(0.5))
+                }
             }
             .padding(.vertical, 6)
             .padding(.horizontal, 10)
@@ -389,6 +441,13 @@ private struct SessionRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(isDeleting)
+        .contextMenu {
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete Session", systemImage: "trash")
+            }
+            .disabled(isDeleting)
+        }
         .onHover { hovering = $0 }
     }
 }
