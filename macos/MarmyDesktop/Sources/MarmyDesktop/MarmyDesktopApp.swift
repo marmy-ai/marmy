@@ -7,7 +7,6 @@ import SwiftUI
 /// load failure instead of quietly replacing the file, and lists what is saved.
 /// Editing, the graph, the embedded terminal, and launching arrive in later
 /// phases; nothing here writes to disk on its own.
-@main
 struct MarmyDesktopApp: App {
     @State private var model = AppModel()
 

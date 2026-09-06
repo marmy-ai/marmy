@@ -1,0 +1,412 @@
+import Foundation
+import MarmyCore
+
+public enum RuntimeError: Error, CustomStringConvertible, Equatable {
+    case notBound(nodeID: UUID)
+    case identityMismatch(detail: String)
+    case sessionNotFound(name: String)
+    case sessionAlreadyBound(name: String, nodeID: UUID)
+    case launchBlocked(reasons: [String])
+    case agentExitedImmediately(sessionName: String, detail: String)
+    case emptyMessage
+
+    public var description: String {
+        switch self {
+        case .notBound(let nodeID):
+            return "This agent is not attached to a running session (\(nodeID.uuidString))."
+        case .identityMismatch(let detail):
+            return "The session this agent was attached to is gone. \(detail) "
+                + "Reconnect it or start a new one; nothing was sent."
+        case .sessionNotFound(let name):
+            return "No tmux session named \u{22}\(name)\u{22} is running."
+        case .sessionAlreadyBound(let name, _):
+            return "\u{22}\(name)\u{22} is already attached to another agent in this team."
+        case .launchBlocked(let reasons):
+            return "Nothing was started. \(reasons.joined(separator: " "))"
+        case .agentExitedImmediately(let sessionName, let detail):
+            return "\(sessionName) started but stopped straight away. \(detail)"
+        case .emptyMessage:
+            return "There is nothing to send."
+        }
+    }
+}
+
+/// What one launch attempt did.
+public struct LaunchOutcome: Sendable {
+    public var preflight: PreflightReport
+    /// Nodes started by this attempt, in the order they were started.
+    public var started: [UUID: AgentBinding]
+    /// Nodes that failed, with the reason. Everything else still started.
+    public var failures: [UUID: String]
+    /// Nodes deliberately left alone, with why.
+    public var skipped: [UUID: String]
+
+    public init(
+        preflight: PreflightReport,
+        started: [UUID: AgentBinding] = [:],
+        failures: [UUID: String] = [:],
+        skipped: [UUID: String] = [:]
+    ) {
+        self.preflight = preflight
+        self.started = started
+        self.failures = failures
+        self.skipped = skipped
+    }
+
+    public var isFullSuccess: Bool { failures.isEmpty && !preflight.isBlocked }
+}
+
+/// Owns Marmy's view of live agents: what is running, what to start, and how to
+/// talk to it.
+///
+/// An actor because the UI calls it from anywhere and every operation ends in a
+/// subprocess. It never kills a session it was not explicitly asked to, never
+/// takes over a session it did not start, and never sends text to a pane whose
+/// identity it has not just re-checked.
+public actor AgentRuntime {
+    private let tmux: TmuxClient
+    private let locator: ExecutableLocator
+    private let store: RuntimeStore
+    private let trampoline: TrampolineCommand
+    private let now: @Sendable () -> Date
+    private let makeID: @Sendable () -> UUID
+
+    private var ledger: RuntimeLedger
+    private var launching: Set<UUID> = []
+
+    public init(
+        tmux: TmuxClient,
+        locator: ExecutableLocator = ExecutableLocator(),
+        store: RuntimeStore,
+        trampoline: TrampolineCommand = .resolveDefault(),
+        now: @escaping @Sendable () -> Date = { Date() },
+        makeID: @escaping @Sendable () -> UUID = { UUID() }
+    ) throws {
+        self.tmux = tmux
+        self.locator = locator
+        self.store = store
+        self.trampoline = trampoline
+        self.now = now
+        self.makeID = makeID
+        self.ledger = try store.loadLedger()
+    }
+
+    // MARK: - What Marmy knows
+
+    public func bindings() -> [AgentBinding] { ledger.bindings }
+
+    public func binding(for nodeID: UUID) -> AgentBinding? { ledger.binding(nodeID: nodeID) }
+
+    /// Forgets Marmy's record of a node. The tmux session keeps running: closing
+    /// a team in the app is never a reason to end someone's work.
+    @discardableResult
+    public func forget(nodeID: UUID) throws -> AgentBinding? {
+        let removed = ledger.remove(nodeID: nodeID)
+        if removed != nil { try store.saveLedger(ledger) }
+        return removed
+    }
+
+    /// Live state of every node in a team.
+    public func snapshot(topology: Topology) async throws -> RuntimeSnapshot {
+        let server = try await tmux.serverIdentity()
+        let sessions = try await tmux.listSessions()
+        let panes = try await tmux.listPanes()
+
+        var states: [UUID: AgentRuntimeState] = [:]
+        for node in topology.nodes {
+            if launching.contains(node.id) {
+                states[node.id] = .launching
+            } else if let binding = ledger.binding(nodeID: node.id) {
+                states[node.id] = LiveIdentity.state(
+                    for: binding, server: server, panes: panes, sessions: sessions)
+            } else {
+                states[node.id] = .notLaunched
+            }
+        }
+        return RuntimeSnapshot(states: states, sessions: sessions, panes: panes, server: server)
+    }
+
+    /// Sessions on this server that no node in `topology` is bound to.
+    public func unassignedSessions(topology: Topology) async throws -> [TmuxSession] {
+        let snapshot = try await snapshot(topology: topology)
+        let bound = Set(topology.nodes.compactMap { ledger.binding(nodeID: $0.id)?.sessionID })
+        return snapshot.unassignedSessions(boundSessionIDs: bound)
+    }
+
+    // MARK: - Preflight and launch
+
+    public func preflight(
+        topology: Topology,
+        workspace: Workspace,
+        nodeIDs: Set<UUID>? = nil
+    ) async -> PreflightReport {
+        do {
+            let snapshot = try await snapshot(topology: topology)
+            return LaunchPreflight.evaluate(
+                topology: topology,
+                workspace: workspace,
+                requestedNodeIDs: nodeIDs,
+                liveSessions: snapshot.sessions,
+                states: snapshot.states,
+                bindings: bindingsByNode(topology),
+                locator: locator,
+                trampoline: trampoline,
+                server: tmux.server)
+        } catch {
+            return PreflightReport(findings: [PreflightFinding(
+                kind: .tmuxUnavailable(detail: "\(error)"),
+                severity: .error,
+                message: "Could not read tmux state: \(error)")])
+        }
+    }
+
+    /// Starts every node that needs starting, after the whole team passes
+    /// preflight.
+    ///
+    /// A blocked preflight starts nothing at all. A failure partway through
+    /// keeps every session that did start, records it, and reports exactly what
+    /// failed, so a retry only starts what is still absent.
+    public func launch(
+        topology: Topology,
+        workspace: Workspace,
+        nodeIDs: Set<UUID>? = nil
+    ) async -> LaunchOutcome {
+        let report = await preflight(topology: topology, workspace: workspace, nodeIDs: nodeIDs)
+        var outcome = LaunchOutcome(preflight: report)
+        for (nodeID, sessionName) in report.alreadyRunning {
+            outcome.skipped[nodeID] = "already running in \(sessionName)"
+        }
+        guard !report.isBlocked else { return outcome }
+
+        store.sweepStaleSpecs()
+
+        for plan in report.plans {
+            guard let node = topology.node(plan.nodeID) else { continue }
+            launching.insert(plan.nodeID)
+            defer { launching.remove(plan.nodeID) }
+
+            do {
+                outcome.started[plan.nodeID] = try await start(plan: plan, node: node, topology: topology)
+            } catch {
+                outcome.failures[plan.nodeID] = "\(error)"
+            }
+        }
+        return outcome
+    }
+
+    private func start(plan: NodeLaunchPlan, node: AgentNode, topology: Topology) async throws -> AgentBinding {
+        let generation = makeID()
+        let spec = LaunchSpec(
+            executablePath: plan.executablePath,
+            arguments: plan.arguments,
+            workingDirectory: plan.workingDirectory,
+            environmentAdditions: ["PATH": locator.launchPATH],
+            environmentRemovals: plan.environmentRemovals,
+            topologyID: topology.id,
+            nodeID: node.id,
+            generation: generation)
+
+        let specURL = try store.writeSpec(spec)
+        let started: TmuxStartedSession
+        do {
+            started = try await tmux.newSession(
+                name: plan.sessionName,
+                directory: plan.workingDirectory,
+                executable: trampoline.executablePath,
+                arguments: trampoline.arguments(specPath: specURL.path))
+        } catch {
+            // Nothing is running, so the spec is safe to remove immediately.
+            removeLaunchArtifacts(specURL: specURL)
+            throw error
+        }
+
+        // tmux reports success as soon as the pane exists; a spec or exec
+        // failure ends the pane milliseconds later. Nothing is recorded as
+        // running until the pane is confirmed alive.
+        try await confirmAlive(started, specURL: specURL)
+
+        guard let server = try await tmux.serverIdentity() else {
+            throw TmuxError.commandFailed(
+                command: "display-message", detail: "the session started but the server did not report itself")
+        }
+
+        let binding = AgentBinding(
+            topologyID: topology.id,
+            nodeID: node.id,
+            generation: generation,
+            sessionName: started.sessionName,
+            sessionID: started.sessionID,
+            paneID: started.paneID,
+            server: server,
+            ownership: .launched,
+            cli: node.cli,
+            startedAt: now())
+
+        // Session-scoped marker so ownership survives losing the ledger. Best
+        // effort: a session that is running matters more than its label.
+        try? await tmux.setSessionOption(
+            AgentBinding.ownershipOptionName, value: binding.ownershipMarker, target: started.sessionID)
+
+        ledger.upsert(binding)
+        try store.saveLedger(ledger)
+        removeLaunchArtifacts(specURL: specURL)
+        return binding
+    }
+
+    /// Confirms the pane tmux just created is still running the agent.
+    private func confirmAlive(_ started: TmuxStartedSession, specURL: URL) async throws {
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        let panes = try await tmux.listPanes()
+        let pane = panes.first { $0.id == started.paneID }
+        guard let pane, !pane.isDead else {
+            let detail = readLaunchError(specURL: specURL)
+                ?? "Check that the CLI runs in that folder."
+            removeLaunchArtifacts(specURL: specURL)
+            throw RuntimeError.agentExitedImmediately(sessionName: started.sessionName, detail: detail)
+        }
+    }
+
+    /// The reason a trampoline left behind before its pane disappeared.
+    private func readLaunchError(specURL: URL) -> String? {
+        let path = AgentTrampoline.errorPath(forSpecAt: specURL.path)
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func removeLaunchArtifacts(specURL: URL) {
+        store.removeSpec(at: specURL)
+        try? FileManager.default.removeItem(atPath: AgentTrampoline.errorPath(forSpecAt: specURL.path))
+    }
+
+    // MARK: - Adoption
+
+    /// Attaches an existing session to a node because the user said to.
+    ///
+    /// No prompt is sent, no keys are typed, and no option is set on the
+    /// session: an already-running agent — or a plain shell — is left exactly as
+    /// it is.
+    @discardableResult
+    public func adopt(
+        sessionName: String,
+        nodeID: UUID,
+        topology: Topology,
+        cli: AgentCLI?
+    ) async throws -> AgentBinding {
+        let sessions = try await tmux.listSessions()
+        guard let session = sessions.first(where: { $0.name == sessionName }) else {
+            throw RuntimeError.sessionNotFound(name: sessionName)
+        }
+        guard let server = try await tmux.serverIdentity() else {
+            throw RuntimeError.sessionNotFound(name: sessionName)
+        }
+        // Session ids are only unique within one running server, so a binding
+        // from a server that has since restarted must not block this adoption.
+        if let clash = ledger.bindings.first(where: {
+            $0.sessionID == session.id && $0.nodeID != nodeID && $0.server == server
+        }) {
+            throw RuntimeError.sessionAlreadyBound(name: sessionName, nodeID: clash.nodeID)
+        }
+        let panes = try await tmux.listPanes()
+        guard let pane = panes.first(where: { $0.sessionID == session.id && $0.isActive && $0.isWindowActive })
+            ?? panes.first(where: { $0.sessionID == session.id })
+        else {
+            throw RuntimeError.sessionNotFound(name: sessionName)
+        }
+
+        let binding = AgentBinding(
+            topologyID: topology.id,
+            nodeID: nodeID,
+            generation: makeID(),
+            sessionName: session.name,
+            sessionID: session.id,
+            paneID: pane.id,
+            server: server,
+            ownership: .adopted,
+            cli: cli,
+            startedAt: now())
+        ledger.upsert(binding)
+        try store.saveLedger(ledger)
+        return binding
+    }
+
+    // MARK: - Sending
+
+    /// Sends one message to the pane a node is bound to.
+    ///
+    /// The pane id is re-validated against the live server first, so a session
+    /// that ended — or a different one that took its name — gets an error rather
+    /// than someone else's terminal receiving the text. The message travels
+    /// through a private tmux buffer, never through a command line.
+    public func send(_ text: String, toNode nodeID: UUID) async throws {
+        guard !text.isEmpty else { throw RuntimeError.emptyMessage }
+        guard let binding = ledger.binding(nodeID: nodeID) else {
+            throw RuntimeError.notBound(nodeID: nodeID)
+        }
+
+        let server = try await tmux.serverIdentity()
+        let panes = try await tmux.listPanes()
+        let sessions = try await tmux.listSessions()
+        let state = LiveIdentity.state(for: binding, server: server, panes: panes, sessions: sessions)
+        guard case .running = state else {
+            if case .missing(let reason) = state { throw RuntimeError.identityMismatch(detail: reason) }
+            throw RuntimeError.identityMismatch(detail: "The pane is not available.")
+        }
+
+        let bufferName = "marmy-\(makeID().uuidString.lowercased())"
+        try await tmux.loadBuffer(name: bufferName, text: text)
+        do {
+            // paste-buffer -d removes the buffer itself on success.
+            try await tmux.pasteBuffer(name: bufferName, target: binding.paneID)
+            try await tmux.sendEnter(target: binding.paneID)
+        } catch {
+            try? await tmux.deleteBuffer(name: bufferName)
+            throw error
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func bindingsByNode(_ topology: Topology) -> [UUID: AgentBinding] {
+        var result: [UUID: AgentBinding] = [:]
+        for node in topology.nodes {
+            if let binding = ledger.binding(nodeID: node.id) { result[node.id] = binding }
+        }
+        return result
+    }
+}
+
+/// Decides whether a recorded binding still points at the same live thing.
+public enum LiveIdentity {
+
+    public static func state(
+        for binding: AgentBinding,
+        server: TmuxServerIdentity?,
+        panes: [TmuxPane],
+        sessions: [TmuxSession]
+    ) -> AgentRuntimeState {
+        let adopted = binding.ownership == .adopted
+
+        guard let server else {
+            return .missing(reason: "The tmux server is no longer running.")
+        }
+        guard server == binding.server else {
+            return .missing(reason: "tmux has been restarted since \(binding.sessionName) was attached.")
+        }
+        guard let pane = panes.first(where: { $0.id == binding.paneID }) else {
+            if let replacement = sessions.first(where: { $0.name == binding.sessionName }),
+               replacement.id != binding.sessionID {
+                return .missing(reason:
+                    "A different session is now called \u{22}\(binding.sessionName)\u{22} (\(replacement.id)).")
+            }
+            return .missing(reason: "Session \u{22}\(binding.sessionName)\u{22} has ended.")
+        }
+        guard pane.sessionID == binding.sessionID else {
+            return .missing(reason: "Pane \(binding.paneID) now belongs to \(pane.sessionName).")
+        }
+        guard !pane.isDead else {
+            return .missing(reason: "The agent in \u{22}\(pane.sessionName)\u{22} has exited.")
+        }
+        return .running(paneID: pane.id, sessionName: pane.sessionName, adopted: adopted)
+    }
+}

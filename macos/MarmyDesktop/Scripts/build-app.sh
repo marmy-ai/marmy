@@ -30,6 +30,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 
+# The launch trampoline lives beside the app binary: tmux starts it, it reads a
+# launch spec and becomes the agent CLI.
+HELPER="$(swift build -c "$CONFIG" --show-bin-path)/marmy-agent-launch"
+if [[ -x "$HELPER" ]]; then
+  cp "$HELPER" "$APP/Contents/MacOS/marmy-agent-launch"
+else
+  echo "warning: marmy-agent-launch not built; the app will fall back to its own --run-agent path" >&2
+fi
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
