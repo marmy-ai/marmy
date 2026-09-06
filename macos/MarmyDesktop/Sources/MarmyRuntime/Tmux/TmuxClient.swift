@@ -99,6 +99,28 @@ public struct TmuxClient: Sendable {
     /// Pane contents. `lines` reaches back into scrollback; `joinWrapped` puts a
     /// line the terminal wrapped back together, so text can be searched as it
     /// was written rather than as it was displayed.
+    /// Terminals attached to this server. A client's session and pane change when
+    /// the user switches inside tmux, which is how Marmy knows the embedded
+    /// terminal is still looking at the agent it says it is.
+    public func listClients() async throws -> [TmuxClientInfo] {
+        let command = "list-clients"
+        let fields = ["client_pid", "client_name", "session_id", "session_name", "pane_id"]
+        let result = try await run([command, "-F", TmuxFormat.lengthPrefixed(fields)])
+        if Self.isNoServer(result) { return [] }
+        try Self.requireSuccess(result, command: command)
+
+        return try TmuxFormat.parseRecords(
+            result.standardOutputData, fieldCount: fields.count, command: command
+        ).map { record in
+            TmuxClientInfo(
+                pid: Int32(try TmuxFormat.integer(record[0], command: command)),
+                name: record[1],
+                sessionID: record[2],
+                sessionName: record[3],
+                paneID: record[4])
+        }
+    }
+
     public func capturePane(
         _ paneID: String,
         lines: Int? = nil,

@@ -1,5 +1,6 @@
 import Foundation
 import MarmyRuntime
+import MarmyUI
 
 /// Process entry point.
 ///
@@ -13,7 +14,10 @@ enum MarmyDesktopMain {
         if arguments.first == AgentTrampoline.flag {
             runAgent(arguments)
         }
-        MarmyDesktopApp.main()
+        if arguments.first == SmokeTest.flag {
+            SmokeTest.run(arguments: arguments)
+        }
+        MarmyApp.main()
     }
 
     private static func runAgent(_ arguments: [String]) -> Never {

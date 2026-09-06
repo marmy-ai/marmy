@@ -82,6 +82,12 @@ extension Topology {
             fresh.attachedSessionName = nil
             return fresh
         }
+        copy.layout = [:]
+        for node in nodes {
+            if let position = position(of: node.id), let fresh = idMap[node.id] {
+                copy.layout[fresh.uuidString] = position
+            }
+        }
         return copy
     }
 }

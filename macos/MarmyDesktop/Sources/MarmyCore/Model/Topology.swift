@@ -14,17 +14,60 @@ public enum TopologyMutationError: Error, Equatable, Sendable {
 /// Node order is meaningful: it drives sidebar order, peer cycling, and the
 /// order names appear in rendered prompts, so every derived list is stable.
 public struct Topology: Identifiable, Codable, Hashable, Sendable {
+    /// Where a node sits on the topology canvas.
+    public struct CanvasPosition: Codable, Hashable, Sendable {
+        public var x: Double
+        public var y: Double
+
+        public init(x: Double, y: Double) {
+            self.x = x
+            self.y = y
+        }
+    }
+
     public var id: UUID
     public var name: String
     /// Ordered agents. Order is preserved across edits.
     public var nodes: [AgentNode]
     public var notes: String
+    /// Hand-placed canvas positions, keyed by node id. Nodes without an entry
+    /// are laid out automatically.
+    public var layout: [String: CanvasPosition]
 
-    public init(id: UUID = UUID(), name: String, nodes: [AgentNode] = [], notes: String = "") {
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        nodes: [AgentNode] = [],
+        notes: String = "",
+        layout: [String: CanvasPosition] = [:]
+    ) {
         self.id = id
         self.name = name
         self.nodes = nodes
         self.notes = notes
+        self.layout = layout
+    }
+
+    // Layout arrived after the first release, so a file without it still loads.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, nodes, notes, layout
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        nodes = try container.decode([AgentNode].self, forKey: .nodes)
+        notes = try container.decode(String.self, forKey: .notes)
+        layout = try container.decodeIfPresent([String: CanvasPosition].self, forKey: .layout) ?? [:]
+    }
+
+    public func position(of nodeID: UUID) -> CanvasPosition? {
+        layout[nodeID.uuidString]
+    }
+
+    public mutating func setPosition(_ position: CanvasPosition?, for nodeID: UUID) {
+        layout[nodeID.uuidString] = position
     }
 
     // MARK: - Lookup
@@ -106,6 +149,7 @@ public struct Topology: Identifiable, Codable, Hashable, Sendable {
     public mutating func remove(_ id: UUID) -> Bool {
         guard let index = index(of: id) else { return false }
         let removed = nodes.remove(at: index)
+        layout.removeValue(forKey: id.uuidString)
 
         let inheritedParent: UUID? = {
             guard let parentID = removed.parentID, let parent = node(parentID) else { return nil }

@@ -105,6 +105,24 @@ public struct TmuxPane: Sendable, Hashable {
     }
 }
 
+/// A terminal attached to this server, and what it is currently showing.
+public struct TmuxClientInfo: Sendable, Hashable {
+    public var pid: Int32
+    public var name: String
+    public var sessionID: String
+    public var sessionName: String
+    /// The pane this client is currently displaying.
+    public var paneID: String
+
+    public init(pid: Int32, name: String, sessionID: String, sessionName: String, paneID: String) {
+        self.pid = pid
+        self.name = name
+        self.sessionID = sessionID
+        self.sessionName = sessionName
+        self.paneID = paneID
+    }
+}
+
 /// A session plus the pane a new session starts with.
 public struct TmuxStartedSession: Sendable, Hashable {
     public var sessionID: String

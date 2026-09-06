@@ -8,6 +8,10 @@ public enum RuntimeError: Error, CustomStringConvertible, Equatable {
     case sessionAlreadyBound(name: String, nodeID: UUID)
     case launchBlocked(reasons: [String])
     case agentExitedImmediately(sessionName: String, detail: String)
+    case paneNotVisible(sessionName: String)
+    case readOnly(detail: String)
+    case terminalNotAttached
+    case terminalShowingSomethingElse(expected: String, actual: String)
     case emptyMessage
 
     public var description: String {
@@ -25,6 +29,17 @@ public enum RuntimeError: Error, CustomStringConvertible, Equatable {
             return "Nothing was started. \(reasons.joined(separator: " "))"
         case .agentExitedImmediately(let sessionName, let detail):
             return "\(sessionName) started but stopped straight away. \(detail)"
+        case .paneNotVisible(let sessionName):
+            return "The agent's pane is not the one showing in \u{22}\(sessionName)\u{22}. "
+                + "Switch back to it in tmux, then send again; nothing was sent."
+        case .readOnly(let detail):
+            return "Marmy is not controlling tmux right now, so nothing was started, attached, or sent. \(detail)"
+        case .terminalNotAttached:
+            return "This terminal is no longer attached to tmux. Reconnect it, then send again; "
+                + "nothing was sent."
+        case .terminalShowingSomethingElse(let expected, let actual):
+            return "The terminal is showing \u{22}\(actual)\u{22}, not \u{22}\(expected)\u{22}. "
+                + "Switch it back or reconnect, then send again; nothing was sent."
         case .emptyMessage:
             return "There is nothing to send."
         }
@@ -64,7 +79,8 @@ public struct LaunchOutcome: Sendable {
 /// takes over a session it did not start, and never sends text to a pane whose
 /// identity it has not just re-checked.
 public actor AgentRuntime {
-    private let tmux: TmuxClient
+    /// Exposed so the UI can attach a terminal client to the same server.
+    public nonisolated let tmux: TmuxClient
     private let locator: ExecutableLocator
     private let store: RuntimeStore
     private let trampoline: TrampolineCommand
@@ -73,6 +89,9 @@ public actor AgentRuntime {
 
     private var ledger: RuntimeLedger
     private var launching: Set<UUID> = []
+    /// True when the ledger could not be read. Reading tmux still works, so the
+    /// user can see what is running; nothing may be changed or written.
+    private let readOnlyReason: String?
 
     public init(
         tmux: TmuxClient,
@@ -89,6 +108,35 @@ public actor AgentRuntime {
         self.now = now
         self.makeID = makeID
         self.ledger = try store.loadLedger()
+        self.readOnlyReason = nil
+    }
+
+    /// A runtime that can look but not touch.
+    ///
+    /// Used when the ledger will not load: the real store is kept — never
+    /// swapped for scratch storage — and every action that would start, attach,
+    /// message, or record anything is refused with the reason.
+    public init(
+        readOnly reason: String,
+        tmux: TmuxClient,
+        locator: ExecutableLocator = ExecutableLocator(),
+        store: RuntimeStore,
+        trampoline: TrampolineCommand = .resolveDefault(),
+        now: @escaping @Sendable () -> Date = { Date() },
+        makeID: @escaping @Sendable () -> UUID = { UUID() }
+    ) {
+        self.tmux = tmux
+        self.locator = locator
+        self.store = store
+        self.trampoline = trampoline
+        self.now = now
+        self.makeID = makeID
+        self.ledger = RuntimeLedger()
+        self.readOnlyReason = reason
+    }
+
+    private func requireWritable() throws {
+        if let readOnlyReason { throw RuntimeError.readOnly(detail: readOnlyReason) }
     }
 
     // MARK: - What Marmy knows
@@ -101,6 +149,7 @@ public actor AgentRuntime {
     /// a team in the app is never a reason to end someone's work.
     @discardableResult
     public func forget(nodeID: UUID) throws -> AgentBinding? {
+        try requireWritable()
         let removed = ledger.remove(nodeID: nodeID)
         if removed != nil { try store.saveLedger(ledger) }
         return removed
@@ -171,6 +220,12 @@ public actor AgentRuntime {
         workspace: Workspace,
         nodeIDs: Set<UUID>? = nil
     ) async -> LaunchOutcome {
+        if let readOnlyReason {
+            return LaunchOutcome(preflight: PreflightReport(findings: [PreflightFinding(
+                kind: .tmuxUnavailable(detail: readOnlyReason),
+                severity: .error,
+                message: "\(RuntimeError.readOnly(detail: readOnlyReason))")]))
+        }
         let report = await preflight(topology: topology, workspace: workspace, nodeIDs: nodeIDs)
         var outcome = LaunchOutcome(preflight: report)
         for (nodeID, sessionName) in report.alreadyRunning {
@@ -293,6 +348,7 @@ public actor AgentRuntime {
         topology: Topology,
         cli: AgentCLI?
     ) async throws -> AgentBinding {
+        try requireWritable()
         let sessions = try await tmux.listSessions()
         guard let session = sessions.first(where: { $0.name == sessionName }) else {
             throw RuntimeError.sessionNotFound(name: sessionName)
@@ -338,7 +394,10 @@ public actor AgentRuntime {
     /// that ended — or a different one that took its name — gets an error rather
     /// than someone else's terminal receiving the text. The message travels
     /// through a private tmux buffer, never through a command line.
-    public func send(_ text: String, toNode nodeID: UUID) async throws {
+    /// `fromClient` is the PID of the embedded terminal's tmux client, when the
+    /// message is being sent from a terminal the user is looking at.
+    public func send(_ text: String, toNode nodeID: UUID, fromClient clientPID: Int32? = nil) async throws {
+        try requireWritable()
         guard !text.isEmpty else { throw RuntimeError.emptyMessage }
         guard let binding = ledger.binding(nodeID: nodeID) else {
             throw RuntimeError.notBound(nodeID: nodeID)
@@ -352,17 +411,127 @@ public actor AgentRuntime {
             if case .missing(let reason) = state { throw RuntimeError.identityMismatch(detail: reason) }
             throw RuntimeError.identityMismatch(detail: "The pane is not available.")
         }
+        try requireVisible(paneID: binding.paneID, in: panes, sessionName: binding.sessionName)
+        try await requireClientIsShowing(
+            sessionID: binding.sessionID, paneID: binding.paneID,
+            sessionName: binding.sessionName, clientPID: clientPID)
+        try await deliver(text, to: binding.paneID)
+    }
 
+    /// Sends to a live session the user opened directly, without adding it to a
+    /// team.
+    ///
+    /// The session id is checked against the live server first, so a session
+    /// that ended — or a new one that took its name — is refused rather than
+    /// typed into. Nothing is recorded and no bootstrap is ever sent.
+    public func send(
+        _ text: String,
+        toSessionID sessionID: String,
+        onServer expectedServer: TmuxServerIdentity? = nil,
+        expectedPaneID: String? = nil,
+        fromClient clientPID: Int32? = nil
+    ) async throws {
+        try requireWritable()
+        guard !text.isEmpty else { throw RuntimeError.emptyMessage }
+        if let expectedServer {
+            // Session ids restart with the server, so the server this session was
+            // opened on is part of its identity.
+            let current = try await tmux.serverIdentity()
+            guard current == expectedServer else {
+                throw RuntimeError.identityMismatch(
+                    detail: "tmux has restarted since this session was opened.")
+            }
+        }
+        let sessions = try await tmux.listSessions()
+        guard let session = sessions.first(where: { $0.id == sessionID }) else {
+            throw RuntimeError.identityMismatch(detail: "Session \(sessionID) is no longer running.")
+        }
+        let panes = try await tmux.listPanes()
+        guard let pane = panes.first(where: { $0.sessionID == sessionID && $0.isActive && $0.isWindowActive }) else {
+            throw RuntimeError.paneNotVisible(sessionName: session.name)
+        }
+        if let expectedPaneID, expectedPaneID != pane.id {
+            // The pane this session was opened on is not the one on screen now.
+            throw RuntimeError.paneNotVisible(sessionName: session.name)
+        }
+        try await requireClientIsShowing(
+            sessionID: sessionID, paneID: pane.id, sessionName: session.name, clientPID: clientPID)
+        try await deliver(text, to: pane.id)
+    }
+
+    /// Confirms the embedded terminal is still looking at this session and pane.
+    ///
+    /// A user can switch sessions from inside tmux, and then the pane on screen
+    /// is not the agent's. Delivering anyway would type into whatever they
+    /// switched to, so this refuses instead.
+    private func requireClientIsShowing(
+        sessionID: String,
+        paneID: String,
+        sessionName: String,
+        clientPID: Int32?
+    ) async throws {
+        guard let clientPID else { return }
+        let clients = try await tmux.listClients()
+        guard let client = clients.first(where: { $0.pid == clientPID }) else {
+            throw RuntimeError.terminalNotAttached
+        }
+        guard client.sessionID == sessionID else {
+            throw RuntimeError.terminalShowingSomethingElse(
+                expected: sessionName, actual: client.sessionName)
+        }
+        guard client.paneID == paneID else {
+            throw RuntimeError.paneNotVisible(sessionName: sessionName)
+        }
+    }
+
+    /// Refuses to type into a pane that is not the one on screen in its session.
+    private nonisolated func requireVisible(
+        paneID: String,
+        in panes: [TmuxPane],
+        sessionName: String
+    ) throws {
+        guard let pane = panes.first(where: { $0.id == paneID }) else {
+            throw RuntimeError.identityMismatch(detail: "Pane \(paneID) is gone.")
+        }
+        guard pane.isActive, pane.isWindowActive else {
+            throw RuntimeError.paneNotVisible(sessionName: sessionName)
+        }
+    }
+
+    /// The message travels as a private buffer, so the text is never parsed as a
+    /// command by tmux or by a shell.
+    private func deliver(_ text: String, to paneID: String) async throws {
         let bufferName = "marmy-\(makeID().uuidString.lowercased())"
         try await tmux.loadBuffer(name: bufferName, text: text)
         do {
             // paste-buffer -d removes the buffer itself on success.
-            try await tmux.pasteBuffer(name: bufferName, target: binding.paneID)
-            try await tmux.sendEnter(target: binding.paneID)
+            try await tmux.pasteBuffer(name: bufferName, target: paneID)
+            try await tmux.sendEnter(target: paneID)
         } catch {
             try? await tmux.deleteBuffer(name: bufferName)
             throw error
         }
+    }
+
+    /// One round trip describing everything live, so the UI can work out the
+    /// state of every team without a request per team.
+    public func readout() async throws -> RuntimeReadout {
+        RuntimeReadout(
+            server: try await tmux.serverIdentity(),
+            sessions: try await tmux.listSessions(),
+            panes: try await tmux.listPanes(),
+            bindings: ledger.bindings,
+            launching: launching)
+    }
+
+    /// Every session on this server, for the sidebar's list of local sessions.
+    public func liveSessions() async throws -> [TmuxSession] {
+        try await tmux.listSessions()
+    }
+
+    /// Session ids any saved team is bound to.
+    public func boundSessionIDs() -> Set<String> {
+        Set(ledger.bindings.map(\.sessionID))
     }
 
     // MARK: - Helpers
@@ -373,6 +542,48 @@ public actor AgentRuntime {
             if let binding = ledger.binding(nodeID: node.id) { result[node.id] = binding }
         }
         return result
+    }
+}
+
+/// A snapshot of everything live on the tmux server plus what Marmy has bound.
+public struct RuntimeReadout: Sendable {
+    public var server: TmuxServerIdentity?
+    public var sessions: [TmuxSession]
+    public var panes: [TmuxPane]
+    public var bindings: [AgentBinding]
+    public var launching: Set<UUID>
+
+    public init(
+        server: TmuxServerIdentity?,
+        sessions: [TmuxSession],
+        panes: [TmuxPane],
+        bindings: [AgentBinding],
+        launching: Set<UUID> = []
+    ) {
+        self.server = server
+        self.sessions = sessions
+        self.panes = panes
+        self.bindings = bindings
+        self.launching = launching
+    }
+
+    public func binding(nodeID: UUID) -> AgentBinding? {
+        bindings.first { $0.nodeID == nodeID }
+    }
+
+    /// State of one node, worked out from what is live right now.
+    public func state(of nodeID: UUID) -> AgentRuntimeState {
+        if launching.contains(nodeID) { return .launching }
+        guard let binding = binding(nodeID: nodeID) else { return .notLaunched }
+        return LiveIdentity.state(for: binding, server: server, panes: panes, sessions: sessions)
+    }
+
+    /// Session ids Marmy is bound to on the server in front of us. Bindings
+    /// recorded against an older server are stale and must not hide a live
+    /// session that happens to reuse the id.
+    public var boundSessionIDs: Set<String> {
+        guard let server else { return [] }
+        return Set(bindings.filter { $0.server == server }.map(\.sessionID))
     }
 }
 
