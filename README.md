@@ -117,6 +117,18 @@ xcodebuild -scheme MarmyMenuBar -configuration Release build CODE_SIGNING_ALLOWE
 open ~/Library/Developer/Xcode/DerivedData/MarmyMenuBar-*/Build/Products/Release/MarmyMenuBar.app
 ```
 
+### Marmy Desktop (local agent workspace)
+
+Marmy Desktop is a standalone native Mac interface for organizing tmux agents into teams, editing their role prompts, and working with them through embedded terminals and push-to-talk dictation. It runs locally without the Rust agent or phone app.
+
+```bash
+cd macos/MarmyDesktop
+./Scripts/build-app.sh
+open "build/Marmy Desktop.app"
+```
+
+See [Marmy Desktop's guide](macos/MarmyDesktop/README.md) for team templates, keyboard navigation, voice permissions, and local development.
+
 ### iOS app
 
 ```bash
