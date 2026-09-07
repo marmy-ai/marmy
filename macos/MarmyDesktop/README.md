@@ -200,6 +200,36 @@ Sections: `{{#name}}…{{/name}}` renders when a value is present,
 resolve to where an agent is *actually* reachable, so an attached session is
 named by its real session, not the planned one.
 
+## Team updates, and what each agent has been told
+
+Editing a team changes what its agents believe about it. Marmy tells them, once
+things settle: each agent gets **the team as it stands** — its manager (or you,
+by name, for an agent at the top), its reports, who it may talk to, who may talk
+to it, each with the tmux session it is really in, the pane it is really in, and
+whether it is running yet. The whole picture rather than a list of edits, so an
+update that has to wait can simply be replaced by a newer one without anything
+being lost. Nothing is sent when nothing an agent would be told has changed:
+renaming an agent letter by letter is one message, and an edit undone before it
+settles is none. The message says explicitly that it updates team information
+only — role instructions, and any rules about committing or pushing, are
+untouched.
+
+Marmy submits one of these by itself **only** when it can positively establish
+that the agent is sitting at an empty prompt: the program in the pane is the one
+Marmy started, nothing around the prompt says it is working or asking, the cursor
+is at the CLI's own input line, and the whole input area is empty. Codex draws a
+faint placeholder in an empty prompt, so the input is read with its colours on —
+faint is a placeholder, anything else is something you typed. A screen Marmy does
+not recognise is never taken as permission: the update waits, visibly, with
+**Send now**, **Copy** and **Throw away**.
+
+**Messages** in the work view shows what an agent has actually been told —
+starting prompt included, in full, exactly as it was handed over, with where it
+went and what became of it. "Delivered" means tmux took it; it never claims the
+agent read it. Something Marmy could not confirm says so and is never sent again
+on its own. A session Marmy attached rather than started says plainly that what
+it was told before is not known.
+
 ## Where your data lives
 
 - `~/Library/Application Support/MarmyDesktop/workspace.json` — teams, role
@@ -208,6 +238,9 @@ named by its real session, not the planned one.
   **does not** write over it.
 - `~/Library/Application Support/MarmyDesktop/runtime.json` — which tmux session
   each agent is bound to.
+- `~/Library/Application Support/MarmyDesktop/messages.json` — every message
+  Marmy has sent an agent, with what became of it. Readable only by you. Nothing
+  is ever trimmed from it: what an agent was told is the point of the file.
 - `~/Library/Application Support/MarmyDesktop/launch-specs/` — short-lived launch
   files, removed as each agent starts.
 

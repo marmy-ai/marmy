@@ -21,6 +21,18 @@ public final class AppEnvironment {
     public let history = TerminalHistoryController()
     /// Where images pasted into a terminal are kept.
     public var attachments = AttachmentStore.default()
+    /// Tells managers when their team changes.
+    public let roster = RosterCoordinator()
+    /// A role template the user asked to edit directly, opened when the
+    /// templates sheet appears.
+    public var templateToEdit: UUID?
+    /// What each agent has actually been told, as the journal has it.
+    public private(set) var messages: [UUID: [JournalEntry]] = [:]
+    /// Bumped whenever the journal changes, so an open history refreshes itself
+    /// without the user having to move away and back.
+    public private(set) var journalRevision = 0
+    /// The agent whose message history is open, if any.
+    public var messagesForNode: UUID?
     /// A received file that could not be handed to a prompt. It is still on
     /// disk, and its path can be copied.
     public var recoveredAttachmentPath: String?
@@ -71,6 +83,27 @@ public final class AppEnvironment {
         }
         history.attach(source: self)
         configureScrolling()
+        roster.attach(model: model)
+        roster.onJournalChanged = { [weak self] nodeID in
+            guard let self else { return }
+            self.journalRevision &+= 1
+            Task { await self.loadMessages(for: nodeID) }
+        }
+        // A team edit is announced once things settle, not on every keystroke.
+        model.onTopologyChanged = { [weak self] topologyID in
+            self?.roster.teamChanged(topologyID)
+        }
+        model.onTeamLaunched = { [weak self] topology, started in
+            // The starting prompts of the agents that were started already
+            // describe the team as it is now. Nobody else was told anything.
+            self?.roster.adoptBaseline(topology, nodeIDs: started)
+        }
+        // Availability is noticed by watching what is actually running, so an
+        // agent that comes up, moves, or is adopted is announced the same way.
+        model.onStateObserved = { [weak self] in
+            guard let self else { return }
+            Task { await self.roster.observeState() }
+        }
         // What was spoken belongs to the capture it came from, and to the agent
         // that capture was spoken to.
         voice.onFinished = { [weak self] captureID, target, text, completion in
@@ -175,6 +208,9 @@ public final class AppEnvironment {
     }
 
     public func startMonitoring() {
+        // Anything a previous run left waiting is picked back up, and anything
+        // caught mid-send becomes an honest uncertainty.
+        Task { await roster.restorePending() }
         keyboard.install()
         scrollMonitor.install()
         model.startRefreshing()
@@ -394,6 +430,51 @@ public final class AppEnvironment {
         model.banner = .failure("That attachment was not added", reason)
     }
 
+    // MARK: - What an agent has been told
+
+    /// Loads this agent's message history from the journal.
+    ///
+    /// Everything here is something Marmy handed over, exactly as it handed it
+    /// over — never a re-render, and never a preview of what a future launch
+    /// would say.
+    public func loadMessages(for nodeID: UUID) async {
+        do {
+            messages[nodeID] = try await model.runtime.journal.entries(forNode: nodeID)
+        } catch {
+            model.banner = .failure("Could not read the message history", "\(error)")
+        }
+    }
+
+    /// Whether this agent was attached rather than started by Marmy.
+    public func isAdopted(_ nodeID: UUID) -> Bool {
+        model.binding(for: nodeID)?.ownership == .adopted
+    }
+
+    /// Whether there is anything this agent may have been told that Marmy
+    /// cannot account for.
+    ///
+    /// An adopted session was running before Marmy saw it. A session Marmy did
+    /// start, but with no starting prompt on record, was started before Marmy
+    /// kept one. Either way "nothing was sent" would be a guess, and the
+    /// difference between the two is worth saying out loud.
+    public func priorHistoryIsUnknown(_ nodeID: UUID) -> Bool {
+        guard case .running = model.state(of: nodeID) else { return false }
+        if isAdopted(nodeID) { return true }
+        guard let entries = messages[nodeID] else { return false }
+        return !entries.contains { $0.kind == .launchPrompt }
+    }
+
+    /// How many messages to this agent are waiting or unaccounted for.
+    public func unsettledMessageCount(_ nodeID: UUID) -> Int {
+        roster.pendingItems(forNode: nodeID).count
+    }
+
+    /// Copies a message so it can be pasted by hand.
+    public func copy(_ text: String) {
+        attachmentPasteboard.clearContents()
+        attachmentPasteboard.setString(text, forType: .string)
+    }
+
     /// Puts the kept file's path on the clipboard, for a prompt that never got it.
     public func copyRecoveredAttachmentPath() {
         guard let path = recoveredAttachmentPath else { return }
@@ -426,7 +507,7 @@ public final class AppEnvironment {
     }
 
     /// Puts the keyboard into the selected terminal, once it is on screen and as
-    /// long as the user is not mid-sentence in the composer.
+    /// long as they are not part-way through typing in a field.
     public func focusTerminal(attemptsLeft: Int = 3) {
         guard let view = currentPane?.view else { return }
         guard let window = view.window else {

@@ -1,6 +1,11 @@
 import MarmyCore
 import SwiftUI
 
+/// A node id a sheet can be presented for.
+struct IdentifiedNode: Identifiable {
+    let id: UUID
+}
+
 /// The window: teams on the left, the selected agent in the middle.
 public struct RootView: View {
     @Bindable var env: AppEnvironment
@@ -59,6 +64,14 @@ public struct RootView: View {
         .sheet(isPresented: $env.showsSaveTemplateSheet) { SaveTemplateSheet(env: env) }
         .sheet(isPresented: $env.showsAttachSheet) { AttachSessionSheet(env: env) }
         .sheet(isPresented: $env.showsShortcuts) { ShortcutsView() }
+        .sheet(item: Binding(
+            get: { env.messagesForNode.map(IdentifiedNode.init) },
+            set: { env.messagesForNode = $0?.id })
+        ) { node in
+            MessagesSheet(
+                env: env, nodeID: node.id,
+                title: model.selectedTopology?.node(node.id)?.displayName ?? "this agent")
+        }
         .confirmationDialog(
             env.teamPendingDeletion.map { "Delete “\($0.name)”?" } ?? "Delete this team?",
             isPresented: Binding(

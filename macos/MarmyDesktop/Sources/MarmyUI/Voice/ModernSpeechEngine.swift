@@ -201,7 +201,7 @@ public final class ModernSpeechEngine: SpeechEngine {
             } catch {
                 await MainActor.run {
                     guard let self, runToken == self.token else { return }
-                    // Whatever was committed before this stays in the draft.
+                    // Whatever was committed before this is kept.
                     handler(.failed(.interrupted(error.localizedDescription)))
                 }
             }

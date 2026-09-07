@@ -5,7 +5,7 @@ import MarmyRuntime
 /// What the work view is pointed at.
 ///
 /// A node belongs to a saved team. A local session is one the user opened
-/// directly from the sidebar: it gets a terminal, a draft, and dictation, but it
+/// directly from the sidebar: it gets a terminal and dictation, but it
 /// is not part of any team and never receives bootstrap instructions.
 public enum WorkTarget: Hashable, Sendable, Identifiable {
     case node(UUID)
@@ -33,7 +33,7 @@ public enum WorkTarget: Hashable, Sendable, Identifiable {
 ///
 /// tmux hands out session ids per server, so `$0` on a restarted server is a
 /// different session entirely. The server it belongs to is part of the key, so a
-/// new session can never inherit an old one's draft or a late transcript.
+/// new session can never inherit an old one's late transcript.
 public struct LocalSessionKey: Hashable, Sendable {
     public var sessionID: String
     public var server: TmuxServerIdentity

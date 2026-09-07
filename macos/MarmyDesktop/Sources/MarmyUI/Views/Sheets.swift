@@ -11,7 +11,31 @@ struct NewTeamSheet: View {
     @State private var name = "New team"
     @State private var directory = FileManager.default.homeDirectoryForCurrentUser.path
     @State private var shape: Shape = .leadAndTwoWorkers
-    @State private var cli: AgentCLI = .claude
+    @State private var managerProgram: Program = .cli(.claude)
+    @State private var workerProgram: Program = .cli(.claude)
+
+    /// What each half of the team runs. Teams are often mixed — one CLI to plan
+    /// and review, another to write the code — so the manager and the workers
+    /// are chosen separately, and a shape that already says what each agent
+    /// runs can simply be left alone.
+    enum Program: Hashable, Identifiable {
+        case fromShape
+        case cli(AgentCLI)
+
+        var id: String {
+            switch self {
+            case .fromShape: return "shape"
+            case .cli(let cli): return cli.rawValue
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .fromShape: return "As the shape says"
+            case .cli(let cli): return cli.displayName
+            }
+        }
+    }
 
     enum Shape: String, CaseIterable, Identifiable {
         case leadAndWorker
@@ -71,12 +95,19 @@ struct NewTeamSheet: View {
                 }
             }
 
-            LabeledField(label: "CLI") {
-                Picker("", selection: $cli) {
-                    ForEach(AgentCLI.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            LabeledField(label: "Manager runs") {
+                programPicker(selection: $managerProgram)
+            }
+            if shape != .singleManager {
+                LabeledField(label: "Workers run") {
+                    programPicker(selection: $workerProgram)
                 }
-                .labelsHidden()
-                .frame(width: 180)
+                Text("A mixed team is fine: the manager and its workers do not have to run the "
+                    + "same program. Terminal starts a plain shell — Marmy sends it nothing, so a "
+                    + "team of terminals has nobody to delegate to.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -125,6 +156,20 @@ struct NewTeamSheet: View {
         .onDisappear { env.isModalPresented = false }
     }
 
+    @ViewBuilder
+    private func programPicker(selection: Binding<Program>) -> some View {
+        Picker("", selection: selection) {
+            if shape.templateID != nil {
+                Text(Program.fromShape.title).tag(Program.fromShape)
+            }
+            ForEach(AgentCLI.allCases, id: \.self) { cli in
+                Text(cli.displayName).tag(Program.cli(cli))
+            }
+        }
+        .labelsHidden()
+        .frame(width: 200)
+    }
+
     private func chooseDirectory() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -140,19 +185,24 @@ struct NewTeamSheet: View {
         if let templateID = shape.templateID {
             if var topology = model.instantiate(templateID: templateID, named: trimmed, directory: directory) {
                 for index in topology.nodes.indices {
-                    topology.nodes[index].cli = cli
+                    let choice = topology.nodes[index].kind == .manager ? managerProgram : workerProgram
+                    if case .cli(let cli) = choice {
+                        topology.nodes[index].cli = cli
+                    }
                 }
                 model.update(topology)
                 env.selectTopology(topology.id)
             }
         } else {
             var allocator = SessionNameAllocator(existingNames: model.allClaimedSessionNames)
+            var managerCLI = AgentCLI.claude
+            if case .cli(let chosen) = managerProgram { managerCLI = chosen }
             var manager = AgentNode(
                 sessionName: allocator.allocate(TmuxName.sanitize(trimmed)),
                 displayName: trimmed,
                 kind: .manager,
                 roleTitle: "Plans and reviews",
-                cli: cli,
+                cli: managerCLI,
                 workingDirectory: directory)
             // The shipped prompts can have been deleted; use one that exists.
             manager.promptTemplateID = model.validTemplateID(for: manager)
@@ -269,9 +319,10 @@ struct ShortcutsView: View {
         ("⌃⇧⇥", "Previous agent at this level"),
         ("⌘↑", "Go to the manager"),
         ("⌘↓", "Go to the last report you were in"),
-        ("Hold Space", "Dictate to the selected agent (in the terminal)"),
+        ("Hold Space", "Dictate — the words go into the agent's own prompt when you let go"),
         ("Tap Space", "An ordinary space in the terminal"),
-        ("⌘↩", "Send the draft"),
+        ("↩", "Sends what is at the agent's prompt. Marmy never presses it for you"),
+        ("⌘V", "Paste. A screenshot is saved and its path typed, without Return"),
         ("⌘R", "Start the selected agent"),
         ("⌘1 / ⌘2", "Work view / Topology view"),
     ]
@@ -290,6 +341,11 @@ struct ShortcutsView: View {
                         .foregroundStyle(Theme.muted)
                 }
             }
+            Text("There is one place to type: the agent's own terminal. Dictation, pasted images "
+                + "and team updates all arrive there, and nothing is ever sent without you.")
+                .font(.caption)
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Hierarchy shortcuts work in the work view, including while the terminal has focus. "
                 + "They stay out of the way while you are typing in a field.")
             Text("An agent with no manager is a top-level agent: its peers are the top-level agents of "

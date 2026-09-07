@@ -10,6 +10,9 @@ final class FakeRunner: CommandRunning, @unchecked Sendable {
     private var responses: [String: CommandResult] = [:]
     /// Seconds each call takes, for tests about what happens meanwhile.
     var delay: TimeInterval = 0
+    /// Runs just before a call is answered, so a test can change the world
+    /// halfway through a delivery.
+    var beforeCall: (@Sendable (String) -> Void)?
 
     func stub(_ subcommand: String, _ result: CommandResult) {
         lock.lock(); defer { lock.unlock() }
@@ -23,6 +26,7 @@ final class FakeRunner: CommandRunning, @unchecked Sendable {
 
     func run(_ invocation: CommandInvocation) async throws -> CommandResult {
         if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+        beforeCall?(subcommand(of: invocation.arguments) ?? "")
         lock.lock()
         invocations.append(invocation)
         let name = subcommand(of: invocation.arguments) ?? ""

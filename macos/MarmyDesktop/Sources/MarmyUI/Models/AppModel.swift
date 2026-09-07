@@ -32,6 +32,16 @@ public final class AppModel {
     /// Called whenever what the work view points at changes, by any route:
     /// clicking, the keyboard, a menu, or a session disappearing underneath us.
     @ObservationIgnored public var onSelectionChanged: (() -> Void)?
+    /// Called after a team's shape changes, so whoever is affected can be told.
+    @ObservationIgnored public var onTopologyChanged: ((UUID) -> Void)?
+    /// Called when a team has just been started, since its agents were told the
+    /// current shape in their own starting prompts.
+    /// Called with the agents a launch actually started. Only those were given
+    /// a starting prompt, so only those can be assumed to know the team.
+    @ObservationIgnored public var onTeamLaunched: ((Topology, Set<UUID>) -> Void)?
+    /// Called after each look at the tmux server, so what is running can be
+    /// compared with what was running.
+    @ObservationIgnored public var onStateObserved: (() -> Void)?
     /// Selection and remembered reports, per team.
     public private(set) var navigation: [UUID: NavigationState] = [:]
     /// Node being edited in the topology inspector.
@@ -132,7 +142,7 @@ public final class AppModel {
         inspectedNodeID = nodeID
     }
 
-    /// Opens a session the user already had. It gets a terminal, a draft, and
+    /// Opens a session the user already had. It gets a terminal and
     /// dictation, and it is not added to any team.
     public func select(localSession session: TmuxSession) {
         guard let server = readout.server else {
@@ -286,6 +296,7 @@ public final class AppModel {
             runtimeFailure = "\(error)"
         }
         pruneSelection()
+        onStateObserved?()
     }
 
     /// Polls tmux while the app is open. Cheap: three short commands.
@@ -357,6 +368,7 @@ public final class AppModel {
     public func update(_ topology: Topology, save shouldSave: Bool = true) {
         workspace.upsert(topology)
         if shouldSave { save() }
+        onTopologyChanged?(topology.id)
     }
 
     public func addTeam(_ topology: Topology) {
@@ -376,7 +388,7 @@ public final class AppModel {
     ///
     /// The workspace is written before anything else changes: a failed save
     /// leaves the team, its bindings, and the selection exactly as they were.
-    /// Deleting a team you are not looking at leaves your selection and drafts
+    /// Deleting a team you are not looking at leaves your selection
     /// alone.
     public func deleteTopology(_ id: UUID) async {
         guard let topology = workspace.topology(id) else { return }
@@ -599,6 +611,7 @@ public final class AppModel {
         let outcome = await runtime.launch(topology: topology, workspace: workspace)
         lastPreflight = outcome.preflight
         await refresh()
+        if !outcome.started.isEmpty { onTeamLaunched?(topology, Set(outcome.started.keys)) }
         banner = summarize(outcome, in: topology)
     }
 
@@ -610,6 +623,9 @@ public final class AppModel {
         let outcome = await runtime.launch(topology: topology, workspace: workspace, nodeIDs: [nodeID])
         lastPreflight = outcome.preflight
         await refresh()
+        // The one that started was just told the team in its own prompt; nobody
+        // else was.
+        if !outcome.started.isEmpty { onTeamLaunched?(topology, Set(outcome.started.keys)) }
         banner = summarize(outcome, in: topology)
     }
 
@@ -641,6 +657,14 @@ public final class AppModel {
                 : outcome.skipped.map { id, reason in "\(topology.node(id)?.displayName ?? "An agent") — \(reason)" }
                     .sorted().joined(separator: "\n")
             return Banner(kind: .info, title: "Nothing to start", detail: skipped)
+        }
+        if !outcome.warnings.isEmpty {
+            // They are running: this is not a failure. It is something the user
+            // would want to know before trusting the message history.
+            return Banner(
+                kind: .warning,
+                title: "Started \(names(outcome.started.keys))",
+                detail: outcome.warnings.values.sorted().joined(separator: "\n"))
         }
         return Banner(
             kind: .success,

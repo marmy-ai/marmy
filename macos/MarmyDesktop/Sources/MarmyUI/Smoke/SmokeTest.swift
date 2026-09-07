@@ -9,7 +9,7 @@ import SwiftUI
 ///     MarmyDesktop --ui-smoke-test <output directory>
 ///
 /// It builds the actual app views over an isolated workspace and its own
-/// private tmux server, drives selection, navigation, drafts and dictation
+/// private tmux server, drives selection, navigation and dictation
 /// through the same code paths the UI uses, renders its own window to PNG files
 /// with `cacheDisplay`, and exits. It never touches the user's tmux server, the
 /// real application-support directory, the microphone, or the screen-capture and
@@ -226,15 +226,44 @@ final class SmokeHarness: NSObject {
         engine?.emit(.finalized(text: "smoke dictation ✅", start: 0, duration: 2))
         env.micReleased()
         engine?.emit(.finished)
-        await settle(seconds: 1.0)
 
-        if let paneID = env.currentPane?.identity.paneID,
-           let contents = try? await tmux?.capturePane(paneID, lines: 500, joinWrapped: true) {
-            expect(contents.contains("smoke dictation ✅"), "what was dictated is in the agent's prompt")
-        } else {
-            fail("could not read the agent's pane back")
+        // Delivery is several tmux subprocesses away — the identity is checked,
+        // the pane is queued, a buffer is loaded and pasted — so this waits for
+        // it to actually happen rather than for a fixed length of time. The wait
+        // is bounded: if it runs out, that is a failure with everything known
+        // about the attempt written down beside it.
+        let target = WorkTarget.node(workers[1].id)
+        var contents = ""
+        let deadline = Date().addingTimeInterval(15)
+        var readPane = false
+        while Date() < deadline {
+            await settle(seconds: 0.25)
+            if let paneID = env.currentPane?.identity.paneID,
+               let text = try? await tmux?.capturePane(paneID, lines: 500, joinWrapped: true) {
+                contents = text
+                readPane = true
+            }
+            if contents.contains("smoke dictation ✅"), env.dictation.item(for: target) == nil {
+                break
+            }
         }
-        expect(env.dictation.item(for: .node(workers[1].id)) == nil, "and nothing is left waiting")
+
+        let arrived = contents.contains("smoke dictation ✅")
+        if !readPane {
+            fail("could not read the agent's pane back")
+        } else {
+            expect(arrived, "what was dictated is in the agent's prompt")
+        }
+        let waiting = env.dictation.item(for: target)
+        expect(waiting == nil, "and nothing is left waiting")
+
+        if !arrived || waiting != nil {
+            record("note: voice status is \(env.voice.status)")
+            record("note: dictation queue holds \(describe(waiting))")
+            record("note: the terminal on screen is "
+                + "\(env.currentPane.map { describe($0.identity) } ?? "none")")
+            record("note: the last thing in the pane is \(lastLines(of: contents))")
+        }
 
         // The graph.
         model.mode = .topology
@@ -515,6 +544,34 @@ final class SmokeHarness: NSObject {
             await Task.yield()
         }
         window?.contentView?.layoutSubtreeIfNeeded()
+    }
+
+    /// What a waiting dictation is, for a failure that needs explaining.
+    private func describe(_ pending: PendingDictation?) -> String {
+        guard let pending else { return "nothing" }
+        let state: String
+        switch pending.state {
+        case .pasting: return "\(pending.text.debugDescription), still being put into the prompt, "
+            + "spoken to \(describe(pending.identity))"
+        case .failed(let reason): state = "failed: \(reason)"
+        case .uncertain(let reason): state = "unconfirmed: \(reason)"
+        }
+        return "\(pending.text.debugDescription), \(state), spoken to \(describe(pending.identity))"
+    }
+
+    private func describe(_ identity: TerminalIdentity) -> String {
+        "session \(identity.sessionID) pane \(identity.paneID)"
+    }
+
+    /// The last few non-blank lines of a pane, so a failure shows what the agent
+    /// actually has on screen.
+    private func lastLines(of contents: String, count: Int = 3) -> String {
+        let lines = contents
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        if lines.isEmpty { return "nothing" }
+        return lines.suffix(count).map { $0.debugDescription }.joined(separator: " / ")
     }
 
     private func record(_ line: String) {

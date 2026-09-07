@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// What dictation is doing, in a form the composer can show.
+/// What dictation is doing, in a form the input bar can show.
 public enum VoiceStatus: Equatable, Sendable {
     case idle
     case askingPermission
@@ -36,14 +36,14 @@ public enum VoiceStatus: Equatable, Sendable {
 /// Every capture carries a generation. Anything that should end a capture —
 /// key up, switching agent, losing focus, a sheet opening, an audio failure —
 /// bumps the generation, so a result that arrives late can only ever land in the
-/// draft it was spoken for, and never in whatever is selected now.
+/// agent it was spoken to, and never in whatever is selected now.
 @MainActor
 @Observable
 public final class VoiceController {
     public private(set) var status: VoiceStatus = .idle
     public private(set) var target: WorkTarget?
     /// False when recognition is going to Apple's servers rather than staying on
-    /// this Mac; the composer says which.
+    /// this Mac; the input bar says which.
     public private(set) var isOnDevice = false
     /// True when the engine is built for dictation that runs for minutes.
     public private(set) var isLongForm = false
@@ -87,14 +87,14 @@ public final class VoiceController {
 
     /// True when the recogniser stopped early and the words heard were kept.
     public private(set) var wasInterrupted = false
-    /// The agent whose draft holds an interrupted dictation, so the composer can
+    /// The agent holding an interrupted dictation, so the input bar can
     /// keep saying so.
     public private(set) var interruptedTarget: WorkTarget?
     /// Something worth knowing that did not end the dictation.
     public private(set) var notice: String?
 
     /// How long to wait for the recogniser's final result after the key comes
-    /// up. Without a bound, a missing final would leave the composer stuck.
+    /// up. Without a bound, a missing final would leave the input bar stuck.
     public var finalizeTimeout: Duration = .seconds(3)
 
     /// The engine, so a harness can drive scripted speech events.
@@ -359,7 +359,7 @@ public final class VoiceController {
 
     private func handle(_ event: SpeechEvent, generation: Int, target: WorkTarget) {
         // A result from a capture that has been retired belongs to nobody: not
-        // to this draft, and certainly not to whatever is selected now.
+        // to this agent, and certainly not to whatever is selected now.
         guard generation == self.generation, self.target == target else { return }
 
         switch event {
@@ -385,7 +385,7 @@ public final class VoiceController {
                 // is kept, and this is not reported as a clean finish.
                 interrupt(
                     target: target,
-                    message: "Dictation stopped before you let go. What was heard is kept in the draft.")
+                    message: "Dictation stopped before you let go. What was heard is kept for this agent.")
             } else {
                 finish(target: target)
             }

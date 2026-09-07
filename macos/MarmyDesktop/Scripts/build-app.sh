@@ -81,15 +81,15 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>Marmy Desktop</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.3</string>
-    <key>CFBundleVersion</key><string>3</string>
+    <key>CFBundleShortVersionString</key><string>0.4</string>
+    <key>CFBundleVersion</key><string>4</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Marmy listens while you hold Space so you can dictate a message to the selected agent.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Marmy turns what you say into text in the message box for the selected agent.</string>
+    <string>Marmy turns what you say into text and puts it into the selected agent's own prompt, for you to read and send.</string>
 </dict>
 </plist>
 PLIST

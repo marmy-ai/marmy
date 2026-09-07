@@ -135,7 +135,7 @@ public struct AgentNode: Identifiable, Codable, Hashable, Sendable {
     }
 
     /// True when Marmy may send this node prose: a starting prompt, a roster
-    /// update, a message from the composer. False for a terminal, where text
+    /// update, a message you send from Marmy. False for a terminal, where text
     /// would be run as a command.
     public var acceptsAgentMessages: Bool {
         cli.isAutonomousAgent

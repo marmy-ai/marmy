@@ -44,9 +44,20 @@ struct TemplatesView: View {
         .background(Theme.paper)
         .onAppear {
             env.isModalPresented = true
-            selectedPromptID = selectedPromptID ?? model.workspace.promptTemplates.first?.id
+            // Opened from an agent's "Edit…": that agent's own role prompt, not
+            // whichever happened to be first.
+            if let asked = env.templateToEdit,
+               model.workspace.promptTemplates.contains(where: { $0.id == asked }) {
+                tab = .roles
+                selectedPromptID = asked
+            } else {
+                selectedPromptID = selectedPromptID ?? model.workspace.promptTemplates.first?.id
+            }
         }
-        .onDisappear { env.isModalPresented = false }
+        .onDisappear {
+            env.isModalPresented = false
+            env.templateToEdit = nil
+        }
     }
 
     // MARK: - Role prompts

@@ -175,14 +175,31 @@ struct InspectorView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 LabeledField(label: "Role prompt") {
-                    Picker("", selection: binding(for: node, \.promptTemplateID)) {
-                        Text("None").tag(UUID?.none)
-                        ForEach(model.workspace.promptTemplates.filter { $0.applicability.matches(node.kind) }) { template in
-                            Text(template.name).tag(UUID?.some(template.id))
+                    HStack(spacing: 6) {
+                        Picker("", selection: binding(for: node, \.promptTemplateID)) {
+                            Text("None").tag(UUID?.none)
+                            ForEach(model.workspace.promptTemplates.filter { $0.applicability.matches(node.kind) }) { template in
+                                Text(template.name).tag(UUID?.some(template.id))
+                            }
                         }
+                        .labelsHidden()
+                        .disabled(!node.acceptsAgentMessages)
+                        Button("Edit…") {
+                            env.templateToEdit = node.promptTemplateID
+                            env.showsTemplates = true
+                        }
+                        .disabled(node.promptTemplateID == nil || !node.acceptsAgentMessages)
+                        .help("Opens this role prompt for editing. Changes apply the next time an "
+                            + "agent using it is started.")
                     }
-                    .labelsHidden()
-                    .disabled(!node.acceptsAgentMessages)
+                }
+                if let template = model.workspace.promptTemplates.first(where: {
+                    $0.id == node.promptTemplateID
+                }), !template.summary.isEmpty {
+                    Text(template.summary)
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Extra instructions for this agent")
@@ -193,14 +210,33 @@ struct InspectorView: View {
                         .frame(height: 64)
                         .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.line, lineWidth: 1))
                 }
-                Button(showsPrompt ? "Hide starting prompt" : "Show starting prompt") {
+                Button(showsPrompt
+                    ? "Hide starting prompt preview"
+                    : "Preview the starting prompt") {
                     showsPrompt.toggle()
                 }
                 .buttonStyle(.link)
                 .font(.callout)
+                .disabled(!node.acceptsAgentMessages)
                 if showsPrompt {
+                    Text("Preview — what a future launch would send. Nothing here has been sent.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.warning)
                     promptPreview(for: node)
                 }
+            }
+
+            group("Messages") {
+                Text("What Marmy has actually said to this agent, exactly as it was sent — "
+                    + "starting prompt included.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Show messages\(env.unsettledMessageCount(node.id) > 0 ? " (\(env.unsettledMessageCount(node.id)) waiting)" : "")") {
+                    env.messagesForNode = node.id
+                }
+                .buttonStyle(.link)
+                .font(.callout)
             }
 
             Divider()

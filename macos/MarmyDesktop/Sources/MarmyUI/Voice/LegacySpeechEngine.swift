@@ -64,7 +64,7 @@ public final class LegacySpeechEngine: SpeechEngine {
     /// after about a minute. Marmy does not carry on across that: audio spoken
     /// while a new task was being set up would simply be missing, and by an
     /// amount nobody can put a number on. Instead the dictation ends there, with
-    /// everything heard kept in the draft and the reason on screen.
+    /// everything heard kept and the reason on screen.
     public func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws {
         retire()
         token += 1

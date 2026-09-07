@@ -123,6 +123,9 @@ struct WorkView: View {
     @ViewBuilder
     private func actions(for target: WorkTarget, connection: TargetConnection) -> some View {
         HStack(spacing: 8) {
+            if case .node(let nodeID) = target, model.selectedNode?.acceptsAgentMessages == true {
+                messagesButton(for: nodeID)
+            }
             if case .node(let nodeID) = target {
                 if connection.isLive {
                     Button("Reconnect terminal") { env.reconnectTerminal() }
@@ -140,6 +143,33 @@ struct WorkView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
+    }
+
+    /// What Marmy has said to this agent, and anything it is holding.
+    ///
+    /// The count is what is waiting or unaccounted for — never a badge for its
+    /// own sake, and never a second place to type.
+    @ViewBuilder
+    private func messagesButton(for nodeID: UUID) -> some View {
+        let waiting = env.roster.pendingItems(forNode: nodeID)
+        let unconfirmed = waiting.filter(\.isUnconfirmed).count
+        Button {
+            env.messagesForNode = nodeID
+        } label: {
+            if waiting.isEmpty {
+                Text("Messages")
+            } else {
+                Label("Messages (\(waiting.count))", systemImage: unconfirmed > 0
+                    ? "questionmark.circle.fill"
+                    : "clock.fill")
+            }
+        }
+        .tint(waiting.isEmpty ? nil : Theme.warning)
+        .help(waiting.isEmpty
+            ? "What Marmy has told this agent, exactly as it was sent."
+            : unconfirmed > 0
+                ? "\(unconfirmed) of \(waiting.count) could not be confirmed as delivered."
+                : "\(waiting.count) waiting to be sent.")
     }
 
     // MARK: - Terminal

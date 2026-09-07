@@ -53,7 +53,7 @@ public enum SpeechFailure: Equatable, Sendable {
         case .recognition(let detail):
             return "Dictation stopped: \(detail)"
         case .interrupted(let detail):
-            return "Dictation was interrupted: \(detail) What was heard is kept in the draft."
+            return "Dictation was interrupted: \(detail) What was heard is kept for this agent."
         case .modelUnavailable(let detail):
             return "The speech model is not ready: \(detail)"
         }
