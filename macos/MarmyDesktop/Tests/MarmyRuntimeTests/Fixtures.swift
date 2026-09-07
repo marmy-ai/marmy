@@ -21,6 +21,32 @@ final class FakeCommandRunner: CommandRunning, @unchecked Sendable {
     /// Runs just before a call is answered, so a test can change the world
     /// halfway through a delivery.
     var beforeCall: (@Sendable (Call) -> Void)?
+    /// Answers by looking at the whole call, for subcommands that are asked more
+    /// than one question — `display-message` carries both the server's identity
+    /// and a pane's mode. Returning nil falls through to the queued replies.
+    var respond: (@Sendable (Call) -> CommandResult?)?
+    /// Holds a matching call until `releaseHeld()`, so a test can decide when
+    /// something finishes instead of hoping about how long it takes.
+    var holdMatching: (@Sendable (Call) -> Bool)?
+    private var held: [CheckedContinuation<Void, Never>] = []
+    private var heldCalls = 0
+
+    /// How many calls are waiting to be let go.
+    var heldCallCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return heldCalls
+    }
+
+    func releaseHeld() {
+        lock.lock()
+        let waiting = held
+        held = []
+        heldCalls = 0
+        lock.unlock()
+        for continuation in waiting { continuation.resume() }
+    }
+    /// Seconds each call takes, for tests about what happens meanwhile.
+    var delay: TimeInterval = 0
     private var responses: [String: [CommandResult]] = [:]
     private var errors: [String: Error] = [:]
 
@@ -60,6 +86,21 @@ final class FakeCommandRunner: CommandRunning, @unchecked Sendable {
             arguments: invocation.arguments,
             standardInput: invocation.standardInput)
         beforeCall?(call)
+        if holdMatching?(call) == true {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                held.append(continuation)
+                heldCalls += 1
+                lock.unlock()
+            }
+        }
+        if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+        if let answered = respond?(call) {
+            lock.lock()
+            _calls.append(call)
+            lock.unlock()
+            return answered
+        }
         lock.lock()
         _calls.append(Call(
             executable: invocation.executable,

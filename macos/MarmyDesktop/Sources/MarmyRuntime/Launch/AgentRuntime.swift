@@ -113,8 +113,9 @@ public actor AgentRuntime {
     /// Something worth saying about an agent that did start, collected by
     /// `start` and handed back with the outcome.
     private var launchWarnings: [UUID: String] = [:]
-    /// Deliveries currently touching a pane, so they take turns.
-    private var paneDeliveries: [String: Task<Void, Never>] = [:]
+    /// Panes with something touching them, and who is waiting their turn.
+    private var busyPanes: Set<String> = []
+    private var paneWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
     /// True when the ledger could not be read. Reading tmux still works, so the
     /// user can see what is running; nothing may be changed or written.
     private let readOnlyReason: String?
@@ -574,6 +575,7 @@ public actor AgentRuntime {
         }
         try await withPane(expected.paneID) {
             try await self.verify(expected, nodeID: nodeID, clientPID: clientPID)
+            try await self.leaveScrollback(expected.paneID)
             try await self.deliver(text, to: expected.paneID, delivery: .insert)
         }
     }
@@ -589,6 +591,7 @@ public actor AgentRuntime {
         }
         try await withPane(expected.paneID) {
             try await self.verify(expected, nodeID: nil, clientPID: clientPID)
+            try await self.leaveScrollback(expected.paneID)
             try await self.deliver(text, to: expected.paneID, delivery: .insert)
         }
     }
@@ -630,13 +633,102 @@ public actor AgentRuntime {
     /// One delivery at a time per pane, so dictation, an image path and a team
     /// update cannot interleave halfway through each other.
     private func withPane<T>(_ paneID: String, _ work: () async throws -> T) async throws -> T {
-        while let inFlight = paneDeliveries[paneID] {
-            _ = await inFlight.result
-        }
-        let gate = Task<Void, Never> { }
-        paneDeliveries[paneID] = gate
-        defer { paneDeliveries[paneID] = nil }
+        await acquirePane(paneID)
+        defer { releasePane(paneID) }
         return try await work()
+    }
+
+    /// Waits for the pane, properly: a caller that finds it busy suspends until
+    /// it is handed over, rather than waking to look again. A wheel gesture can
+    /// deliver dozens of events a second, and a spin would burn all of them.
+    private func acquirePane(_ paneID: String) async {
+        guard busyPanes.contains(paneID) else {
+            busyPanes.insert(paneID)
+            return
+        }
+        await withCheckedContinuation { continuation in
+            paneWaiters[paneID, default: []].append(continuation)
+        }
+    }
+
+    /// Hands the pane to whoever has been waiting longest, or lets it go.
+    /// Called whether the work returned or threw.
+    private func releasePane(_ paneID: String) {
+        guard var waiting = paneWaiters[paneID], !waiting.isEmpty else {
+            busyPanes.remove(paneID)
+            return
+        }
+        let next = waiting.removeFirst()
+        paneWaiters[paneID] = waiting.isEmpty ? nil : waiting
+        // The pane stays busy: ownership passes straight to them.
+        next.resume()
+    }
+
+    // MARK: - Scrolling
+
+    /// The name tmux gives its scrollback view.
+    static let copyMode = "copy-mode"
+
+    /// Scrolls a pane's own tmux display, the way tmux does it.
+    ///
+    /// Nothing is typed at the agent: `send-keys -X` names one of copy mode's
+    /// own commands, and the program in the pane never sees a keystroke. Copy
+    /// mode is entered with `-e`, so scrolling back down to the bottom leaves it
+    /// by itself — there is no view to close and no button to press.
+    ///
+    /// Positive `lines` scrolls back, negative scrolls towards the live tail.
+    /// At the tail there is nothing below to show, so scrolling down does
+    /// nothing at all. A pane in some other tmux mode is left alone: whatever
+    /// the user is doing in it is theirs.
+    public func scroll(
+        lines: Int,
+        in expected: DeliveryTarget,
+        nodeID: UUID?,
+        fromClient clientPID: Int32? = nil
+    ) async throws {
+        guard lines != 0 else { return }
+        try await withPane(expected.paneID) {
+            try await self.verify(expected, nodeID: nodeID, clientPID: clientPID)
+            let mode = try await self.tmux.paneMode(expected.paneID)
+            if lines > 0 {
+                if mode.isEmpty {
+                    try await self.tmux.enterCopyMode(expected.paneID)
+                } else if mode != Self.copyMode {
+                    return
+                }
+                try await self.tmux.sendCopyCommand(
+                    "scroll-up", count: lines, target: expected.paneID)
+            } else {
+                // Already live: there is nothing below the bottom.
+                guard mode == Self.copyMode else { return }
+                try await self.tmux.sendCopyCommand(
+                    "scroll-down", count: -lines, target: expected.paneID)
+            }
+        }
+    }
+
+    /// Brings a pane back to its live prompt.
+    ///
+    /// Text put into a pane that is scrolled back would land where nobody can
+    /// see it, so this runs inside the same held pane as the insertion itself —
+    /// otherwise a wheel gesture could scroll it away again in between. It does
+    /// nothing to a pane that is already live or is in a mode of its own.
+    private func leaveScrollback(_ paneID: String) async throws {
+        guard try await tmux.paneMode(paneID) == Self.copyMode else { return }
+        try await tmux.sendCopyCommand("cancel", target: paneID)
+    }
+
+    /// Brings a pane back to its live prompt on its own, for a caller that is
+    /// not about to insert anything.
+    public func returnToLive(
+        in expected: DeliveryTarget,
+        nodeID: UUID?,
+        fromClient clientPID: Int32? = nil
+    ) async throws {
+        try await withPane(expected.paneID) {
+            try await self.verify(expected, nodeID: nodeID, clientPID: clientPID)
+            try await self.leaveScrollback(expected.paneID)
+        }
     }
 
     /// `fromClient` is the PID of the embedded terminal's tmux client, when the
@@ -906,6 +998,15 @@ public actor AgentRuntime {
                             throw RuntimeError.agentBusy(detail: assessment.reason ?? "it is busy.")
                         }
                     }
+                    // Something the user chose to send has to arrive whole:
+                    // in copy mode tmux swallows the Return, so the pane comes
+                    // back to its prompt first, under this same held pane.
+                    // Automatic updates never do this — they are refused above
+                    // while the pane is scrolled back, rather than interrupting
+                    // what the user is reading.
+                    if !requireIdle {
+                        try await self.leaveScrollback(expected.paneID)
+                    }
                     // Recorded as in flight before a single byte goes out.
                     try await self.journal.update(stored.id, status: .sending, now: self.now())
                     try await self.deliver(stored.payload, to: expected.paneID, delivery: delivery)
@@ -1028,6 +1129,20 @@ public actor AgentRuntime {
             return AgentReadiness.Assessment(
                 verdict: .notIdle("This agent is not running."), observedCommand: "", cursorLine: "")
         }
+        // Scrolled back, the prompt is not on screen at all. Pasting into it
+        // would go to the agent while tmux swallowed the Return, leaving half a
+        // message in a prompt nobody can see. An automatic update waits instead,
+        // and the user's own reading is never interrupted.
+        let mode = try await tmux.paneMode(binding.paneID)
+        guard mode.isEmpty else {
+            return AgentReadiness.Assessment(
+                verdict: .notIdle(
+                    "This agent's terminal is showing earlier output; the update waits until its "
+                        + "prompt is back on screen."),
+                observedCommand: pane.currentCommand,
+                cursorLine: "")
+        }
+
         let screen = try await tmux.screen(binding.paneID)
         return AgentReadiness.assess(
             cli: node?.cli ?? binding.cli,

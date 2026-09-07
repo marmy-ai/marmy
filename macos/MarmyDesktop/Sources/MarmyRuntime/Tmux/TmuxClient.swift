@@ -251,6 +251,38 @@ public struct TmuxClient: Sendable {
         try Self.requireSuccess(result, command: "delete-buffer")
     }
 
+    // MARK: - Scrollback
+
+    /// Which mode a pane is in, or empty when it is showing its live output.
+    public func paneMode(_ paneID: String) async throws -> String {
+        let result = try await run(
+            ["display-message", "-p", "-t", paneID, "#{?pane_in_mode,#{pane_mode},}"])
+        try Self.requireSuccess(result, command: "display-message")
+        return result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Puts a pane into tmux's own scrollback view.
+    ///
+    /// `-e` is the point of this: tmux leaves the mode by itself as soon as the
+    /// pane is scrolled back to the bottom, so returning to live output needs no
+    /// button and no key.
+    public func enterCopyMode(_ paneID: String) async throws {
+        let result = try await run(["copy-mode", "-e", "-t", paneID])
+        try Self.requireSuccess(result, command: "copy-mode")
+    }
+
+    /// One of copy mode's own commands, `count` times.
+    ///
+    /// `send-keys -X` names a command; nothing is typed at the program in the
+    /// pane, which never sees any of this.
+    public func sendCopyCommand(_ command: String, count: Int = 1, target: String) async throws {
+        var arguments = ["send-keys", "-X"]
+        if count != 1 { arguments += ["-N", "\(count)"] }
+        arguments += ["-t", target, command]
+        let result = try await run(arguments)
+        try Self.requireSuccess(result, command: "send-keys")
+    }
+
     /// Sends Enter on its own, after the pasted text has landed.
     public func sendEnter(target: String) async throws {
         let result = try await run(["send-keys", "-t", target, "Enter"])

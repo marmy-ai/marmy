@@ -18,6 +18,7 @@ final class TerminalScrollIntegrationTests: XCTestCase {
     private var window: NSWindow!
     private var pane: TerminalPane?
     private var recordingPath: String!
+    private var started: TmuxStartedSession!
 
     override func setUpWithError() throws {
         try XCTSkipUnless(
@@ -33,11 +34,15 @@ final class TerminalScrollIntegrationTests: XCTestCase {
         socketName = "marmy-scroll-\(UUID().uuidString.prefix(8).lowercased())"
         recordingPath = root.appendingPathComponent("received.bin").path
 
-        // A pane that puts its tty in raw mode and writes every byte it receives
-        // straight to a file, so nothing is buffered waiting for a newline.
+        // A pane that prints enough to have real scrollback, then puts its tty
+        // in raw mode and writes every byte it receives straight to a file, so
+        // nothing is buffered waiting for a newline.
         let fixture = root.appendingPathComponent("record.py")
         try """
         import os, sys, tty
+        for i in range(200):
+            sys.stdout.write("fixture line %d\\r\\n" % i)
+        sys.stdout.flush()
         fd = sys.stdin.fileno()
         tty.setraw(fd)
         out = open(\(escaped(recordingPath)), "wb", buffering=0)
@@ -56,6 +61,7 @@ final class TerminalScrollIntegrationTests: XCTestCase {
         let started = try awaitValue { try await self.tmux.newSession(
             name: "recorder", directory: self.root.path,
             executable: python, arguments: [fixture.path]) }
+        self.started = started
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 400),
@@ -167,7 +173,86 @@ final class TerminalScrollIntegrationTests: XCTestCase {
         settle(seconds: 1.0)
 
         XCTAssertEqual(receivedBytes.count, before, "not one byte reaches the agent")
-        XCTAssertEqual(reported.count, 5, "every gesture went to Marmy's history instead")
+        XCTAssertEqual(reported.count, 5, "every gesture went to Marmy instead")
+    }
+
+    // MARK: - Scrolling the terminal itself
+
+    /// The pane Marmy is attached to, as the runtime addresses it.
+    private func target(_ started: TmuxStartedSession) throws -> AgentRuntime.DeliveryTarget {
+        let server = try awaitValue { try await self.tmux.serverIdentity() }
+        return AgentRuntime.DeliveryTarget(
+            sessionID: started.sessionID, paneID: started.paneID, server: try XCTUnwrap(server))
+    }
+
+    private func runtime() throws -> AgentRuntime {
+        try AgentRuntime(
+            tmux: tmux, store: RuntimeStore(directoryURL: root.appendingPathComponent("runtime")))
+    }
+
+    func testScrollingUpEntersCopyModeAndComingBackDownLeavesIt() throws {
+        settle(seconds: 0.6)
+        let expected = try target(try XCTUnwrap(self.started))
+        let runtime = try runtime()
+        let before = receivedBytes
+
+        try awaitValue { try await runtime.scroll(lines: 8, in: expected, nodeID: nil) }
+        XCTAssertEqual(
+            try awaitValue { try await self.tmux.paneMode(expected.paneID) },
+            "copy-mode",
+            "scrolling back shows the pane's own scrollback")
+
+        // Far enough down to reach the bottom: tmux leaves the mode by itself.
+        try awaitValue { try await runtime.scroll(lines: -50, in: expected, nodeID: nil) }
+        XCTAssertEqual(
+            try awaitValue { try await self.tmux.paneMode(expected.paneID) },
+            "",
+            "reaching the bottom returns to live output with nothing to press")
+
+        XCTAssertEqual(receivedBytes, before, "and the agent was sent nothing at all")
+    }
+
+    func testScrollingDownAtTheLiveTailDoesNothing() throws {
+        settle(seconds: 0.6)
+        let expected = try target(try XCTUnwrap(self.started))
+        let runtime = try runtime()
+        let before = receivedBytes
+
+        try awaitValue { try await runtime.scroll(lines: -10, in: expected, nodeID: nil) }
+
+        XCTAssertEqual(try awaitValue { try await self.tmux.paneMode(expected.paneID) }, "")
+        XCTAssertEqual(receivedBytes, before)
+    }
+
+    func testAScrollForATerminalThatHasMovedOnIsRefused() throws {
+        settle(seconds: 0.6)
+        let started = try XCTUnwrap(self.started)
+        var stale = try target(started)
+        stale.sessionID = "$999"
+        let runtime = try runtime()
+
+        XCTAssertThrowsError(
+            try awaitValue { try await runtime.scroll(lines: 8, in: stale, nodeID: nil) },
+            "a pane that is not the one this gesture was made over is refused")
+        XCTAssertEqual(
+            try awaitValue { try await self.tmux.paneMode(started.paneID) }, "",
+            "and nothing happened to the real pane")
+    }
+
+    func testReturningToLiveBringsAScrolledPaneBack() throws {
+        settle(seconds: 0.6)
+        let expected = try target(try XCTUnwrap(self.started))
+        let runtime = try runtime()
+
+        try awaitValue { try await runtime.scroll(lines: 5, in: expected, nodeID: nil) }
+        XCTAssertEqual(try awaitValue { try await self.tmux.paneMode(expected.paneID) }, "copy-mode")
+
+        // What dictation and pasted paths do before they put text in.
+        try awaitValue { try await runtime.returnToLive(in: expected, nodeID: nil) }
+
+        XCTAssertEqual(try awaitValue { try await self.tmux.paneMode(expected.paneID) }, "",
+                       "so what is typed next is where the user can see it")
+        XCTAssertEqual(receivedBytes.count, receivedBytes.count)
     }
 
     func testHistoryReadsTheRealScrollbackWithoutTouchingThePane() throws {

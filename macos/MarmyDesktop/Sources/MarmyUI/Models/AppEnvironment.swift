@@ -17,8 +17,6 @@ public final class AppEnvironment {
     public let terminals = TerminalController()
     public let voice: VoiceController
     public let keyboard = KeyboardCoordinator()
-    /// Marmy's own scrollback view, because a tmux client cannot scroll.
-    public let history = TerminalHistoryController()
     /// Where images pasted into a terminal are kept.
     public var attachments = AttachmentStore.default()
     /// Tells managers when their team changes.
@@ -64,6 +62,23 @@ public final class AppEnvironment {
     /// an older capture's origin.
     @ObservationIgnored private var dictationOrigins: [UUID: DictationOrigin] = [:]
     @ObservationIgnored private var inFlightPastes: Set<UUID> = []
+    /// Wheel lines waiting to be sent, and who is sending them.
+    @ObservationIgnored private(set) var scrollDrain: ScrollDrain?
+    @ObservationIgnored private var nextScrollToken = 0
+
+    /// One run of the coalescing loop.
+    ///
+    /// The token is what makes it its own: a drain only ever reads or clears the
+    /// one it started. Reconnecting to the same terminal, or an error arriving
+    /// late from a drain that has been retired, then cannot touch the gestures
+    /// somebody is making now.
+    struct ScrollDrain {
+        var token: Int
+        var identity: TerminalIdentity
+        var target: WorkTarget
+        var clientPID: Int32?
+        var lines: Int
+    }
 
     struct DictationOrigin {
         var target: WorkTarget
@@ -81,7 +96,6 @@ public final class AppEnvironment {
         model.onSelectionChanged = { [weak self] in
             self?.selectionChanged()
         }
-        history.attach(source: self)
         configureScrolling()
         roster.attach(model: model)
         roster.onJournalChanged = { [weak self] nodeID in
@@ -157,12 +171,9 @@ public final class AppEnvironment {
         keyboard.onHoldEnded = { [weak self] in
             self?.voice.endHold()
         }
-        keyboard.onEscape = { [weak self] in
-            guard let self, self.history.isShowingHistory else { return false }
-            self.history.returnToLive()
-            self.focusTerminal()
-            return true
-        }
+        // Escape belongs to the terminal: tmux uses it to leave its own
+        // scrollback, and agents use it too.
+        keyboard.onEscape = { false }
         keyboard.onSpaceTap = { [weak self] in
             // A tap is an ordinary space and belongs to the terminal.
             guard let view = self?.currentPane?.view else { return }
@@ -170,29 +181,89 @@ public final class AppEnvironment {
         }
     }
 
-    /// The wheel over the terminal opens Marmy's history instead of being
-    /// forwarded, which is what used to type arrow keys into the agent.
+    /// The wheel over the terminal scrolls that terminal's own tmux scrollback.
+    ///
+    /// The event is taken rather than forwarded: left alone, a tmux client on
+    /// the alternate screen turns a wheel gesture into arrow keys and walks the
+    /// agent's prompt history. What replaces it is tmux's own scrolling, in the
+    /// same pane, at the same size and font — and scrolling back down to the
+    /// bottom returns to live output by itself.
     private func configureScrolling() {
         scrollMonitor.terminalView = { [weak self] in self?.currentPane?.view }
-        // The event is always taken from the terminal; this only decides whether
-        // it also moves the history view.
         scrollMonitor.shouldReportScroll = { [weak self] in
             guard let self else { return false }
-            return self.history.mode == .live && !self.isModalPresented && self.teamPendingDeletion == nil
+            return !self.isModalPresented && self.teamPendingDeletion == nil
         }
         scrollMonitor.onScrollLines = { [weak self] lines in
-            guard let self,
-                  let target = self.model.selectedTarget,
-                  let identity = self.terminalIdentity(for: target),
-                  let pane = self.currentPane,
-                  pane.identity == identity
-            else { return }
-            let clientPID = pane.clientPID == 0 ? nil : pane.clientPID
-            Task {
-                await self.history.scrolled(
-                    lines: lines, on: target, identity: identity, clientPID: clientPID)
-            }
+            self?.scrollTerminal(lines: lines)
         }
+    }
+
+    /// Adds a wheel gesture to what is already on its way.
+    ///
+    /// A trackpad sends dozens of small events a second and each one is a
+    /// process. They are added up while a request is in flight and sent as one,
+    /// and the whole drain is retired the moment the terminal changes — a
+    /// backlog must never land on a pane it was not meant for.
+    func scrollTerminal(lines: Int) {
+        guard let target = model.selectedTarget,
+              let identity = terminalIdentity(for: target),
+              let pane = currentPane,
+              pane.identity == identity
+        else { return }
+
+        if scrollDrain?.identity == identity {
+            scrollDrain?.lines += lines
+            return
+        }
+
+        nextScrollToken += 1
+        let token = nextScrollToken
+        scrollDrain = ScrollDrain(
+            token: token, identity: identity, target: target,
+            clientPID: pane.clientPID == 0 ? nil : pane.clientPID,
+            lines: lines)
+
+        Task { [weak self] in
+            guard let self else { return }
+            while let drain = self.scrollDrain, drain.token == token, drain.lines != 0 {
+                self.scrollDrain?.lines = 0
+                await self.sendScroll(drain)
+            }
+            // Only ever its own: a newer drain has its own token and its own
+            // terminal, and this one is finished with.
+            self.clearScrollDrain(ifToken: token)
+        }
+    }
+
+    private func sendScroll(_ drain: ScrollDrain) async {
+        let expected = AgentRuntime.DeliveryTarget(
+            sessionID: drain.identity.sessionID,
+            paneID: drain.identity.paneID,
+            server: drain.identity.server,
+            generation: UUID(uuidString: drain.identity.generation))
+        var nodeID: UUID?
+        if case .node(let id) = drain.target { nodeID = id }
+        do {
+            try await model.runtime.scroll(
+                lines: drain.lines, in: expected, nodeID: nodeID, fromClient: drain.clientPID)
+        } catch {
+            // A terminal that has moved on is not worth a banner: the gesture
+            // simply does not apply to it any more. Only this drain stops.
+            clearScrollDrain(ifToken: drain.token)
+        }
+    }
+
+    /// Ends the current run of wheel gestures, so nothing left over from it can
+    /// reach whatever the terminal is showing next.
+    func retireScrollDrain() {
+        scrollDrain = nil
+    }
+
+    /// Clears the drain only if it is still the one that asked. A late error
+    /// from a retired drain must not throw away gestures being made now.
+    func clearScrollDrain(ifToken token: Int) {
+        if scrollDrain?.token == token { scrollDrain = nil }
     }
 
     public var terminalHasFocus: Bool {
@@ -236,7 +307,6 @@ public final class AppEnvironment {
         stopCapture(reason: nil)
         keyboard.uninstall()
         scrollMonitor.uninstall()
-        history.returnToLive()
         model.stopRefreshing()
         // Ends our tmux clients only. Every agent keeps running.
         terminals.releaseAll()
@@ -297,8 +367,9 @@ public final class AppEnvironment {
         // capture. Dictation only makes sense while you are looking at the agent
         // you are talking to.
         stopCapture(reason: nil)
-        // History belongs to one agent; looking at someone else closes it.
-        history.selectionChanged(to: model.selectedTarget)
+        // A wheel gesture belongs to the terminal it was made over, and that is
+        // not this one any more.
+        retireScrollDrain()
         currentPane = nil
     }
 
@@ -375,9 +446,9 @@ public final class AppEnvironment {
             return
         }
         if let pane = currentPane, pane.key == identity.key { return }
-        // The terminal underneath is changing, so any history of the old one is
-        // no longer what the user is looking at.
-        history.identityChanged(to: identity)
+        // The terminal underneath is changing: nothing queued for the old one
+        // may reach the new one, even when it is the same agent reconnecting.
+        retireScrollDrain()
         let pane = terminals.pane(
             for: identity,
             sessionName: session.name,
@@ -497,7 +568,7 @@ public final class AppEnvironment {
               let identity = terminalIdentity(for: target),
               let session = model.attachedSession(for: target)
         else { return }
-        history.returnToLive()
+        retireScrollDrain()
         let pane = terminals.reconnect(
             identity,
             sessionName: session.name,
@@ -614,6 +685,11 @@ public final class AppEnvironment {
         target: WorkTarget,
         clientPID: Int32
     ) async throws {
+        // Nothing this drain has queued may arrive after what is about to be
+        // typed. Leaving the scrollback happens inside the paste itself, while
+        // the pane is held, so a wheel gesture cannot scroll it away in between.
+        retireScrollDrain()
+
         let expected = AgentRuntime.DeliveryTarget(
             sessionID: identity.sessionID,
             paneID: identity.paneID,
@@ -655,32 +731,5 @@ public final class AppEnvironment {
             target: target,
             server: model.readout.server ?? TmuxServerIdentity(pid: 0, socketPath: "", startTime: 0),
             sessionID: "", paneID: "")
-    }
-
-}
-
-/// Scrollback comes from the same runtime that owns the bindings, so history is
-/// read from the pane this agent is actually attached to and nothing else.
-extension AppEnvironment: PaneHistorySource {
-    public func history(for request: HistoryRequest) async throws -> PaneHistory {
-        let identity = request.identity
-        switch request.target {
-        case .node(let nodeID):
-            return try await model.runtime.history(
-                paneID: identity.paneID,
-                sessionID: identity.sessionID,
-                onServer: identity.server,
-                nodeID: nodeID,
-                generation: UUID(uuidString: identity.generation),
-                clientPID: request.clientPID,
-                maxLines: request.maxLines)
-        case .localSession(let key):
-            return try await model.runtime.history(
-                paneID: identity.paneID,
-                sessionID: key.sessionID,
-                onServer: key.server,
-                clientPID: request.clientPID,
-                maxLines: request.maxLines)
-        }
     }
 }

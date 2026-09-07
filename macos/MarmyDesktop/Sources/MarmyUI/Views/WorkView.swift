@@ -178,11 +178,6 @@ struct WorkView: View {
     private func terminalArea(for target: WorkTarget) -> some View {
         ZStack(alignment: .topTrailing) {
             terminalContent(for: target)
-            if env.history.isShowingHistory {
-                // The live terminal keeps running underneath, untouched.
-                TerminalHistoryOverlay(env: env)
-                    .transition(.opacity)
-            }
             if env.showsLocationHint, case .node(let nodeID) = target, let topology = model.selectedTopology {
                 LocationHintView(topology: topology, selected: nodeID)
                     .padding(14)

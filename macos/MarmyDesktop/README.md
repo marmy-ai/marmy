@@ -92,14 +92,14 @@ Files an app has only promised (a screenshot dragged straight out of Preview) ar
 received first, then typed. Nothing is ever deleted from that folder: an agent may
 still be about to read it.
 
-**Scrolling back.** Scroll up in a terminal and Marmy opens that pane's real
-tmux scrollback in a read-only view: selectable, colours intact, held still while
-you read it. Escape or *Jump to live* returns. Nothing is sent to the agent to do
-this — no keys, no tmux copy mode — and other terminals attached to the same
-session see nothing change. (A tmux client draws on the alternate screen, which
-has no scrollback of its own; left alone, a wheel gesture there is turned into
+**Scrolling back.** Scroll up in a terminal and the terminal itself scrolls,
+using tmux's own scrollback: the same pane, the same font, the same size, and
+none of it sent to the agent. Scroll back down to the bottom and it returns to
+live output by itself — there is nothing to close and no button to press. (Left
+alone, a wheel gesture over a tmux client on the alternate screen is turned into
 arrow keys and walks the agent's prompt history instead. Marmy takes the wheel
-before that can happen.)
+before that can happen and asks tmux to scroll.) Dictation and pasted image paths
+bring the pane back to its prompt first, so what goes in is where you can see it.
 
 **Existing sessions.** Every tmux session on this Mac that is not part of a team
 is listed under *Local sessions*. Opening one just attaches a terminal: nothing
