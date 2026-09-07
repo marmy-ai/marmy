@@ -18,6 +18,14 @@ public enum VoiceStatus: Equatable, Sendable {
         self == .listening || self == .starting || self == .askingPermission || self == .preparingModel
     }
 
+    /// Whether this is a state the user may need to do something about.
+    public var isProblem: Bool {
+        switch self {
+        case .failed, .unavailable: return true
+        default: return false
+        }
+    }
+
     public var message: String? {
         switch self {
         case .idle: return nil
@@ -55,11 +63,15 @@ public final class VoiceController {
     public enum SettingsPane: Equatable, Sendable {
         case microphone
         case speechRecognition
+        /// Which device the sound is coming from, rather than permission to use
+        /// it: the thing to check when the microphone opened and heard nothing.
+        case soundInput
 
         public var title: String {
             switch self {
             case .microphone: return "Open Microphone settings"
             case .speechRecognition: return "Open Speech Recognition settings"
+            case .soundInput: return "Open Sound settings"
             }
         }
 
@@ -71,9 +83,17 @@ public final class VoiceController {
             case .speechRecognition:
                 return URL(string:
                     "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition")
+            case .soundInput:
+                return URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension")
             }
         }
     }
+
+    /// Said when the microphone was open and nothing was heard: the usual cause
+    /// is the wrong input device, not the user.
+    static let noSpeechMessage =
+        "No speech was recognised. Check that the right input device is selected and that it is "
+            + "picking up sound."
 
     @ObservationIgnored private let engine: any SpeechEngine
     @ObservationIgnored private var generation = 0
@@ -186,7 +206,11 @@ public final class VoiceController {
     public func endHold() {
         holding = false
         guard let target else {
-            status = .idle
+            // This capture has already ended. The key coming up is not news
+            // about it, and it must not wipe the reason it ended — that reason
+            // is the only thing on screen saying why nothing was heard. A new
+            // hold clears it in the ordinary way.
+            if status.isCapturing || status == .finishing { status = .idle }
             return
         }
         switch status {
@@ -230,7 +254,8 @@ public final class VoiceController {
             self.preview = self.transcript.text
             if self.transcript.isEmpty {
                 self.retire(target: target)
-                self.status = .failed("No speech was recognised.")
+                self.settingsPane = .soundInput
+                self.status = .failed(Self.noSpeechMessage)
             } else {
                 self.interrupt(
                     target: target,
@@ -427,7 +452,10 @@ public final class VoiceController {
         let heard = transcript.text
         retire(target: target)
         if heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            status = .failed("No speech was recognised.")
+            // The microphone was open and nothing came back. Almost always the
+            // wrong input is selected, so say where to look.
+            settingsPane = .soundInput
+            status = .failed(Self.noSpeechMessage)
         } else if let captureID {
             status = .idle
             onFinished?(captureID, target, heard, .deliver)

@@ -200,6 +200,73 @@ final class VoiceControllerTests: XCTestCase {
         XCTAssertNil(voice.target)
     }
 
+    // MARK: - Letting go must not erase why it failed
+
+    func testReleasingKeepsARefusalOnScreen() {
+        // The refusal happens while the key is still down. Letting go is not
+        // news about it, and it must not wipe the only explanation there is.
+        engine.authorization = .denied
+        engine.microphoneDenied = true
+        engine.speechDenied = false
+        voice.beginHold(on: alice)
+        guard case .unavailable(let before) = voice.status else {
+            return XCTFail("expected .unavailable, got \(voice.status)")
+        }
+
+        voice.endHold()
+
+        guard case .unavailable(let after) = voice.status else {
+            return XCTFail("the refusal was erased by the key coming up: \(voice.status)")
+        }
+        XCTAssertEqual(after, before)
+        XCTAssertEqual(voice.settingsPane, .microphone, "and the way to fix it is still offered")
+    }
+
+    func testReleasingKeepsAFailureOnScreen() {
+        voice.beginHold(on: alice)
+        engine.emit(.failed(.recognizerUnavailable))
+        guard case .failed(let before) = voice.status else {
+            return XCTFail("expected .failed, got \(voice.status)")
+        }
+
+        voice.endHold()
+
+        guard case .failed(let after) = voice.status else {
+            return XCTFail("the failure was erased by the key coming up: \(voice.status)")
+        }
+        XCTAssertEqual(after, before)
+    }
+
+    func testANewHoldClearsTheOldFailure() {
+        engine.authorization = .denied
+        voice.beginHold(on: alice)
+        voice.endHold()
+        XCTAssertTrue(voice.status.isProblem)
+
+        engine.authorization = .authorized
+        voice.beginHold(on: alice)
+
+        XCTAssertFalse(voice.status.isProblem, "a fresh hold starts clean")
+    }
+
+    func testARecordingThatHeardNothingSaysSoAndStaysSaidAfterRelease() {
+        voice.beginHold(on: alice)
+        engine.emit(.listening)
+        voice.endHold()
+        engine.emit(.finished)
+
+        guard case .failed(let message) = voice.status else {
+            return XCTFail("expected to be told nothing was heard, got \(voice.status)")
+        }
+        XCTAssertTrue(message.contains("No speech was recognised"))
+        XCTAssertTrue(message.contains("input device"), "and what to check about it")
+        XCTAssertEqual(voice.settingsPane, .soundInput)
+
+        // A second release changes nothing about it.
+        voice.endHold()
+        XCTAssertTrue(voice.status.isProblem)
+    }
+
     func testPermissionRefusalNamesTheMicrophoneWhenThatIsWhatIsMissing() {
         engine.authorization = .denied
         engine.microphoneDenied = true
@@ -278,7 +345,10 @@ final class VoiceControllerTests: XCTestCase {
         voice.endHold()
         try? await Task.sleep(for: .milliseconds(220))
 
-        XCTAssertEqual(voice.status, .failed("No speech was recognised."))
+        guard case .failed(let message) = voice.status else {
+            return XCTFail("expected to be told nothing was heard, got \(voice.status)")
+        }
+        XCTAssertTrue(message.hasPrefix("No speech was recognised."), message)
     }
 
     func testAnAudioFailureEndsTheCaptureWithAReadableMessage() {

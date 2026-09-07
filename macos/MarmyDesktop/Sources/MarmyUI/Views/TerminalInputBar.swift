@@ -71,7 +71,7 @@ struct TerminalInputBar: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
+        } else if !showsProblem {
             HStack(spacing: 6) {
                 Text("Type in the terminal.")
                     .font(.callout)
@@ -85,6 +85,13 @@ struct TerminalInputBar: View {
             }
             .lineLimit(1)
         }
+    }
+
+    /// Something went wrong and nothing is being dictated: the reason and the
+    /// way to fix it need the room the hint would otherwise take, and the user
+    /// already knows how to hold Space.
+    private var showsProblem: Bool {
+        env.voice.status.isProblem && env.voice.target == nil
     }
 
     private static let previewTailID = "marmy.voice.preview.tail"
@@ -109,7 +116,9 @@ struct TerminalInputBar: View {
                     .font(.caption)
                     .foregroundStyle(voiceMessageColor)
                     .lineLimit(2)
-                if case .unavailable = env.voice.status, let pane = env.voice.settingsPane {
+                // Whatever went wrong, if there is a settings pane that would
+                // help, offer it rather than describing where it is.
+                if let pane = env.voice.settingsPane, env.voice.status.isProblem {
                     Button(pane.title) {
                         if let url = pane.url { NSWorkspace.shared.open(url) }
                     }

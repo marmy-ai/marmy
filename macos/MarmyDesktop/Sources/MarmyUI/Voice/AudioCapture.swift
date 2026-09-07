@@ -27,13 +27,34 @@ public final class BufferConverter: @unchecked Sendable {
     public let sourceFormat: AVAudioFormat
     public let targetFormat: AVAudioFormat
     private let converter: AVAudioConverter?
+    /// Mono, at the input's own sample rate: what several channels become before
+    /// anything else is done to them. Nil when the input is already mono, or
+    /// when the recogniser wants more than one channel.
+    private let downmixFormat: AVAudioFormat?
 
     public init(from source: AVAudioFormat, to target: AVAudioFormat?) throws {
         self.sourceFormat = source
         self.targetFormat = target ?? source
-        if let target, target != source {
-            guard let converter = AVAudioConverter(from: source, to: target) else {
-                throw Failure.cannotConvert(from: "\(source)", to: "\(target)")
+
+        // Several channels into one is done here, deliberately, and never left
+        // to the converter. Asked to go from more than one channel to one with
+        // no layout to reason about, Core Audio takes the first channel and
+        // reports no error, so speech on any other channel is recorded as
+        // silence and nobody is told. Averaging every channel cannot lose the
+        // one the voice is on, whatever the device's wiring turns out to be.
+        let needsDownmix = source.channelCount > 1
+            && (target?.channelCount ?? source.channelCount) == 1
+        let downmix = needsDownmix
+            ? AVAudioFormat(standardFormatWithSampleRate: source.sampleRate, channels: 1)
+            : nil
+        self.downmixFormat = downmix
+
+        // What the converter still has to do after that: the sample rate, and
+        // the sample type.
+        let converterSource = downmix ?? source
+        if let target, target != converterSource {
+            guard let converter = AVAudioConverter(from: converterSource, to: target) else {
+                throw Failure.cannotConvert(from: "\(converterSource)", to: "\(target)")
             }
             converter.primeMethod = .none
             self.converter = converter
@@ -44,9 +65,10 @@ public final class BufferConverter: @unchecked Sendable {
 
     /// A buffer of our own, in the recogniser's format.
     public func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        let buffer = downmixFormat == nil ? buffer : try downmixed(buffer)
         guard let converter else { return try Self.copy(buffer) }
 
-        let ratio = targetFormat.sampleRate / sourceFormat.sampleRate
+        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1024
         guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
             throw Failure.allocationFailed
@@ -65,6 +87,53 @@ public final class BufferConverter: @unchecked Sendable {
         }
         if let error { throw Failure.conversionFailed(error.localizedDescription) }
         guard status != .error else { throw Failure.conversionFailed("the converter refused the audio") }
+        return output
+    }
+
+    /// Every channel averaged into one, at the input's own sample rate.
+    ///
+    /// Reads the buffer as it actually is: `stride` is 1 for the non-interleaved
+    /// buffers an audio tap hands out, and the channel count for an interleaved
+    /// one, so the same walk is right for both. No allocation per sample, and
+    /// nothing is kept — the buffer is the audio thread's and is reused the
+    /// moment this returns.
+    func downmixed(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        guard let downmixFormat else { return buffer }
+        guard let output = AVAudioPCMBuffer(
+            pcmFormat: downmixFormat, frameCapacity: max(buffer.frameLength, 1))
+        else { throw Failure.allocationFailed }
+        output.frameLength = buffer.frameLength
+        guard let destination = output.floatChannelData?[0] else { throw Failure.allocationFailed }
+
+        let frames = Int(buffer.frameLength)
+        let channels = Int(buffer.format.channelCount)
+        let stride = buffer.stride
+        guard frames > 0, channels > 0 else { return output }
+
+        if let source = buffer.floatChannelData {
+            let scale = 1 / Float(channels)
+            for frame in 0..<frames {
+                var sum: Float = 0
+                for channel in 0..<channels { sum += source[channel][frame * stride] }
+                destination[frame] = sum * scale
+            }
+        } else if let source = buffer.int16ChannelData {
+            let scale = 1 / (Float(channels) * 32768)
+            for frame in 0..<frames {
+                var sum: Float = 0
+                for channel in 0..<channels { sum += Float(source[channel][frame * stride]) }
+                destination[frame] = sum * scale
+            }
+        } else if let source = buffer.int32ChannelData {
+            let scale = 1 / (Float(channels) * 2_147_483_648)
+            for frame in 0..<frames {
+                var sum: Float = 0
+                for channel in 0..<channels { sum += Float(source[channel][frame * stride]) }
+                destination[frame] = sum * scale
+            }
+        } else {
+            throw Failure.cannotConvert(from: "\(buffer.format)", to: "\(downmixFormat)")
+        }
         return output
     }
 

@@ -163,6 +163,14 @@ agent it was spoken to, with a reason and buttons to try again, copy it, or thro
 it away. When a paste's outcome is unknown, Marmy says so and asks you to look
 before it will try again.
 
+Marmy takes the microphone as your Mac gives it and mixes every input channel
+into the one the recogniser wants. That matters on an audio interface with
+several inputs: letting the system pick a channel takes the first one, so a
+microphone wired to any other is recorded as silence with nothing to say why. If
+the microphone opens and nothing is heard, Marmy says so and offers the Sound
+settings, because the usual cause is the wrong input device. A dictation that
+fails stays on screen with its reason: letting go of Space does not clear it.
+
 Recognition uses Apple's Speech framework. On macOS 26 Marmy uses the long-form
 engine (`SpeechAnalyzer`), which is built for dictation that runs for minutes: it
 commits stretches of speech as you talk and only revises its guess at the tail,
