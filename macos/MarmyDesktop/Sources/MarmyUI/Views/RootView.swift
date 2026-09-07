@@ -111,6 +111,10 @@ public struct RootView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
+            MarmyMark()
+        }
+
+        ToolbarItem(placement: .navigation) {
             if let topology = model.selectedTopology {
                 Menu {
                     ForEach(model.topologies) { candidate in
@@ -145,22 +149,30 @@ public struct RootView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            // Named, not guessed at: a bare triangle in a toolbar tells nobody
+            // that it starts a team of agents.
             Button {
                 env.showsTemplates = true
             } label: {
                 Label("Templates", systemImage: "text.badge.plus")
             }
+            .labelStyle(.titleAndIcon)
             .help("Role prompts and saved team shapes")
 
             Button {
                 Task { await model.launchSelectedTeam() }
             } label: {
                 if model.isLaunching {
-                    ProgressView().controlSize(.small)
+                    Label {
+                        Text("Starting…")
+                    } icon: {
+                        ProgressView().controlSize(.small)
+                    }
                 } else {
-                    Label("Launch team", systemImage: "play.fill")
+                    Label("Start team", systemImage: "play.fill")
                 }
             }
+            .labelStyle(.titleAndIcon)
             .disabled(model.selectedTopology == nil || model.isLaunching)
             .help("Starts every agent in this team that is not already running")
 

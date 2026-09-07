@@ -154,6 +154,7 @@ struct SidebarView: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.16) : .clear))
         .contentShape(Rectangle())
         .onTapGesture { env.select(node: node.id) }
+        .contextMenu { NodeMenu(env: env, nodeID: node.id) }
         .help("\(node.kind.displayName) · \(node.tmuxAddress)")
     }
 

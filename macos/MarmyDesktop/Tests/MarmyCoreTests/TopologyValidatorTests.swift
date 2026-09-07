@@ -50,16 +50,14 @@ final class TopologyValidatorTests: XCTestCase {
         XCTAssertTrue(issues.contains { $0.kind == .selfParent(nodeID: Fixtures.workerBID) })
     }
 
-    func testParentMustBeAManager() {
+    func testAWorkerMayTakeReports() {
+        // Manager and worker say what someone does, not who may supervise.
         var topology = team()
         topology.nodes[0].kind = .worker
         let issues = TopologyValidator.validate(topology, promptTemplates: templates)
-        let offenders = issues.compactMap { issue -> UUID? in
-            if case .parentIsNotManager(let nodeID, _) = issue.kind { return nodeID }
-            return nil
-        }
-        XCTAssertEqual(Set(offenders), [Fixtures.workerAID, Fixtures.workerBID])
-        XCTAssertTrue(issues.contains { $0.kind == .noManager }, "a team with no manager is worth flagging")
+
+        XCTAssertTrue(issues.filter { $0.severity == .error }.isEmpty, "\(issues.map(\.message))")
+        XCTAssertTrue(issues.isEmpty, "a team of workers is a team: \(issues.map(\.message))")
     }
 
     func testDeepReportingCycleIsReportedOnce() {

@@ -270,13 +270,17 @@ final class AppModelTests: XCTestCase {
 
     // MARK: - Editing rules
 
-    func testAManagerWithReportsCannotQuietlyBecomeAWorker() {
+    func testAManagerWithReportsMayBecomeAWorkerAndKeepThem() {
+        // What an agent does and who reports to it are separate questions.
         let model = bench.model
+        let reportsBefore = model.selectedTopology?.children(of: bench.manager.id).map(\.id)
+
         model.changeKind(of: bench.manager.id, to: .worker)
 
-        XCTAssertEqual(model.selectedTopology?.node(bench.manager.id)?.kind, .manager)
-        XCTAssertEqual(model.banner?.kind, .failure)
-        XCTAssertTrue(model.banner?.detail?.contains("Build") ?? false, "it names the reports to move")
+        XCTAssertEqual(model.selectedTopology?.node(bench.manager.id)?.kind, .worker)
+        XCTAssertEqual(model.selectedTopology?.children(of: bench.manager.id).map(\.id), reportsBefore,
+                       "its reports stay exactly where they are")
+        XCTAssertNil(model.banner)
     }
 
     func testChangingKindKeepsAValidRolePrompt() {
@@ -315,11 +319,25 @@ final class AppModelTests: XCTestCase {
                       "\(String(describing: model.banner?.detail))")
     }
 
-    func testAWorkerCannotBeGivenReports() {
+    func testAWorkerMayBeGivenReports() {
         let model = bench.model
-        XCTAssertFalse(model.reparent(bench.manager.id, to: bench.workers[0].id))
-        XCTAssertTrue(model.banner?.detail?.contains("worker") ?? false,
-                      "\(String(describing: model.banner?.detail))")
+        let leader = bench.workers[0]
+        let follower = bench.workers[1]
+
+        XCTAssertTrue(model.reparent(follower.id, to: leader.id))
+
+        XCTAssertEqual(model.selectedTopology?.node(follower.id)?.parentID, leader.id)
+        XCTAssertEqual(model.selectedTopology?.node(leader.id)?.kind, .worker, "still a worker")
+        XCTAssertNil(model.banner)
+    }
+
+    func testAddingAnAgentPutsItUnderWhicheverAgentWasAskedFor() {
+        let model = bench.model
+        let worker = bench.workers[0]
+
+        let added = model.addNode(kind: .worker, parentID: worker.id)
+
+        XCTAssertEqual(added?.parentID, worker.id, "not quietly moved up to a manager")
     }
 
     // MARK: - Persistence
@@ -409,5 +427,89 @@ final class AppModelTests: XCTestCase {
         await model.launchSelectedTeam()
         XCTAssertEqual(model.banner?.kind, .failure)
         XCTAssertTrue(bench.runner.calls(of: "new-session").isEmpty)
+    }
+}
+
+/// Editing one team while looking at another.
+///
+/// The sidebar shows every team at once, so a right-click can land on an agent
+/// in a team that is not selected. What happens next has to happen there.
+@MainActor
+final class CrossTeamEditingTests: XCTestCase {
+
+    private var bench: TestBench!
+    private var other: Topology!
+
+    override func setUpWithError() throws {
+        bench = try TestBench()
+        // A second team, not the selected one.
+        var team = Topology(name: "Other team", nodes: [])
+        let lead = AgentNode(
+            sessionName: "other-lead", displayName: "Other Lead", kind: .manager,
+            workingDirectory: bench.root.path)
+        team.upsert(lead)
+        bench.model.addTeam(team)
+        other = team
+        bench.model.selectTopology(bench.topology.id)
+    }
+
+    override func tearDownWithError() throws {
+        bench.cleanUp()
+    }
+
+    private var otherLead: AgentNode { other.roots[0] }
+
+    func testAddingUnderAnAgentOfAnotherTeamAddsItThere() throws {
+        let model = bench.model
+        XCTAssertEqual(model.selectedTopologyID, bench.topology.id)
+
+        let added = try XCTUnwrap(model.addNode(kind: .worker, parentID: otherLead.id))
+
+        let owner = try XCTUnwrap(model.workspace.topologies.first { $0.contains(added.id) })
+        XCTAssertEqual(owner.id, other.id, "it belongs beside the agent it was added under")
+        XCTAssertEqual(added.parentID, otherLead.id, "and its parent was not silently dropped")
+        XCTAssertNil(bench.topology.node(added.id), "nothing was added to the team on screen")
+    }
+
+    func testAddingUnderAnAgentThatIsNotThereAddsNothing() {
+        let model = bench.model
+        let before = model.workspace.topologies.map(\.nodes.count)
+
+        XCTAssertNil(model.addNode(kind: .worker, parentID: UUID()),
+                     "a parent that cannot be found is a mistake, not a root somewhere else")
+
+        XCTAssertEqual(model.workspace.topologies.map(\.nodes.count), before)
+        XCTAssertEqual(model.selectedTopologyID, bench.topology.id, "and nothing was selected")
+    }
+
+    func testDeletingAnAgentOfAnotherTeamDeletesItThere() async throws {
+        let model = bench.model
+        let doomed = try XCTUnwrap(model.addNode(kind: .worker, parentID: otherLead.id))
+        model.selectTopology(bench.topology.id)
+
+        var changed: [UUID] = []
+        model.onTopologyChanged = { changed.append($0) }
+        await model.deleteNode(doomed.id)
+
+        XCTAssertNil(
+            model.workspace.topologies.first { $0.contains(doomed.id) },
+            "it is gone from the team it was in")
+        XCTAssertEqual(model.workspace.topology(bench.topology.id)?.nodes.count,
+                       bench.topology.nodes.count, "and the selected team is untouched")
+        XCTAssertTrue(changed.contains(other.id),
+                      "the agents left behind are owed the team without it")
+    }
+
+    func testDeletingKeepsTheReportsOfTheAgentItRemoves() async throws {
+        let model = bench.model
+        let middle = try XCTUnwrap(model.addNode(kind: .worker, parentID: otherLead.id))
+        let under = try XCTUnwrap(model.addNode(kind: .worker, parentID: middle.id))
+        model.selectTopology(bench.topology.id)
+
+        await model.deleteNode(middle.id)
+
+        let owner = try XCTUnwrap(model.workspace.topologies.first { $0.contains(under.id) })
+        XCTAssertEqual(owner.node(under.id)?.parentID, otherLead.id,
+                       "its report moved up rather than being deleted with it")
     }
 }

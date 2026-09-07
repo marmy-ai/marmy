@@ -1,3 +1,4 @@
+import AppKit
 import MarmyCore
 import MarmyRuntime
 import SwiftUI
@@ -102,6 +103,63 @@ struct BannerView: View {
         case .warning: return Theme.warning
         case .failure: return Theme.danger
         }
+    }
+}
+
+/// The app's own icon and name, at the left of the window's header.
+///
+/// The icon is the one the bundle carries — asked for, never drawn here — so it
+/// is whatever Marmy is currently shipping. Outside a bundle (a `swift run`),
+/// AppKit hands back a placeholder rather than nothing.
+struct MarmyMark: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 18, height: 18)
+                .accessibilityHidden(true)
+            Text("Marmy")
+                .font(.headline)
+                .foregroundStyle(Theme.ink)
+                .fixedSize()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Marmy")
+    }
+}
+
+/// What you can do to one agent, from wherever you can see it.
+///
+/// Small on purpose: add someone under it, edit it, remove it. Anything rarer
+/// belongs in the inspector, where there is room to explain it.
+struct NodeMenu: View {
+    @Bindable var env: AppEnvironment
+    let nodeID: UUID
+
+    private var model: AppModel { env.model }
+
+    var body: some View {
+        Button("Add worker here") { add(.worker) }
+        Button("Add manager here") { add(.manager) }
+        Divider()
+        Button("Edit agent") {
+            model.inspectedNodeID = nodeID
+            env.select(node: nodeID)
+            model.mode = .topology
+        }
+        Divider()
+        Button("Delete agent", role: .destructive) {
+            Task { await model.deleteNode(nodeID) }
+        }
+    }
+
+    /// Under this agent, whatever it is and whichever team it is in. A worker
+    /// leading two of its own is an ordinary shape.
+    private func add(_ kind: AgentKind) {
+        guard model.addNode(kind: kind, parentID: nodeID) != nil else { return }
+        // The new agent needs somewhere to be edited, and that is the graph.
+        model.mode = .topology
     }
 }
 

@@ -43,11 +43,47 @@ final class TopologyStructureTests: XCTestCase {
                 error as? TopologyMutationError,
                 .cycle(childID: Fixtures.managerID, parentID: subManager.id))
         }
-        XCTAssertThrowsError(try team.reparent(subManager.id, to: Fixtures.workerAID)) { error in
-            XCTAssertEqual(error as? TopologyMutationError, .parentIsNotManager(parentID: Fixtures.workerAID))
-        }
         XCTAssertFalse(team.canReparent(Fixtures.managerID, to: subManager.id))
         XCTAssertTrue(team.canReparent(Fixtures.workerAID, to: subManager.id))
+        // A worker may take reports: what an agent does and who reports to it
+        // are separate questions.
+        XCTAssertTrue(team.canReparent(subManager.id, to: Fixtures.workerAID))
+    }
+
+    func testDeletingSomeoneInTheMiddleKeepsTheirReports() {
+        // The subtree survives: reports move up to the deleted agent's own
+        // parent, whatever kind it is.
+        var team = Fixtures.team()
+        let lead = Fixtures.node(6, kind: .worker, session: "lead", parent: Fixtures.managerID)
+        let under = Fixtures.node(7, kind: .worker, session: "under", parent: lead.id)
+        team.upsert(lead)
+        team.upsert(under)
+
+        XCTAssertTrue(team.remove(lead.id))
+
+        XCTAssertNotNil(team.node(under.id), "its reports are not deleted with it")
+        XCTAssertEqual(team.node(under.id)?.parentID, Fixtures.managerID)
+    }
+
+    func testWorkersMayLeadWorkersToAnyDepth() throws {
+        var team = Fixtures.team()
+        let second = Fixtures.node(6, kind: .worker, session: "w2", parent: Fixtures.workerAID)
+        let third = Fixtures.node(7, kind: .worker, session: "w3", parent: second.id)
+        team.upsert(second)
+        team.upsert(third)
+
+        XCTAssertEqual(team.children(of: Fixtures.workerAID).map(\.id), [second.id])
+        XCTAssertEqual(team.children(of: second.id).map(\.id), [third.id])
+        XCTAssertTrue(team.descendants(of: Fixtures.workerAID).contains { $0.id == third.id })
+
+        // And the loop rules still hold all the way down.
+        XCTAssertThrowsError(try team.reparent(Fixtures.workerAID, to: third.id)) { error in
+            XCTAssertEqual(
+                error as? TopologyMutationError,
+                .cycle(childID: Fixtures.workerAID, parentID: third.id))
+        }
+        XCTAssertThrowsError(try team.reparent(third.id, to: third.id))
+        XCTAssertThrowsError(try team.reparent(third.id, to: makeID(999)))
     }
 
     func testReparentDetectsDeepCycles() throws {

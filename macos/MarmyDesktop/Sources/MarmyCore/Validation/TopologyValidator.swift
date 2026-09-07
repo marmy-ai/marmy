@@ -34,13 +34,6 @@ public enum TopologyValidator {
         issues += reportingIssues(topology)
         issues += templateIssues(topology, promptTemplates: promptTemplates)
 
-        if topology.nodes.count > 1 && !topology.nodes.contains(where: { $0.kind == .manager }) {
-            issues.append(ValidationIssue(
-                kind: .noManager,
-                severity: .warning,
-                message: "No agent in this team is a manager, so nobody can take reports."))
-        }
-
         return issues.sorted { lhs, rhs in
             if lhs.severity != rhs.severity { return lhs.severity > rhs.severity }
             return orderIndex(lhs, in: topology) < orderIndex(rhs, in: topology)
@@ -188,20 +181,13 @@ public enum TopologyValidator {
                     nodeID: node.id))
                 continue
             }
-            guard let parent = topology.node(parentID) else {
+            guard topology.node(parentID) != nil else {
                 issues.append(ValidationIssue(
                     kind: .missingParent(nodeID: node.id, parentID: parentID),
                     severity: .error,
-                    message: "\(label): its manager is not part of this team.",
+                    message: "\(label): the agent it reports to is not part of this team.",
                     nodeID: node.id))
                 continue
-            }
-            if parent.kind != .manager {
-                issues.append(ValidationIssue(
-                    kind: .parentIsNotManager(nodeID: node.id, parentID: parentID),
-                    severity: .error,
-                    message: "\(label): reports to \(displayLabel(parent)), which is a worker. Only managers take reports.",
-                    nodeID: node.id))
             }
         }
 

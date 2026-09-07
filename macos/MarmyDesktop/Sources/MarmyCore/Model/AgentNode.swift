@@ -1,9 +1,9 @@
 import Foundation
 
-/// Whether an agent supervises other agents or does the work.
+/// Whether an agent delegates the work or does it.
 ///
-/// The distinction is structural, not cosmetic: only a manager may act as a
-/// reporting parent, and the two kinds get different default prompt templates.
+/// This says what an agent is for — and picks its default role prompt — not who
+/// is allowed to supervise. Any agent may take reports.
 public enum AgentKind: String, Codable, CaseIterable, Hashable, Sendable {
     case manager
     case worker

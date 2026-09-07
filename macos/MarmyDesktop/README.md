@@ -54,10 +54,20 @@ the exact v1.20.0 commit `5d14406844143538cd8f8851d2d8a67c1fe443e5`.
    workers, or a single manager), a folder, and a CLI.
 2. **Topology** — lay the team out (new agents are named Worker 1, Worker 2,
    Manager 1 … until you rename them): drag nodes, drag a node's bottom handle onto
-   a manager to report to them, and use the inspector on the right for the name,
-   role, CLI, model, folder, manager, permitted contacts, role prompt, and extra
-   instructions. Loops are refused with the reason.
-3. **Launch team** — Marmy checks the whole team first: the graph, every rendered
+   another agent to report to them, and use the inspector on the right for the
+   name, role, CLI, model, folder, who it reports to, permitted contacts, role
+   prompt, and extra instructions. Right-click any agent, on the canvas or in the
+   sidebar, to add one under it, edit it, or remove it. Loops are refused with the
+   reason.
+
+   **Anyone can take reports.** Manager and worker say what an agent does —
+   delegate, or do the work — not who is allowed to supervise: a worker leading
+   two of its own is an ordinary shape, and nesting goes as deep as you like. What
+   is refused is a loop: an agent reporting to itself, or to someone who already
+   reports to it. Removing an agent in the middle keeps its reports, moving them
+   up to its own parent, and never stops a session.
+3. **Start team** — the button says so, next to *Templates*, where the role
+   prompts are. Marmy checks the whole team first: the graph, every rendered
    prompt, that each folder exists, that each CLI is installed, and that no
    session name is already taken. If anything fails, *nothing* is started. Each
    agent gets its own tmux session and its rendered prompt as its first message.

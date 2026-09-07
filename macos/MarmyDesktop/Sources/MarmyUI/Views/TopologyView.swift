@@ -110,13 +110,13 @@ struct TopologyView: View {
                 Label("Add manager", systemImage: "plus.circle")
             }
             Button {
-                let parent = model.selectedNode?.kind == .manager
-                    ? model.selectedNodeID
-                    : model.selectedTopology?.roots.first(where: { $0.kind == .manager })?.id
-                _ = model.addNode(kind: .worker, parentID: parent)
+                // Under whatever is selected. Nobody selected means a new root.
+                _ = model.addNode(kind: .worker, parentID: model.selectedNodeID)
             } label: {
                 Label("Add worker", systemImage: "plus.rectangle")
             }
+            .help(model.selectedNode.map { "Adds a worker reporting to \($0.displayName)" }
+                ?? "Adds a worker with no manager")
             Divider().frame(height: 16)
             Button("Auto layout") { autoLayout() }
                 .help("Tidies every node into a level per depth")
@@ -344,6 +344,7 @@ struct TopologyCanvas: View {
             model.inspectedNodeID = node.id
             env.select(node: node.id)
         }
+        .contextMenu { NodeMenu(env: env, nodeID: node.id) }
         .gesture(
             DragGesture(coordinateSpace: .named(Self.canvasSpace))
                 .onChanged { value in dragOffsets[node.id] = value.translation }
@@ -355,7 +356,7 @@ struct TopologyCanvas: View {
         .accessibilityLabel("\(node.displayName), \(node.kind.displayName)")
     }
 
-    /// The handle under a node: drag it onto a manager to report to that manager.
+    /// The handle under a node: drag it onto another agent to report to it.
     private func connectPort(_ node: AgentNode) -> some View {
         Circle()
             .fill(Theme.surface)
@@ -369,7 +370,7 @@ struct TopologyCanvas: View {
                         connectDrag = nil
                         finishConnection(from: node.id, at: value.location)
                     })
-            .help("Drag onto a manager to report to them")
+            .help("Drag onto another agent to report to them")
     }
 
     private func commitPosition(for nodeID: UUID, translation: CGSize) {
@@ -382,8 +383,8 @@ struct TopologyCanvas: View {
     }
 
     /// One direction only: dragging a node's port onto another node means "this
-    /// node now reports to that one". A worker target or a loop is refused with
-    /// its own explanation rather than quietly connecting the other way.
+    /// node now reports to that one". A loop is refused with its own
+    /// explanation rather than quietly connecting the other way.
     private func finishConnection(from nodeID: UUID, at point: CGPoint) {
         let hit = topology.nodes.first { candidate in
             guard candidate.id != nodeID else { return false }

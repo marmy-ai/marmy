@@ -443,8 +443,16 @@ public final class AppModel {
                 + "and are listed under Local sessions.")
     }
 
+    /// Removes an agent from whichever team it is in.
+    ///
+    /// The team is found from the agent, not from the selection: this is reached
+    /// by right-clicking a row that may belong to a team the user is not looking
+    /// at. Nothing is started, attached, or stopped — only Marmy's record of it
+    /// changes, and a running session carries on under Local sessions.
     public func deleteNode(_ nodeID: UUID) async {
-        guard var topology = selectedTopology, let node = topology.node(nodeID) else { return }
+        guard var topology = workspace.topologies.first(where: { $0.contains(nodeID) }),
+              let node = topology.node(nodeID)
+        else { return }
         let selectionBefore = selectedTarget
         let wasRunning = readout.state(of: nodeID).isRunning
 
@@ -455,6 +463,9 @@ public final class AppModel {
         candidate.upsert(topology)
         guard persist(candidate) else { return }
         workspace = candidate
+        // Written, and only now announced: the agents left behind are owed a
+        // description of the team without this one in it.
+        onTopologyChanged?(topology.id)
 
         if inspectedNodeID == nodeID { inspectedNodeID = nil }
         navigation[topology.id] = TopologyNavigator.normalized(
@@ -481,9 +492,34 @@ public final class AppModel {
                 : "Removed from this team.")
     }
 
+    /// Adds an agent to the selected team, or — when a parent is named — to
+    /// whichever team that parent is in.
     @discardableResult
     public func addNode(kind: AgentKind, parentID: UUID?) -> AgentNode? {
-        guard var topology = selectedTopology else { return nil }
+        guard let parentID else {
+            guard let topologyID = selectedTopologyID else { return nil }
+            return addNode(kind: kind, parentID: nil, in: topologyID)
+        }
+        // A parent that was named and cannot be found is a mistake, not an
+        // instruction to add a root somewhere else. Nothing is selected and
+        // nothing is written.
+        guard let owner = workspace.topologies.first(where: { $0.contains(parentID) }) else {
+            return nil
+        }
+        return addNode(kind: kind, parentID: parentID, in: owner.id)
+    }
+
+    /// Adds an agent to one named team.
+    ///
+    /// The team is named rather than assumed: an agent can be right-clicked in a
+    /// team that is not the selected one, and its new report belongs beside it,
+    /// not wherever the user happened to be looking.
+    @discardableResult
+    public func addNode(kind: AgentKind, parentID: UUID?, in topologyID: UUID) -> AgentNode? {
+        guard var topology = workspace.topology(topologyID) else { return nil }
+        // A parent named for another team is refused rather than dropped.
+        if let parentID, !topology.contains(parentID) { return nil }
+        if selectedTopologyID != topologyID { selectTopology(topologyID) }
         // Worker 1, Worker 2, Manager 1 — a name you can tell apart in the
         // sidebar, with a session name to match.
         let displayName = DefaultAgentNaming.nextDisplayName(for: kind, in: topology)
@@ -496,14 +532,14 @@ public final class AppModel {
             kind: kind,
             cli: topology.nodes.first?.cli ?? .claude,
             workingDirectory: directory,
-            parentID: topology.node(parentID ?? UUID())?.kind == .manager ? parentID : nil)
+            // Under whoever was asked for, whatever they are.
+            parentID: parentID)
         // The shipped prompts may have been deleted; use whatever applies.
         node.promptTemplateID = validTemplateID(for: node)
         topology.upsert(node)
-        workspace.upsert(topology)
         inspectedNodeID = node.id
+        update(topology)
         apply(.select(node.id), in: topology)
-        save()
         return node
     }
 
@@ -569,26 +605,14 @@ public final class AppModel {
         return names
     }
 
-    /// Changes an agent between manager and worker.
-    ///
-    /// A manager with reports cannot simply become a worker: its reports would be
-    /// left reporting to someone who cannot take reports, so the change is
-    /// refused and the user is told to move them first.
+    /// Changes what an agent does. Who reports to it is a separate question, and
+    /// its reports stay exactly where they are.
     public func changeKind(of nodeID: UUID, to kind: AgentKind) {
         guard var topology = selectedTopology, var node = topology.node(nodeID), node.kind != kind else { return }
-        let reports = topology.children(of: nodeID)
-        if kind == .worker, !reports.isEmpty {
-            banner = .failure(
-                "\(node.displayName) still has reports",
-                "Move \(reports.map(\.displayName).joined(separator: ", ")) to another manager first, "
-                    + "then change this agent to a worker.")
-            return
-        }
         node.kind = kind
         node.promptTemplateID = validTemplateID(for: node)
         topology.upsert(node)
-        workspace.upsert(topology)
-        save()
+        update(topology)
     }
 
     /// Keeps a custom role prompt when it still applies, and otherwise picks a
@@ -608,14 +632,16 @@ public final class AppModel {
         return workspace.promptTemplates.first { $0.applicability.matches(node.kind) }?.id
     }
 
-    /// Moves a node under a new manager, refusing anything that would make a loop.
+    /// Moves a node under a new parent, refusing anything that would make a loop.
+    ///
+    /// Goes through `update`, so the agents whose team just changed are told in
+    /// the ordinary way rather than finding out at their next start.
     @discardableResult
     public func reparent(_ nodeID: UUID, to parentID: UUID?) -> Bool {
         guard var topology = selectedTopology else { return false }
         do {
             try topology.reparent(nodeID, to: parentID)
-            workspace.upsert(topology)
-            save()
+            update(topology)
             return true
         } catch let error as TopologyMutationError {
             banner = .failure("Cannot make that connection", describe(error, in: topology))
@@ -635,9 +661,6 @@ public final class AppModel {
             let parent = topology.node(parentID)?.displayName ?? "the target"
             return "\(parent) already reports to \(child), directly or through someone else. "
                 + "Reporting has to flow one way."
-        case .parentIsNotManager(let parentID):
-            let parent = topology.node(parentID)?.displayName ?? "That agent"
-            return "\(parent) is a worker. Only managers can take reports — change its kind first."
         case .unknownNode, .unknownParent:
             return "That agent is no longer part of this team."
         }

@@ -22,7 +22,6 @@ public struct ValidationIssue: Hashable, Sendable, Identifiable {
         case missingParent(nodeID: UUID, parentID: UUID)
         case selfParent(nodeID: UUID)
         case reportingCycle(nodeIDs: [UUID])
-        case parentIsNotManager(nodeID: UUID, parentID: UUID)
         case missingContact(nodeID: UUID, contactID: UUID)
         case selfContact(nodeID: UUID)
         case missingPromptTemplate(nodeID: UUID, templateID: UUID)
@@ -31,7 +30,6 @@ public struct ValidationIssue: Hashable, Sendable, Identifiable {
         case emptyWorkingDirectory(nodeID: UUID)
         case relativeWorkingDirectory(nodeID: UUID, path: String)
         case noNodes
-        case noManager
         case unassignedPromptTemplate(nodeID: UUID)
     }
 

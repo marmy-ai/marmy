@@ -119,13 +119,13 @@ struct InspectorView: View {
             }
 
             group("Reporting") {
-                LabeledField(label: "Manager") {
+                LabeledField(label: "Reports to") {
                     Picker("", selection: Binding(
                         get: { node.parentID },
                         set: { _ = model.reparent(node.id, to: $0) })
                     ) {
                         Text("None (root)").tag(UUID?.none)
-                        ForEach(managerCandidates(for: node, in: topology)) { candidate in
+                        ForEach(parentCandidates(for: node, in: topology)) { candidate in
                             Text(candidate.displayName).tag(UUID?.some(candidate.id))
                         }
                     }
@@ -377,8 +377,10 @@ struct InspectorView: View {
         }
     }
 
-    private func managerCandidates(for node: AgentNode, in topology: Topology) -> [AgentNode] {
-        topology.nodes.filter { $0.kind == .manager && $0.id != node.id && topology.canReparent(node.id, to: $0.id) }
+    /// Anyone this agent could report to without making a loop — manager or
+    /// worker, at any depth.
+    private func parentCandidates(for node: AgentNode, in topology: Topology) -> [AgentNode] {
+        topology.nodes.filter { $0.id != node.id && topology.canReparent(node.id, to: $0.id) }
     }
 
     private func otherNodes(_ node: AgentNode, in topology: Topology) -> [AgentNode] {

@@ -6,7 +6,6 @@ public enum TopologyMutationError: Error, Equatable, Sendable {
     case unknownParent(UUID)
     case selfParent(UUID)
     case cycle(childID: UUID, parentID: UUID)
-    case parentIsNotManager(parentID: UUID)
 }
 
 /// A named, saved team of agents.
@@ -142,9 +141,10 @@ public struct Topology: Identifiable, Codable, Hashable, Sendable {
 
     /// Removes a node and cleans up every reference to it.
     ///
-    /// Children are lifted to the removed node's parent when that parent is a
-    /// manager, and otherwise become roots, so deletion never leaves dangling
-    /// parents or a worker supervising anyone. Contact references are dropped.
+    /// Children are lifted to the removed node's own parent, whatever that
+    /// agent is, and become roots when it had none — so deleting someone in the
+    /// middle never leaves a dangling parent and never takes their reports with
+    /// them. Contact references are dropped.
     @discardableResult
     public mutating func remove(_ id: UUID) -> Bool {
         guard let index = index(of: id) else { return false }
@@ -152,8 +152,8 @@ public struct Topology: Identifiable, Codable, Hashable, Sendable {
         layout.removeValue(forKey: id.uuidString)
 
         let inheritedParent: UUID? = {
-            guard let parentID = removed.parentID, let parent = node(parentID) else { return nil }
-            return parent.kind == .manager ? parent.id : nil
+            guard let parentID = removed.parentID, node(parentID) != nil else { return nil }
+            return parentID
         }()
 
         for i in nodes.indices {
@@ -175,8 +175,13 @@ public struct Topology: Identifiable, Codable, Hashable, Sendable {
         }
     }
 
-    /// Moves a node under a new parent, refusing self-parenting, cycles at any
-    /// depth, and workers acting as parents.
+    /// Moves a node under a new parent, refusing self-parenting and cycles at
+    /// any depth.
+    ///
+    /// Any agent may take reports. Manager and worker say what someone does —
+    /// delegate, or do the work — not who is allowed to supervise: a worker
+    /// leading two of its own is an ordinary shape, and refusing it only made
+    /// people rename things to get around the rule.
     public mutating func reparent(_ id: UUID, to newParentID: UUID?) throws {
         try validateReparent(id, to: newParentID)
         guard let index = index(of: id) else { throw TopologyMutationError.unknownNode(id) }
@@ -187,8 +192,7 @@ public struct Topology: Identifiable, Codable, Hashable, Sendable {
         guard contains(id) else { throw TopologyMutationError.unknownNode(id) }
         guard let newParentID else { return }
         if newParentID == id { throw TopologyMutationError.selfParent(id) }
-        guard let parent = node(newParentID) else { throw TopologyMutationError.unknownParent(newParentID) }
-        if parent.kind != .manager { throw TopologyMutationError.parentIsNotManager(parentID: newParentID) }
+        guard node(newParentID) != nil else { throw TopologyMutationError.unknownParent(newParentID) }
         if descendants(of: id).contains(where: { $0.id == newParentID }) {
             throw TopologyMutationError.cycle(childID: id, parentID: newParentID)
         }
