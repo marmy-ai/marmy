@@ -114,18 +114,64 @@ struct BannerView: View {
 struct MarmyMark: View {
     var body: some View {
         HStack(spacing: 6) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 18, height: 18)
+            Image(nsImage: Self.icon)
                 .accessibilityHidden(true)
             Text("Marmy")
                 .font(.headline)
                 .foregroundStyle(Theme.ink)
                 .fixedSize()
         }
-        .accessibilityElement(children: .combine)
         .accessibilityLabel("Marmy")
+    }
+
+    /// A copy of the app's icon at the size it is drawn.
+    ///
+    /// Drawn into its own image rather than resized with a modifier: AppKit
+    /// containers read an `NSImage`'s own size and ignore what SwiftUI asked
+    /// for, and the bundle's icon is 512 points square. The shared icon is
+    /// never touched — mutating it would change the Dock's.
+    static let icon: NSImage = {
+        let source = NSApp.applicationIconImage ?? NSImage(size: NSSize(width: 18, height: 18))
+        let size = NSSize(width: 18, height: 18)
+        let copy = NSImage(size: size)
+        copy.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        source.draw(
+            in: NSRect(origin: .zero, size: size),
+            from: .zero, operation: .sourceOver, fraction: 1)
+        copy.unlockFocus()
+        return copy
+    }()
+}
+
+/// Names the window without drawing the name in the header.
+///
+/// A title drawn in the toolbar repeats the team menu beside it and takes the
+/// room the buttons need — at the minimum window width, "Start team" was being
+/// pushed into the overflow. The window still has to have a name for the Window
+/// menu, Mission Control and accessibility, so the name is set and only its
+/// drawing is turned off.
+struct WindowTitle: NSViewRepresentable {
+    let title: String
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        apply(from: view)
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        apply(from: view)
+    }
+
+    private func apply(from view: NSView) {
+        let title = title
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.title = title
+            // The name stays; only the drawn copy of it goes.
+            window.titleVisibility = .hidden
+        }
     }
 }
 

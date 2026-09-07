@@ -57,7 +57,10 @@ public struct RootView: View {
             }
             .frame(minWidth: 720, minHeight: 460)
         }
-        .navigationTitle(model.selectedTopology?.name ?? "Marmy Desktop")
+        // The window is named on the window itself: a navigation title would be
+        // drawn in the header, repeating the team menu next to it.
+        .background(WindowTitle(
+            title: model.selectedTopology.map { "Marmy — \($0.name)" } ?? "Marmy"))
         .toolbar { toolbar }
         .sheet(isPresented: $env.showsNewTeamSheet) { NewTeamSheet(env: env) }
         .sheet(isPresented: $env.showsTemplates) { TemplatesView(env: env) }
@@ -96,6 +99,13 @@ public struct RootView: View {
         .task { await model.refresh() }
     }
 
+    /// A team name that cannot push the toolbar's buttons off the edge.
+    static func short(_ name: String?, limit: Int = 20) -> String? {
+        guard let name else { return nil }
+        guard name.count > limit else { return name }
+        return name.prefix(limit - 1).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
     private var deletionMessage: String {
         guard let topology = env.teamPendingDeletion else { return "" }
         let running = topology.nodes.filter { model.state(of: $0.id).isRunning }
@@ -110,25 +120,31 @@ public struct RootView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        // The mark stands on its own: inside a Menu, AppKit reads the image's
+        // own size and the item grows to the icon's 512 points.
         ToolbarItem(placement: .navigation) {
             MarmyMark()
         }
 
+        // Text only, and bounded here rather than on the label: a long team
+        // name must not push the buttons that do something into the overflow.
         ToolbarItem(placement: .navigation) {
-            if let topology = model.selectedTopology {
-                Menu {
-                    ForEach(model.topologies) { candidate in
-                        Button(candidate.name) { env.selectTopology(candidate.id) }
-                    }
-                    Divider()
-                    Button("New team…") { env.showsNewTeamSheet = true }
+            Menu {
+                ForEach(model.topologies) { candidate in
+                    Button(candidate.name) { env.selectTopology(candidate.id) }
+                }
+                Divider()
+                Button("New team…") { env.showsNewTeamSheet = true }
+                if let topology = model.selectedTopology {
                     Button("Delete team…", role: .destructive) {
                         env.requestDeletion(of: topology)
                     }
-                } label: {
-                    Label(topology.name, systemImage: "person.2")
                 }
+            } label: {
+                Text(Self.short(model.selectedTopology?.name) ?? "Teams")
             }
+            .frame(maxWidth: 150)
+            .help(model.selectedTopology.map { "Team: \($0.name)" } ?? "Teams")
         }
 
         ToolbarItem(placement: .principal) {
@@ -145,7 +161,9 @@ public struct RootView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 190)
+            // Narrow enough to leave the named buttons room at the minimum
+            // window width; both words still fit.
+            .frame(width: 160)
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
