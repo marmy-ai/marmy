@@ -144,6 +144,8 @@ private final class ProcessExecution: @unchecked Sendable {
     private var finished = false
     private var timers: [DispatchSourceTimer] = []
     private var readHandles: [FileHandle] = []
+    /// Handles that have already reported end of file.
+    private var eofReaders: Set<ObjectIdentifier> = []
 
     init(_ invocation: CommandInvocation) {
         _ = Self.ignoreSIGPIPE
@@ -242,6 +244,13 @@ private final class ProcessExecution: @unchecked Sendable {
             self.queue.async {
                 guard !self.finished else { return }
                 if data.isEmpty {
+                    // End of file, counted once per handle. The handler runs on
+                    // its own queue and is cleared on this one, so more empty
+                    // reads can arrive in between; counting each of them took
+                    // `openReaders` below zero, the "everything is read" test
+                    // never matched, and every single command waited out the
+                    // grace period instead — a third of a second, on all of them.
+                    guard self.eofReaders.insert(ObjectIdentifier(handle)).inserted else { return }
                     handle.readabilityHandler = nil
                     self.openReaders -= 1
                     self.finishIfPossible()

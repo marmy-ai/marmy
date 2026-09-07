@@ -175,3 +175,40 @@ final class CommandRunnerTests: XCTestCase {
             directory.resolvingSymlinksInPath().path)
     }
 }
+
+/// How long an ordinary command takes to come back.
+///
+/// Every tmux command Marmy runs went through a third of a second of waiting:
+/// a handle can report end of file more than once, each was counted, and the
+/// count that says "everything has been read" was then never right.
+final class CommandRunnerLatencyTests: XCTestCase {
+
+    func testSmallCommandsComeBackAtOnce() async throws {
+        let runner = SystemCommandRunner()
+        let started = Date()
+        for index in 0..<8 {
+            let result = try await runner.run(CommandInvocation(
+                executable: "/bin/echo", arguments: ["marmy \(index)"]))
+            XCTAssertEqual(result.exitCode, 0)
+            XCTAssertEqual(
+                result.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines),
+                "marmy \(index)",
+                "and what it printed is still all there")
+        }
+        let elapsed = Date().timeIntervalSince(started)
+
+        // Waiting out the grace period on each would be about 2.4 seconds.
+        XCTAssertLessThan(elapsed, 1.0, "eight echoes took \(elapsed)s")
+    }
+
+    func testOutputTooBigForOnePipeBufferStillArrivesWhole() async throws {
+        let runner = SystemCommandRunner()
+        let result = try await runner.run(CommandInvocation(
+            executable: "/bin/sh",
+            arguments: ["-c", "for i in $(seq 1 4000); do echo line $i; done"]))
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertTrue(result.standardOutput.contains("line 1\n"))
+        XCTAssertTrue(result.standardOutput.contains("line 4000"))
+    }
+}
