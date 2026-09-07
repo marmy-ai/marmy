@@ -137,6 +137,41 @@ public struct TmuxClient: Sendable {
         return result.standardOutput
     }
 
+    /// Where the cursor is in a pane, and the line it sits on.
+    ///
+    /// Used to tell an empty prompt from one somebody is halfway through typing
+    /// into. Reading a pane changes nothing in it.
+    /// The pane's visible screen, and where the cursor is on it.
+    ///
+    /// The screen is captured a second time with its escape sequences: whether
+    /// the words on a prompt are a faint placeholder or something half-typed is
+    /// a difference only the colours carry.
+    public func screen(
+        _ paneID: String
+    ) async throws -> (lines: [String], escapedLines: [String], column: Int, row: Int) {
+        let command = "display-message"
+        let result = try await run([
+            command, "-p", "-t", paneID, TmuxFormat.lengthPrefixed(["cursor_x", "cursor_y"]),
+        ])
+        try Self.requireSuccess(result, command: command)
+        let fields = try TmuxFormat.parseRecord(result.standardOutputData, fieldCount: 2, command: command)
+        let column = try TmuxFormat.integer(fields[0], command: command)
+        let row = try TmuxFormat.integer(fields[1], command: command)
+
+        let capture = try await run(["capture-pane", "-p", "-t", paneID])
+        try Self.requireSuccess(capture, command: "capture-pane")
+        let lines = capture.standardOutput
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+
+        let escaped = try await run(["capture-pane", "-p", "-e", "-t", paneID])
+        try Self.requireSuccess(escaped, command: "capture-pane")
+        let escapedLines = escaped.standardOutput
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        return (lines, escapedLines, column, row)
+    }
+
     /// How many lines of scrollback a pane is holding.
     public func paneHistorySize(_ paneID: String) async throws -> Int {
         let command = "display-message"

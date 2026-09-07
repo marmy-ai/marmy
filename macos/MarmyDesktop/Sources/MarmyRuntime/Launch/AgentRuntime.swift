@@ -12,6 +12,8 @@ public enum RuntimeError: Error, CustomStringConvertible, Equatable {
     case readOnly(detail: String)
     case unsafeToInsert(reason: String)
     case deliveryUncertain(detail: String)
+    case agentBusy(detail: String)
+    case journalUnavailable(detail: String)
     case terminalNotAttached
     case terminalShowingSomethingElse(expected: String, actual: String)
     case emptyMessage
@@ -41,6 +43,10 @@ public enum RuntimeError: Error, CustomStringConvertible, Equatable {
         case .deliveryUncertain(let detail):
             return "Marmy could not confirm what reached the agent: \(detail) "
                 + "Look at the terminal before trying again — the text may already be there."
+        case .agentBusy(let detail):
+            return "This agent is not at an empty prompt: \(detail) The message is waiting."
+        case .journalUnavailable(let detail):
+            return "Marmy could not write this message down, so it was not sent: \(detail)"
         case .terminalNotAttached:
             return "This terminal is no longer attached to tmux. Reconnect it, then send again; "
                 + "nothing was sent."
@@ -62,17 +68,23 @@ public struct LaunchOutcome: Sendable {
     public var failures: [UUID: String]
     /// Nodes deliberately left alone, with why.
     public var skipped: [UUID: String]
+    /// Nodes that did start, but with something the user should know about —
+    /// a starting prompt whose delivery could not be written down, say. The
+    /// agent is running either way.
+    public var warnings: [UUID: String]
 
     public init(
         preflight: PreflightReport,
         started: [UUID: AgentBinding] = [:],
         failures: [UUID: String] = [:],
-        skipped: [UUID: String] = [:]
+        skipped: [UUID: String] = [:],
+        warnings: [UUID: String] = [:]
     ) {
         self.preflight = preflight
         self.started = started
         self.failures = failures
         self.skipped = skipped
+        self.warnings = warnings
     }
 
     public var isFullSuccess: Bool { failures.isEmpty && !preflight.isBlocked }
@@ -90,12 +102,17 @@ public actor AgentRuntime {
     public nonisolated let tmux: TmuxClient
     private let locator: ExecutableLocator
     private let store: RuntimeStore
+    /// Everything Marmy has said to an agent.
+    public nonisolated let journal: MessageJournal
     private let trampoline: TrampolineCommand
     private let now: @Sendable () -> Date
     private let makeID: @Sendable () -> UUID
 
     private var ledger: RuntimeLedger
     private var launching: Set<UUID> = []
+    /// Something worth saying about an agent that did start, collected by
+    /// `start` and handed back with the outcome.
+    private var launchWarnings: [UUID: String] = [:]
     /// Deliveries currently touching a pane, so they take turns.
     private var paneDeliveries: [String: Task<Void, Never>] = [:]
     /// True when the ledger could not be read. Reading tmux still works, so the
@@ -116,6 +133,7 @@ public actor AgentRuntime {
         self.trampoline = trampoline
         self.now = now
         self.makeID = makeID
+        self.journal = MessageJournal(directoryURL: store.directoryURL)
         self.ledger = try store.loadLedger()
         self.readOnlyReason = nil
     }
@@ -140,6 +158,7 @@ public actor AgentRuntime {
         self.trampoline = trampoline
         self.now = now
         self.makeID = makeID
+        self.journal = MessageJournal(directoryURL: store.directoryURL)
         self.ledger = RuntimeLedger()
         self.readOnlyReason = reason
     }
@@ -251,8 +270,12 @@ public actor AgentRuntime {
 
             do {
                 outcome.started[plan.nodeID] = try await start(plan: plan, node: node, topology: topology)
+                if let warning = launchWarnings.removeValue(forKey: plan.nodeID) {
+                    outcome.warnings[plan.nodeID] = warning
+                }
             } catch {
                 outcome.failures[plan.nodeID] = "\(error)"
+                launchWarnings.removeValue(forKey: plan.nodeID)
             }
         }
         return outcome
@@ -270,7 +293,44 @@ public actor AgentRuntime {
             nodeID: node.id,
             generation: generation)
 
+        // What the agent is about to be told, written down before it is
+        // started. If this cannot be recorded, nothing is started: an agent
+        // holding instructions Marmy has no record of is worse than one that did
+        // not start.
+        var launchEntry: JournalEntry?
+        if !plan.initialPrompt.isEmpty {
+            let entry = JournalEntry(
+                id: generation,
+                kind: .launchPrompt,
+                status: .prepared,
+                createdAt: now(),
+                topologyID: topology.id,
+                nodeID: node.id,
+                sessionName: plan.sessionName,
+                sessionID: "",
+                paneID: "",
+                payload: plan.initialPrompt)
+            do {
+                try await journal.record(entry)
+            } catch {
+                throw RuntimeError.journalUnavailable(detail: "\(error)")
+            }
+            launchEntry = entry
+        }
+
         let specURL = try store.writeSpec(spec)
+        // The prompt travels with the process, so starting the process is the
+        // moment of delivery. Marked before the spawn: a Marmy that stops during
+        // startup leaves an attempt that is uncertain, not one that looks
+        // untried.
+        if let launchEntry {
+            do {
+                try await journal.update(launchEntry.id, status: .sending, now: now())
+            } catch {
+                removeLaunchArtifacts(specURL: specURL)
+                throw RuntimeError.journalUnavailable(detail: "\(error)")
+            }
+        }
         let started: TmuxStartedSession
         do {
             started = try await tmux.newSession(
@@ -281,13 +341,33 @@ public actor AgentRuntime {
         } catch {
             // Nothing is running, so the spec is safe to remove immediately.
             removeLaunchArtifacts(specURL: specURL)
+            if let launchEntry {
+                try? await journal.update(
+                    launchEntry.id, status: .failed, detail: "\(error)", now: now())
+            }
             throw error
         }
 
         // tmux reports success as soon as the pane exists; a spec or exec
         // failure ends the pane milliseconds later. Nothing is recorded as
         // running until the pane is confirmed alive.
-        try await confirmAlive(started, specURL: specURL)
+        let launchCommand: String
+        do {
+            launchCommand = try await confirmAlive(started, specURL: specURL)
+        } catch {
+            // The process was started with the prompt already in hand, so it may
+            // have read it before it stopped. "Failed" would be a guess, and it
+            // is the guess that invites sending it twice.
+            if let launchEntry {
+                try? await journal.finish(
+                    launchEntry.id, status: .uncertain,
+                    detail: "The agent was started with this prompt but did not stay running, so "
+                        + "it is not known whether it read it. \(error)",
+                    sessionID: started.sessionID, paneID: started.paneID,
+                    generation: generation, now: now())
+            }
+            throw error
+        }
 
         guard let server = try await tmux.serverIdentity() else {
             throw TmuxError.commandFailed(
@@ -304,6 +384,7 @@ public actor AgentRuntime {
             server: server,
             ownership: .launched,
             cli: node.cli,
+            launchCommand: launchCommand,
             startedAt: now())
 
         // Session-scoped marker so ownership survives losing the ledger. Best
@@ -314,20 +395,63 @@ public actor AgentRuntime {
         ledger.upsert(binding)
         try store.saveLedger(ledger)
         removeLaunchArtifacts(specURL: specURL)
+
+        // The prompt went with the process itself, so it is delivered the moment
+        // the agent is up. Where it went and what became of it are written
+        // together: an entry that claims delivery but names no recipient is not
+        // a record of anything. If that write fails the entry stays `sending`,
+        // which says what is true — the agent has the prompt and Marmy could
+        // not record it — and the session it is running in is kept either way.
+        if let launchEntry {
+            do {
+                try await journal.finish(
+                    launchEntry.id, status: .submitted,
+                    sessionID: started.sessionID, paneID: started.paneID,
+                    server: server, generation: generation, now: now())
+            } catch {
+                // The agent is up and has the prompt; only the record of that
+                // failed. The session is kept, and this is said out loud rather
+                // than left as an entry that says it is still being sent.
+                launchWarnings[node.id] =
+                    "\(node.displayName) started and was given its starting prompt, but Marmy "
+                        + "could not record that. Its message history will show the delivery as "
+                        + "unconfirmed. \(error)"
+            }
+        }
         return binding
     }
 
     /// Confirms the pane tmux just created is still running the agent.
-    private func confirmAlive(_ started: TmuxStartedSession, specURL: URL) async throws {
+    /// Confirms the pane is alive, and reports what tmux calls the program in
+    /// it — the name to compare against later, whatever it turns out to be.
+    @discardableResult
+    private func confirmAlive(_ started: TmuxStartedSession, specURL: URL) async throws -> String {
         try? await Task.sleep(nanoseconds: 200_000_000)
-        let panes = try await tmux.listPanes()
-        let pane = panes.first { $0.id == started.paneID }
+        var panes = try await tmux.listPanes()
+        var pane = panes.first { $0.id == started.paneID }
+
+        // The pane starts out running Marmy's launcher; the CLI replaces it a
+        // moment later. Whatever is recorded has to be the CLI, so this waits
+        // for the name to settle on something that is not the launcher.
+        var attempts = 0
+        while let current = pane, !current.isDead,
+              AgentReadiness.disqualifyingCommands.contains(current.currentCommand),
+              attempts < 8 {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            panes = try await tmux.listPanes()
+            pane = panes.first { $0.id == started.paneID }
+            attempts += 1
+        }
+
         guard let pane, !pane.isDead else {
             let detail = readLaunchError(specURL: specURL)
                 ?? "Check that the CLI runs in that folder."
             removeLaunchArtifacts(specURL: specURL)
             throw RuntimeError.agentExitedImmediately(sessionName: started.sessionName, detail: detail)
         }
+        // A name still in that list means Marmy could not establish what is
+        // running; readiness treats that as "never automatic".
+        return pane.currentCommand
     }
 
     /// The reason a trampoline left behind before its pane disappeared.
@@ -649,6 +773,271 @@ public actor AgentRuntime {
                 throw RuntimeError.deliveryUncertain(detail: "\(error)")
             }
         }
+    }
+
+    /// Sends a message Marmy composed to an agent, writing it down first.
+    ///
+    /// The journal entry is stored before anything is dispatched: if it cannot
+    /// be stored, nothing is sent, because an agent being told something Marmy
+    /// has no record of is worse than a message that did not go. "Submitted"
+    /// means tmux took it — not that the agent read it, and certainly not that
+    /// it agreed.
+    @discardableResult
+    public func deliverJournaled(
+        _ text: String,
+        kind: JournalEntry.Kind,
+        toNode nodeID: UUID,
+        topologyID: UUID?,
+        expecting expected: DeliveryTarget,
+        delivery: Delivery,
+        fromClient clientPID: Int32? = nil
+    ) async throws -> JournalEntry {
+        let entry = try await recordPrepared(
+            text, kind: kind, toNode: nodeID, topologyID: topologyID, expecting: expected)
+        return try await sendPrepared(
+            entry, expecting: expected, delivery: delivery, fromClient: clientPID)
+    }
+
+    /// Writes a message down before anybody tries to send it.
+    ///
+    /// If it cannot be stored, nothing is sent: an agent being told something
+    /// Marmy has no record of is worse than a message that did not go.
+    public func recordPrepared(
+        _ text: String,
+        kind: JournalEntry.Kind,
+        toNode nodeID: UUID,
+        topologyID: UUID?,
+        expecting expected: DeliveryTarget
+    ) async throws -> JournalEntry {
+        try requireWritable()
+        let binding = ledger.binding(nodeID: nodeID)
+        let entry = JournalEntry(
+            id: makeID(),
+            kind: kind,
+            status: .prepared,
+            createdAt: now(),
+            topologyID: topologyID,
+            nodeID: nodeID,
+            sessionName: binding?.sessionName ?? "",
+            sessionID: expected.sessionID,
+            paneID: expected.paneID,
+            server: expected.server,
+            generation: expected.generation,
+            payload: text)
+        do {
+            try await journal.record(entry)
+        } catch {
+            throw RuntimeError.journalUnavailable(detail: "\(error)")
+        }
+        return entry
+    }
+
+    /// Sends something already written down, and records what became of it.
+    ///
+    /// The entry is marked as being sent *before* tmux is touched, so a Marmy
+    /// that stops halfway leaves an attempt that is uncertain rather than one
+    /// that looks untried. "Submitted" means tmux took it — not that the agent
+    /// read it, and certainly not that it agreed.
+    ///
+    /// `requireIdle` is for messages Marmy sends on its own: the agent has to be
+    /// at an empty prompt, and that is checked here, inside the pane's queue and
+    /// after the identity checks, so nothing can type into the prompt in between.
+    @discardableResult
+    public func sendPrepared(
+        _ entry: JournalEntry,
+        expecting expected: DeliveryTarget,
+        delivery: Delivery,
+        requireIdle: Bool = false,
+        in topology: Topology? = nil,
+        fromClient clientPID: Int32? = nil
+    ) async throws -> JournalEntry {
+        try requireWritable()
+
+        do {
+            return try await withPane(expected.paneID) {
+                // Read again in here. Two callers holding the same entry both
+                // reach this point; only one of them finds it still waiting,
+                // because the pane's queue lets one in at a time and the status
+                // moves off `prepared` before any byte goes out.
+                guard let stored = try await self.journal.entry(id: entry.id) else {
+                    throw RuntimeError.journalUnavailable(detail: "that message is no longer on record.")
+                }
+                guard stored.status == .prepared else {
+                    throw RuntimeError.journalUnavailable(
+                        detail: "that message has already been dealt with (\(stored.status.rawValue)).")
+                }
+                guard stored.payload == entry.payload, stored.nodeID == entry.nodeID else {
+                    throw RuntimeError.journalUnavailable(
+                        detail: "that message does not match what was recorded.")
+                }
+                // What it was recorded for has to be where it is going. A pane
+                // that has since been relaunched is a different recipient, and
+                // gets a fresh attempt of its own.
+                guard stored.matches(expected) else {
+                    throw RuntimeError.journalUnavailable(
+                        detail: "that message was recorded for a different terminal.")
+                }
+
+                if delivery == .insert, let refusal = InsertSafety.refusal(for: stored.payload) {
+                    try? await self.journal.update(
+                        stored.id, status: .failed, detail: refusal.description, now: self.now())
+                    throw RuntimeError.unsafeToInsert(reason: refusal.description)
+                }
+
+                do {
+                    try await self.verify(expected, nodeID: stored.nodeID, clientPID: clientPID)
+                    if requireIdle {
+                        // Checked here, holding the pane, so a dictation queued
+                        // a moment ago cannot have filled the prompt in between.
+                        guard let nodeID = stored.nodeID, let topology else {
+                            throw RuntimeError.agentBusy(
+                                detail: "Marmy cannot tell what this agent is doing.")
+                        }
+                        let assessment: AgentReadiness.Assessment
+                        do {
+                            assessment = try await self.readiness(forNode: nodeID, in: topology)
+                        } catch {
+                            // Not knowing is not permission. It waits, visibly,
+                            // and the user can send it by hand.
+                            throw RuntimeError.agentBusy(
+                                detail: "Marmy could not tell what this agent is doing: \(error)")
+                        }
+                        guard assessment.isIdle else {
+                            throw RuntimeError.agentBusy(detail: assessment.reason ?? "it is busy.")
+                        }
+                    }
+                    // Recorded as in flight before a single byte goes out.
+                    try await self.journal.update(stored.id, status: .sending, now: self.now())
+                    try await self.deliver(stored.payload, to: expected.paneID, delivery: delivery)
+                } catch let error as RuntimeError {
+                    let status: JournalEntry.Status
+                    switch error {
+                    case .deliveryUncertain: status = .uncertain
+                    case .agentBusy: status = .prepared      // still waiting, not failed
+                    default: status = .failed
+                    }
+                    try? await self.journal.update(
+                        stored.id, status: status, detail: "\(error)", now: self.now())
+                    throw error
+                } catch {
+                    try? await self.journal.update(
+                        stored.id, status: .failed, detail: "\(error)", now: self.now())
+                    throw error
+                }
+
+                let status: JournalEntry.Status = delivery == .submit ? .submitted : .pasted
+                do {
+                    return try await self.journal.update(
+                        stored.id, status: status, now: self.now()) ?? stored
+                } catch {
+                    // It went, and the record of it going did not. Saying
+                    // "failed" would invite sending it twice. Marmy tries to
+                    // write down the uncertainty itself; if the disk will not
+                    // take that either, the entry stays `sending`, which says
+                    // the same thing: an attempt nobody can account for.
+                    try? await self.journal.update(
+                        stored.id, status: .uncertain,
+                        detail: "It was delivered, but Marmy could not record that: \(error)",
+                        now: self.now())
+                    throw RuntimeError.deliveryUncertain(
+                        detail: "it was delivered but Marmy could not record that: \(error)")
+                }
+            }
+        }
+    }
+
+    /// Records a fresh attempt that replaces an earlier one, keeping the old
+    /// attempt exactly as it was.
+    public func prepareRetry(
+        of entry: JournalEntry,
+        expecting expected: DeliveryTarget
+    ) async throws -> JournalEntry {
+        try requireWritable()
+        let binding = entry.nodeID.flatMap { ledger.binding(nodeID: $0) }
+        let retry = JournalEntry(
+            id: makeID(),
+            kind: entry.kind,
+            status: .prepared,
+            createdAt: now(),
+            topologyID: entry.topologyID,
+            nodeID: entry.nodeID,
+            sessionName: binding?.sessionName ?? entry.sessionName,
+            sessionID: expected.sessionID,
+            paneID: expected.paneID,
+            server: expected.server,
+            generation: expected.generation,
+            payload: entry.payload,
+            previousAttemptID: entry.id)
+        try await journal.record(retry)
+        if entry.status == .prepared {
+            try? await journal.update(
+                entry.id, status: .superseded,
+                detail: "Replaced by a fresh attempt.", now: now())
+        }
+        return retry
+    }
+
+    /// Marks a never-attempted message as replaced by a newer one.
+    ///
+    /// Only one that was never tried. An attempt that failed, or one nobody can
+    /// account for, is history: it stays as it is, and the user decides.
+    @discardableResult
+    public func supersede(_ entry: JournalEntry, reason: String) async -> Bool {
+        guard let stored = try? await journal.entry(id: entry.id), stored.status == .prepared else {
+            return false
+        }
+        return (try? await journal.update(
+            entry.id, status: .superseded, detail: reason, now: now())) != nil
+    }
+
+    /// Turns anything a previous run left mid-flight into an honest uncertainty.
+    @discardableResult
+    public func reconcileJournal() async throws -> [JournalEntry] {
+        try await journal.reconcileAfterRestart(now: now())
+    }
+
+    /// The user throwing away a message that was never sent.
+    ///
+    /// Only one that was never attempted. What became of an attempt — that it
+    /// failed, or that nobody can say whether it arrived — is a fact about the
+    /// agent, and dismissing it from the screen does not change it.
+    @discardableResult
+    public func discard(_ entry: JournalEntry, reason: String) async throws -> Bool {
+        guard let stored = try await journal.entry(id: entry.id) else { return false }
+        guard stored.status == .prepared else { return false }
+        do {
+            try await journal.update(entry.id, status: .discarded, detail: reason, now: now())
+        } catch {
+            throw RuntimeError.journalUnavailable(detail: "\(error)")
+        }
+        return true
+    }
+
+    /// Whether an agent is sitting at an empty prompt, so an automatic message
+    /// can go now rather than waiting.
+    public func readiness(forNode nodeID: UUID, in topology: Topology) async throws -> AgentReadiness.Assessment {
+        let node = topology.node(nodeID)
+        guard let binding = ledger.binding(nodeID: nodeID) else {
+            throw RuntimeError.notBound(nodeID: nodeID)
+        }
+        let server = try await tmux.serverIdentity()
+        let panes = try await tmux.listPanes()
+        let sessions = try await tmux.listSessions()
+        let state = LiveIdentity.state(for: binding, server: server, panes: panes, sessions: sessions)
+        guard case .running = state, let pane = panes.first(where: { $0.id == binding.paneID }) else {
+            return AgentReadiness.Assessment(
+                verdict: .notIdle("This agent is not running."), observedCommand: "", cursorLine: "")
+        }
+        let screen = try await tmux.screen(binding.paneID)
+        return AgentReadiness.assess(
+            cli: node?.cli ?? binding.cli,
+            launchCommand: binding.launchCommand,
+            observedCommand: pane.currentCommand,
+            screen: screen.lines,
+            escapedScreen: screen.escapedLines,
+            cursorRow: screen.row,
+            cursorColumn: screen.column,
+            acceptsMessages: node?.acceptsAgentMessages ?? false)
     }
 
     /// Scrollback read straight out of tmux, for the app's own history view.

@@ -18,6 +18,9 @@ final class FakeCommandRunner: CommandRunning, @unchecked Sendable {
 
     private let lock = NSLock()
     private var _calls: [Call] = []
+    /// Runs just before a call is answered, so a test can change the world
+    /// halfway through a delivery.
+    var beforeCall: (@Sendable (Call) -> Void)?
     private var responses: [String: [CommandResult]] = [:]
     private var errors: [String: Error] = [:]
 
@@ -52,6 +55,11 @@ final class FakeCommandRunner: CommandRunning, @unchecked Sendable {
     }
 
     func run(_ invocation: CommandInvocation) async throws -> CommandResult {
+        let call = Call(
+            executable: invocation.executable,
+            arguments: invocation.arguments,
+            standardInput: invocation.standardInput)
+        beforeCall?(call)
         lock.lock()
         _calls.append(Call(
             executable: invocation.executable,

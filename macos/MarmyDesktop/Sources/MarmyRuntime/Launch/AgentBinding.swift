@@ -28,6 +28,11 @@ public struct AgentBinding: Codable, Hashable, Sendable {
     /// Which CLI the user said this is. Recorded on adoption because a pane's
     /// current command does not reliably identify the agent running in it.
     public var cli: AgentCLI?
+    /// What tmux called the program in this pane just after it started.
+    ///
+    /// It is not always the CLI's own name — Claude reports its version — so it
+    /// is recorded rather than assumed, and later compared for change.
+    public var launchCommand: String?
     public var startedAt: Date
 
     public init(
@@ -40,6 +45,7 @@ public struct AgentBinding: Codable, Hashable, Sendable {
         server: TmuxServerIdentity,
         ownership: SessionOwnership,
         cli: AgentCLI?,
+        launchCommand: String? = nil,
         startedAt: Date
     ) {
         self.topologyID = topologyID
@@ -51,6 +57,7 @@ public struct AgentBinding: Codable, Hashable, Sendable {
         self.server = server
         self.ownership = ownership
         self.cli = cli
+        self.launchCommand = launchCommand
         self.startedAt = startedAt
     }
 

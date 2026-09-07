@@ -31,7 +31,10 @@ let package = Package(
         .executableTarget(name: "marmy-agent-launch", dependencies: ["MarmyRuntime"]),
         .executableTarget(name: "MarmyDesktop", dependencies: ["MarmyUI", "MarmyRuntime"]),
         .testTarget(name: "MarmyCoreTests", dependencies: ["MarmyCore"]),
-        .testTarget(name: "MarmyRuntimeTests", dependencies: ["MarmyRuntime", "MarmyCore"]),
+        .testTarget(
+            name: "MarmyRuntimeTests", dependencies: ["MarmyRuntime", "MarmyCore"],
+            // Screens captured from the real CLIs, read as they were captured.
+            resources: [.copy("Fixtures")]),
         .testTarget(name: "MarmyUITests", dependencies: ["MarmyUI", "MarmyCore", "MarmyRuntime"]),
     ]
 )
