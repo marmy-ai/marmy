@@ -157,8 +157,8 @@ final class AppModelTests: XCTestCase {
         model.selectTopology(bench.topology.id)
 
         bench.env.requestDeletion(of: bench.topology)
-        XCTAssertNotNil(bench.env.teamPendingDeletion, "deleting asks first")
-        await bench.env.confirmDeletion(of: bench.topology.id)
+        let plan = try XCTUnwrap(bench.env.pendingTermination, "deleting asks first")
+        await bench.env.confirmDeletion(plan, terminating: false)
 
         XCTAssertEqual(model.topologies.map(\.id), [other.id])
         XCTAssertEqual(model.selectedTopologyID, other.id, "the selection moves to what is left")
@@ -173,7 +173,8 @@ final class AppModelTests: XCTestCase {
 
         bench.env.requestDeletion(of: bench.topology)
         XCTAssertFalse(bench.env.voice.isCapturing, "asking the question already stops recording")
-        await bench.env.confirmDeletion(of: bench.topology.id)
+        let plan = try XCTUnwrap(bench.env.pendingTermination)
+        await bench.env.confirmDeletion(plan, terminating: false)
 
         XCTAssertFalse(bench.env.voice.isCapturing)
         XCTAssertNil(bench.env.voice.target)
@@ -188,9 +189,11 @@ final class AppModelTests: XCTestCase {
         model.selectTopology(bench.topology.id)
 
         bench.env.requestDeletion(of: bench.topology)
+        let plan = try XCTUnwrap(bench.env.pendingTermination)
         // SwiftUI clears the presentation binding before the action's task runs.
         bench.env.teamPendingDeletion = nil
-        await bench.env.confirmDeletion(of: bench.topology.id)
+        bench.env.pendingTermination = nil
+        await bench.env.confirmDeletion(plan, terminating: false)
 
         XCTAssertEqual(model.topologies.map(\.id), [other.id])
     }
@@ -214,7 +217,8 @@ final class AppModelTests: XCTestCase {
 
         model.select(node: bench.workers[1].id)
 
-        await bench.env.confirmDeletion(of: other.id)
+        await bench.env.confirmDeletion(
+            SessionTerminationPlan(subject: .team(other), sessions: []), terminating: false)
 
         XCTAssertEqual(model.selectedTopologyID, bench.topology.id)
         XCTAssertEqual(model.selectedNodeID, bench.workers[1].id, "the agent you were on is untouched")
@@ -238,7 +242,9 @@ final class AppModelTests: XCTestCase {
         // Everything closed: deleting must not reopen anything.
         model.expandedTopologyIDs = []
 
-        await bench.env.confirmDeletion(of: bench.topology.id)
+        await bench.env.confirmDeletion(
+            SessionTerminationPlan(subject: .team(bench.topology), sessions: []),
+            terminating: false)
 
         XCTAssertEqual(model.selectedTopologyID, other.id)
         XCTAssertEqual(model.selectedNodeID, otherManagerID, "the header shows a real agent")
@@ -259,7 +265,9 @@ final class AppModelTests: XCTestCase {
                 [.posixPermissions: 0o700], ofItemAtPath: workspaceDirectory.path)
         }
 
-        await bench.env.confirmDeletion(of: bench.topology.id)
+        await bench.env.confirmDeletion(
+            SessionTerminationPlan(subject: .team(bench.topology), sessions: []),
+            terminating: false)
 
         XCTAssertEqual(model.topologies.count, 1, "the team is still here")
         XCTAssertEqual(model.selectedTopologyID, bench.topology.id)

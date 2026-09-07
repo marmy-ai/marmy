@@ -92,14 +92,25 @@ Files an app has only promised (a screenshot dragged straight out of Preview) ar
 received first, then typed. Nothing is ever deleted from that folder: an agent may
 still be about to read it.
 
-**Scrolling back.** Scroll up in a terminal and the terminal itself scrolls,
-using tmux's own scrollback: the same pane, the same font, the same size, and
-none of it sent to the agent. Scroll back down to the bottom and it returns to
-live output by itself — there is nothing to close and no button to press. (Left
-alone, a wheel gesture over a tmux client on the alternate screen is turned into
-arrow keys and walks the agent's prompt history instead. Marmy takes the wheel
-before that can happen and asks tmux to scroll.) Dictation and pasted image paths
-bring the pane back to its prompt first, so what goes in is where you can see it.
+**Scrolling back.** Scroll up in a terminal and Marmy scrolls that pane's real
+tmux scrollback, in place: the same pane, the same font, the same size. Scroll
+back down to the bottom and it returns to live output by itself. Nothing is sent
+to the agent to do it — no keys, no mouse reports — and no tmux option or key
+binding of yours is changed. An agent that draws its own full-screen interface
+and asks for the mouse (Claude does) gets the wheel itself instead, so it scrolls
+its own transcript, which is where its history actually is. (Left alone, a wheel
+gesture over a tmux client on the alternate screen is turned into arrow keys and
+walks the agent's prompt history. Marmy takes the wheel before that can happen.)
+
+**Stopping sessions.** Deleting a team asks what to do with the sessions its
+agents are running in: *keep* them, and they carry on under Local sessions, or
+*stop* them, which ends every window, pane and process inside. The question names
+the sessions it found, says which were attached rather than started by Marmy, and
+names any agent from another team running in one — stopping that would stop them
+too. A single session can be stopped from its right-click menu in *Local
+sessions*. Sessions are stopped by tmux's own id on the server they belong to,
+never by name, and if one cannot be stopped Marmy says so and leaves the team
+where it is rather than claiming it worked.
 
 **Existing sessions.** Every tmux session on this Mac that is not part of a team
 is listed under *Local sessions*. Opening one just attaches a terminal: nothing
@@ -108,10 +119,19 @@ agent. To make one part of a team, select an agent and use *Attach an
 existing session…* — still without sending it anything.
 
 **Deleting.** *Delete team…* is in the team menu in the toolbar and in the
-sidebar's context menu, and always asks first — the confirmation names the team
-and lists the tmux sessions that will keep running. Removing a node or a team
-removes Marmy's organisation only. Any session that was running keeps running and
-reappears under *Local sessions*.
+sidebar's context menu, and always asks first. The confirmation names the tmux
+sessions its agents are running in — including ones Marmy attached rather than
+started, and any agent from another team in the same session — and offers both
+answers: **keep the sessions**, and they carry on under *Local sessions*, or
+**stop them**, which ends every window, pane and process inside. Removing an
+agent from a team removes Marmy's organisation only and never stops anything; its
+session, if it was running, reappears under *Local sessions*. A single session can
+be stopped on its own from its right-click menu there, with the same confirmation.
+
+Sessions are stopped by tmux's own id on the server they belong to, never by
+name, and only after Marmy has checked that it is still the same server. If one
+cannot be stopped, Marmy says which and leaves the team where it is, so you can
+try again rather than being told it worked.
 
 **Sidebar.** Clicking anywhere along a team's row — chevron, name, or the space
 beside them — selects it and opens or closes it, the way a file explorer behaves.

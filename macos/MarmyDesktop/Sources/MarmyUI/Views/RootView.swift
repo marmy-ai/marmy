@@ -76,25 +76,20 @@ public struct RootView: View {
                 title: model.selectedTopology?.node(node.id)?.displayName ?? "this agent")
         }
         .confirmationDialog(
-            env.teamPendingDeletion.map { "Delete “\($0.name)”?" } ?? "Delete this team?",
+            env.pendingTermination?.title ?? "Delete this team?",
             isPresented: Binding(
-                get: { env.teamPendingDeletion != nil },
-                set: { if !$0 { env.teamPendingDeletion = nil } }),
+                get: { env.pendingTermination != nil },
+                set: { if !$0 { env.cancelDeletion() } }),
             titleVisibility: .visible
         ) {
-            // The team is captured here, while the dialog is on screen. By the
-            // time the action's task runs, the presentation binding is already
-            // cleared.
-            let pending = env.teamPendingDeletion
-            // Cancel is the default: this is not a button to press by accident.
-            Button("Cancel", role: .cancel) { env.cancelDeletion() }
-            Button("Delete team", role: .destructive) {
-                if let pending {
-                    Task { await env.confirmDeletion(of: pending.id) }
-                }
+            // The plan is captured here, while the dialog is on screen: by the
+            // time an action's task runs the binding is already cleared, and
+            // what is running may have moved on.
+            if let plan = env.pendingTermination {
+                terminationActions(for: plan)
             }
         } message: {
-            Text(deletionMessage)
+            Text(env.pendingTermination?.message ?? "")
         }
         .task { await model.refresh() }
     }
@@ -106,16 +101,26 @@ public struct RootView: View {
         return name.prefix(limit - 1).trimmingCharacters(in: .whitespaces) + "…"
     }
 
-    private var deletionMessage: String {
-        guard let topology = env.teamPendingDeletion else { return "" }
-        let running = topology.nodes.filter { model.state(of: $0.id).isRunning }
-        let base = "This removes the team and its layout from Marmy. Nothing is stopped: "
-        if running.isEmpty {
-            return base + "no agent in it is running right now."
+    /// The choices a confirmation offers, which depend on what it is about.
+    @ViewBuilder
+    private func terminationActions(for plan: SessionTerminationPlan) -> some View {
+        // Cancel first: this is not a dialog to dismiss by reflex.
+        Button("Cancel", role: .cancel) { env.cancelDeletion() }
+        switch plan.subject {
+        case .team:
+            Button("Delete team, keep sessions") {
+                Task { await env.confirmDeletion(plan, terminating: false) }
+            }
+            if !plan.sessions.isEmpty {
+                Button("Delete team and stop \(plan.sessions.count) session\(plan.sessions.count == 1 ? "" : "s")", role: .destructive) {
+                    Task { await env.confirmDeletion(plan, terminating: true) }
+                }
+            }
+        case .session:
+            Button("Stop session", role: .destructive) {
+                Task { await env.confirmTermination(plan) }
+            }
         }
-        let names = running.map(\.tmuxAddress).sorted().joined(separator: ", ")
-        return base + "the tmux session\(running.count == 1 ? "" : "s") \(names) keep"
-            + "\(running.count == 1 ? "s" : "") running and will be listed under Local sessions."
     }
 
     @ToolbarContentBuilder

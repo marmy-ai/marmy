@@ -664,6 +664,58 @@ public actor AgentRuntime {
         next.resume()
     }
 
+    // MARK: - Stopping sessions
+
+    /// What became of one attempt to stop a session.
+    public enum TerminationResult: Sendable, Equatable {
+        case stopped
+        /// It was not there any more. Nothing was killed, and nothing is wrong.
+        case alreadyGone
+        case failed(String)
+    }
+
+    /// Stops one tmux session, by id, on the server it belongs to.
+    ///
+    /// Never by name: names are reused, and the session called `build` when the
+    /// question was asked may be a different one by the time it is answered. The
+    /// server is checked first for the same reason, and the id is looked up
+    /// again immediately before the kill — if it has gone in the meantime, that
+    /// is said rather than something else being stopped in its place.
+    public func terminate(
+        sessionID: String, on server: TmuxServerIdentity
+    ) async -> TerminationResult {
+        if let readOnlyReason { return .failed(readOnlyReason) }
+        do {
+            // Is it even there? Answered first so "already gone" is not
+            // reported as a failure.
+            guard let current = try await tmux.serverIdentity() else { return .alreadyGone }
+            guard current == server else {
+                return .failed("tmux has restarted since then, so that session is already gone.")
+            }
+            guard try await tmux.listSessions().contains(where: { $0.id == sessionID }) else {
+                return .alreadyGone
+            }
+
+            // The check and the kill are one command, on the server that
+            // answers it: a tmux that restarts in between has a different pid,
+            // the condition fails, and nothing is killed. Checking separately
+            // and killing afterwards leaves a gap in which a new server can
+            // hand the same id to something else.
+            guard try await tmux.killSessionIfServerMatches(sessionID: sessionID, server: server)
+            else {
+                return .failed("tmux restarted while that was being stopped, so nothing was.")
+            }
+
+            // Believed only once tmux agrees it is gone.
+            if try await tmux.listSessions().contains(where: { $0.id == sessionID }) {
+                return .failed("tmux still lists that session.")
+            }
+            return .stopped
+        } catch {
+            return .failed("\(error)")
+        }
+    }
+
     // MARK: - Scrolling
 
     /// The name tmux gives its scrollback view.

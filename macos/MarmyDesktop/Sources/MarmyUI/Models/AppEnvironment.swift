@@ -54,6 +54,8 @@ public final class AppEnvironment {
     public var fitCanvasToken = 0
     /// A team the user has asked to delete, waiting on the confirmation.
     public var teamPendingDeletion: Topology?
+    /// What a confirmation on screen is about, decided when it was asked.
+    public var pendingTermination: SessionTerminationPlan?
     /// Briefly shown after keyboard navigation, then fades.
     public private(set) var locationHintToken = 0
 
@@ -160,6 +162,7 @@ public final class AppEnvironment {
                 // just as modal: no shortcut may act on the agent behind it.
                 isModalPresented: self.isModalPresented
                     || self.teamPendingDeletion != nil
+                    || self.pendingTermination != nil
                     || NSApp.keyWindow?.attachedSheet != nil)
         }
         keyboard.onNavigate = { [weak self] direction in
@@ -375,28 +378,169 @@ public final class AppEnvironment {
 
     /// Asks for confirmation before removing a team.
     ///
+    /// The sessions are named now, while the user is looking at them: what is
+    /// running can change while a dialog is up, and a confirmation has to be
+    /// about what was asked.
+    ///
     /// Recording stops as the question goes up: the agent being dictated to may
     /// be one of the ones about to disappear, and a confirmation is a modal
     /// moment either way.
     public func requestDeletion(of topology: Topology) {
         stopCapture(reason: nil)
         teamPendingDeletion = topology
+        pendingTermination = SessionTerminationPlan(
+            subject: .team(topology), sessions: runningSessions(of: topology))
     }
 
-    /// Removes the team the user confirmed.
-    ///
-    /// The id comes from the button that was pressed, not from
-    /// `teamPendingDeletion`: SwiftUI clears the presentation binding before the
-    /// action's task runs, and reading it here would delete nothing.
-    public func confirmDeletion(of topologyID: UUID) async {
-        teamPendingDeletion = nil
+    /// The sessions a team's agents are actually running in, with who else is in
+    /// them.
+    private func runningSessions(of topology: Topology) -> [SessionTerminationPlan.Session] {
+        guard let server = model.readout.server else { return [] }
+        var found: [String: SessionTerminationPlan.Session] = [:]
+        for node in topology.nodes {
+            // Bound and still alive is the test, not "has a pane on screen": an
+            // agent whose pane was closed leaves the session running, and that
+            // is exactly the leftover the user is trying to get rid of.
+            guard let binding = model.binding(for: node.id),
+                  binding.server == server,
+                  let live = model.readout.sessions.first(where: { $0.id == binding.sessionID })
+            else { continue }
+            var session = found[binding.sessionID] ?? SessionTerminationPlan.Session(
+                id: binding.sessionID, name: live.name, server: server,
+                isAdopted: binding.ownership == .adopted)
+            session.agents.append(node.displayName)
+            found[binding.sessionID] = session
+        }
+        // Anyone else in those sessions has to be named: stopping one would stop
+        // them, and they are not part of what is being deleted.
+        for other in model.workspace.topologies where other.id != topology.id {
+            for node in other.nodes {
+                guard let binding = model.binding(for: node.id),
+                      binding.server == server,
+                      var session = found[binding.sessionID]
+                else { continue }
+                session.otherTeams.append("\(node.displayName) (\(other.name))")
+                found[binding.sessionID] = session
+            }
+        }
+        return found.values.sorted { $0.name < $1.name }
+    }
+
+    /// Asks for confirmation before stopping one session the user picked.
+    /// `server` is the one the row was drawn from, passed in with it: a refresh
+    /// between drawing the row and clicking it would otherwise pair an old
+    /// session with a new server, which are not the same session at all.
+    public func requestTermination(of session: TmuxSession, on server: TmuxServerIdentity) {
+        guard model.readout.server == server,
+              model.readout.sessions.contains(where: { $0.id == session.id })
+        else { return }
         stopCapture(reason: nil)
-        await model.deleteTopology(topologyID)
+        var entry = SessionTerminationPlan.Session(
+            id: session.id, name: session.name, server: server)
+        for topology in model.workspace.topologies {
+            for node in topology.nodes {
+                guard let binding = model.binding(for: node.id),
+                      binding.server == server, binding.sessionID == session.id
+                else { continue }
+                entry.otherTeams.append("\(node.displayName) (\(topology.name))")
+            }
+        }
+        pendingTermination = SessionTerminationPlan(subject: .session, sessions: [entry])
+    }
+
+    /// Removes the team the user confirmed, and stops its sessions if that is
+    /// what they chose.
+    ///
+    /// The plan comes from the button that was pressed, not from what is on
+    /// screen now: SwiftUI clears the presentation binding before the action's
+    /// task runs, and the selection may have moved anyway.
+    public func confirmDeletion(_ plan: SessionTerminationPlan, terminating: Bool) async {
+        teamPendingDeletion = nil
+        pendingTermination = nil
+        stopCapture(reason: nil)
+
+        var outcome = SessionTerminationOutcome()
+        if terminating {
+            outcome = await terminate(plan.sessions)
+        }
+        // A team whose sessions could not be stopped keeps its bookkeeping: the
+        // user asked for both, and half of it is not what they asked for.
+        if let topology = plan.topology {
+            guard outcome.isCompleteSuccess else {
+                report(outcome, plan: plan, terminated: terminating)
+                return
+            }
+            await model.deleteTopology(topology.id)
+            // Removing the team can go wrong on its own — the workspace not
+            // saving, its bindings not being let go — and it says so. That
+            // message is the important one and is not written over with good
+            // news about the sessions.
+            if model.banner?.kind == .failure { return }
+        }
+        report(outcome, plan: plan, terminated: terminating)
+    }
+
+    /// Stops the sessions the user picked, and says what actually happened.
+    public func confirmTermination(_ plan: SessionTerminationPlan) async {
+        pendingTermination = nil
+        let outcome = await terminate(plan.sessions)
+        report(outcome, plan: plan, terminated: true)
+    }
+
+    private func terminate(
+        _ sessions: [SessionTerminationPlan.Session]
+    ) async -> SessionTerminationOutcome {
+        var outcome = SessionTerminationOutcome()
+        for session in sessions {
+            switch await model.runtime.terminate(sessionID: session.id, on: session.server) {
+            case .stopped:
+                outcome.stopped.append(session.name)
+            case .alreadyGone:
+                outcome.alreadyGone.append(session.name)
+            case .failed(let reason):
+                outcome.failed.append((name: session.name, reason: reason))
+            }
+        }
+        // What is attached, bound and on screen all follow from what is
+        // running: a refresh drops a selection whose session has gone.
+        await model.refresh()
+        syncTerminal()
+        return outcome
+    }
+
+    private func report(
+        _ outcome: SessionTerminationOutcome, plan: SessionTerminationPlan, terminated: Bool
+    ) {
+        guard terminated else {
+            if plan.topology != nil { return }   // the team banner says its own piece
+            return
+        }
+        if outcome.isCompleteSuccess {
+            var detail = outcome.stopped.isEmpty ? "" : "Stopped \(outcome.stopped.joined(separator: ", ")). "
+            if !outcome.alreadyGone.isEmpty {
+                detail += "\(outcome.alreadyGone.joined(separator: ", ")) had already ended."
+            }
+            model.banner = Banner(
+                kind: .success, title: "Sessions stopped",
+                detail: detail.isEmpty ? nil : detail)
+            return
+        }
+        let failures = outcome.failed
+            .map { "\($0.name): \($0.reason)" }
+            .joined(separator: "\n")
+        let kept = plan.topology != nil
+            ? "\n\nThe team has been left as it is, so you can try again."
+            : ""
+        model.banner = .failure(
+            "Some sessions are still running",
+            (outcome.stopped.isEmpty ? "" : "Stopped \(outcome.stopped.joined(separator: ", ")).\n")
+                + failures + kept)
     }
 
     /// Cancelling changes nothing at all.
     public func cancelDeletion() {
         teamPendingDeletion = nil
+        pendingTermination = nil
     }
 
     public func showLocationHint() {

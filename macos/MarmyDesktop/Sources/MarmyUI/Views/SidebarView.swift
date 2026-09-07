@@ -160,6 +160,9 @@ struct SidebarView: View {
 
     private func localSessionRow(_ session: TmuxSession) -> some View {
         let isSelected = model.selectedLocalSession?.sessionID == session.id
+        // The server this row was drawn from travels with it: by the time it is
+        // clicked, a refresh may have found another one.
+        let server = model.readout.server
 
         return HStack(spacing: 7) {
             Image(systemName: "terminal")
@@ -181,6 +184,15 @@ struct SidebarView: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.16) : .clear))
         .contentShape(Rectangle())
         .onTapGesture { env.select(localSession: session) }
+        .contextMenu {
+            Button("Open") { env.select(localSession: session) }
+            Divider()
+            if let server {
+                Button("Stop session…", role: .destructive) {
+                    env.requestTermination(of: session, on: server)
+                }
+            }
+        }
         .help("Opens a terminal on this session. It is not added to a team and gets no instructions.")
     }
 }

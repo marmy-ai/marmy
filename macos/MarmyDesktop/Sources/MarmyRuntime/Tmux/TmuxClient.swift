@@ -223,6 +223,34 @@ public struct TmuxClient: Sendable {
         return value.isEmpty ? nil : value
     }
 
+    /// Stops a session only if this is still the server it belongs to.
+    ///
+    /// One command, so there is no gap between the two: tmux runs the condition
+    /// and the kill itself. A server that has restarted has a different pid, so
+    /// the condition fails and the id — which the new server may have given to
+    /// something else entirely — is never killed. Returns false when it refused.
+    public func killSessionIfServerMatches(
+        sessionID: String, server: TmuxServerIdentity
+    ) async throws -> Bool {
+        // tmux's own ids only. Anything else is not a session id, and it is
+        // never going into a command string.
+        guard sessionID.hasPrefix("$"), sessionID.dropFirst().allSatisfy(\.isNumber),
+              sessionID.count > 1
+        else {
+            throw TmuxError.commandFailed(
+                command: "kill-session", detail: "\(sessionID) is not a tmux session id")
+        }
+        let marker = "marmy-refused"
+        let result = try await run([
+            "if-shell", "-F",
+            "#{&&:#{==:#{pid},\(server.pid)},#{==:#{start_time},\(server.startTime)}}",
+            "kill-session -t \(sessionID)",
+            "display-message -p \(marker)",
+        ])
+        try Self.requireSuccess(result, command: "if-shell")
+        return !result.standardOutput.contains(marker)
+    }
+
     /// Only ever called for a session the user explicitly asked to stop, and by
     /// tests cleaning up their own private server.
     public func killSession(target: String) async throws {

@@ -304,8 +304,9 @@ final class RosterCoordinatorTests: XCTestCase {
 
         // It goes out, and the disk will not take the record of it going.
         let runtimeDirectory = bench.root.appendingPathComponent("runtime").path
-        bench.runner.beforeCall = { subcommand in
-            guard subcommand == "send-keys" else { return }
+        let runner = bench.runner
+        bench.runner.beforeCall = { invocation in
+            guard runner.subcommand(of: invocation.arguments) == "send-keys" else { return }
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o500], ofItemAtPath: runtimeDirectory)
         }
