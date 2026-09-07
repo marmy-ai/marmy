@@ -57,6 +57,16 @@ struct WorkView: View {
                                 .font(.callout)
                                 .foregroundStyle(Theme.muted)
                         }
+                        if !node.acceptsAgentMessages {
+                            Text("manual terminal")
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4).fill(Theme.line.opacity(0.5)))
+                                .help("A shell you drive yourself. Marmy sends it nothing.")
+                        }
                     } else if case .localSession(let key) = target {
                         Image(systemName: "terminal").foregroundStyle(Theme.muted)
                         Text(model.readout.sessions.first { $0.id == key.sessionID }?.name ?? "Session")

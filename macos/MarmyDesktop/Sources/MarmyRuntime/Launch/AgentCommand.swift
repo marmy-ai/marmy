@@ -16,13 +16,17 @@ public enum AgentCommand {
         initialPrompt: String?,
         workingDirectory: String? = nil
     ) -> [String] {
+        // A terminal is a login shell and nothing else: no model, and no prompt
+        // — text handed to a shell is a command, not an instruction.
+        guard node.cli.isAutonomousAgent else { return LoginShell.arguments }
+
         var arguments: [String] = []
         let model = node.model.trimmingCharacters(in: .whitespacesAndNewlines)
         if !model.isEmpty {
             arguments += ["--model", model]
         }
         switch node.cli {
-        case .claude:
+        case .claude, .terminal:
             break
         case .codex:
             arguments += ["--cd", workingDirectory ?? NSString(string: node.workingDirectory).expandingTildeInPath]
@@ -44,7 +48,7 @@ public enum AgentCommand {
     public static func environmentRemovals(for node: AgentNode) -> [String] {
         switch node.cli {
         case .claude: return ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"]
-        case .codex: return []
+        case .codex, .terminal: return []
         }
     }
 }

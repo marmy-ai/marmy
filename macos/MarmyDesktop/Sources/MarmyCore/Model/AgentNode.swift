@@ -20,20 +20,39 @@ public enum AgentKind: String, Codable, CaseIterable, Hashable, Sendable {
 public enum AgentCLI: String, Codable, CaseIterable, Hashable, Sendable {
     case codex
     case claude
+    /// A plain interactive shell. Not an agent: a person runs things in it.
+    case terminal
 
     public var displayName: String {
         switch self {
         case .codex: return "Codex"
         case .claude: return "Claude Code"
+        case .terminal: return "Terminal"
         }
     }
 
-    /// Executable looked up on `PATH` when the topology is launched.
+    /// Executable looked up on `PATH` when the topology is launched. A terminal
+    /// uses the user's login shell instead, resolved at launch.
     public var executableName: String {
         switch self {
         case .codex: return "codex"
         case .claude: return "claude"
+        case .terminal: return ""
         }
+    }
+
+    /// True for a CLI that is an agent Marmy can talk to.
+    ///
+    /// A terminal is a shell. It gets no starting prompt, no role instructions,
+    /// and no automatic messages: prose typed into a shell is a command, and
+    /// nobody is reading it on the other end.
+    public var isAutonomousAgent: Bool {
+        self != .terminal
+    }
+
+    /// Whether a model can be chosen for this CLI.
+    public var supportsModelChoice: Bool {
+        self != .terminal
     }
 }
 
@@ -111,6 +130,14 @@ public struct AgentNode: Identifiable, Codable, Hashable, Sendable {
 
     /// Model string to show in UI when the field is blank.
     public var effectiveModelDescription: String {
-        model.trimmingCharacters(in: .whitespaces).isEmpty ? "CLI default" : model
+        guard cli.supportsModelChoice else { return "shell" }
+        return model.trimmingCharacters(in: .whitespaces).isEmpty ? "CLI default" : model
+    }
+
+    /// True when Marmy may send this node prose: a starting prompt, a roster
+    /// update, a message from the composer. False for a terminal, where text
+    /// would be run as a command.
+    public var acceptsAgentMessages: Bool {
+        cli.isAutonomousAgent
     }
 }

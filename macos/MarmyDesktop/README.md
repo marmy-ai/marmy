@@ -65,6 +65,15 @@ the exact v1.20.0 commit `5d14406844143538cd8f8851d2d8a67c1fe443e5`.
    composer and press ⌘↩, or hold Space to dictate. Move between agents with the
    keyboard; each keeps its own draft.
 
+**Terminal nodes.** Set an agent's CLI to **Terminal** and it starts your login
+shell in its folder instead of an agent: for scripts, build watches, or a harness
+you drive by hand. It keeps its place in the graph — role, manager, contacts, the
+lot — but Marmy sends it nothing: no starting prompt, no role instructions, no
+automatic updates. Text typed into a shell is a command, and nobody is reading it
+on the other end. Other agents are told it is a manual terminal and not to
+message it. You can still type in it yourself, and still send it a line from
+Marmy if you mean to.
+
 **Scrolling back.** Scroll up in a terminal and Marmy opens that pane's real
 tmux scrollback in a read-only view: selectable, colours intact, held still while
 you read it. Escape or *Jump to live* returns. Nothing is sent to the agent to do

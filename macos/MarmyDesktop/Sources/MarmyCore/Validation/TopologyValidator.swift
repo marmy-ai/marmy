@@ -134,7 +134,10 @@ public enum TopologyValidator {
                 }
             }
 
-            if let templateID = node.promptTemplateID {
+            if !node.acceptsAgentMessages {
+                // A terminal is a shell: no prompt is sent to it, so none is
+                // needed, and one being set is not a problem either.
+            } else if let templateID = node.promptTemplateID {
                 if !promptTemplates.contains(where: { $0.id == templateID }) {
                     issues.append(ValidationIssue(
                         kind: .missingPromptTemplate(nodeID: node.id, templateID: templateID),

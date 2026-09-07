@@ -266,6 +266,35 @@ final class TmuxIntegrationTests: XCTestCase {
         }
     }
 
+    func testATerminalNodeStartsAShellAndIsSentNothing() async throws {
+        // A shell node: no CLI, no prompt. The pane should be a live shell that
+        // received no keystrokes at all.
+        var team = topology
+        team.nodes[1].cli = .terminal
+        team.nodes[1].promptTemplateID = nil
+
+        let runtime = try makeRuntime()
+        let outcome = await runtime.launch(
+            topology: team, workspace: workspace, nodeIDs: [Team.workerID])
+
+        XCTAssertTrue(outcome.isFullSuccess, "\(outcome.failures) \(outcome.preflight.errors.map(\.message))")
+        let binding = try XCTUnwrap(outcome.started[Team.workerID])
+
+        // Give the shell a moment to draw a prompt, then look at what is there.
+        try await Task.sleep(for: .seconds(1.5))
+        let contents = try await capture(binding.paneID)
+        XCTAssertFalse(contents.contains("You are"), "no role prompt was handed to a shell")
+        XCTAssertFalse(contents.contains("Reaching other agents"))
+
+        let panes = try await tmux.listPanes()
+        let pane = try XCTUnwrap(panes.first { $0.id == binding.paneID })
+        XCTAssertFalse(pane.isDead, "the shell is running")
+
+        // And it answers as a shell does.
+        try await runtime.send("echo marmy-shell-check", toNode: Team.workerID)
+        try await waitForPane(binding.paneID, toContain: "marmy-shell-check")
+    }
+
     func testForgettingANodeLeavesItsSessionRunning() async throws {
         let runtime = try makeRuntime()
         let outcome = await runtime.launch(

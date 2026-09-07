@@ -18,6 +18,8 @@ public enum BootstrapPrompt {
         /// than one Marmy created under the planned name.
         public var isExistingSession: Bool
         public var plannedName: String?
+        /// True for a plain shell someone drives by hand.
+        public var isManualTerminal: Bool = false
     }
 
     /// Renders the role prompt and appends the addressing section.
@@ -70,7 +72,8 @@ public enum BootstrapPrompt {
                 relationship: relationship,
                 target: target,
                 isExistingSession: target != peer.sessionName,
-                plannedName: target != peer.sessionName ? peer.sessionName : nil))
+                plannedName: target != peer.sessionName ? peer.sessionName : nil,
+                isManualTerminal: !peer.acceptsAgentMessages))
         }
 
         if let parentID = node.parentID, let manager = topology.node(parentID) {
@@ -104,6 +107,11 @@ public enum BootstrapPrompt {
             lines.append("You may contact only these agents:")
             for address in addresses {
                 var line = "- \(address.displayName) — \(address.relationship), tmux session \(address.target)"
+                if address.isManualTerminal {
+                    // Not an agent. Writing to it would run as a command, and
+                    // nobody is waiting to read it.
+                    line += " — a manual terminal a person uses; do not send it messages"
+                }
                 if address.isExistingSession, let planned = address.plannedName {
                     line += " (an existing session attached to this team; not \(planned))"
                 }

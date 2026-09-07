@@ -101,10 +101,18 @@ struct InspectorView: View {
                     }
                     .labelsHidden()
                 }
-                LabeledField(label: "Model") {
-                    TextField("CLI default", text: binding(for: node, \.model))
-                        .textFieldStyle(.roundedBorder)
-                        .help("Leave empty to use whatever the CLI is configured to use.")
+                if node.cli.supportsModelChoice {
+                    LabeledField(label: "Model") {
+                        TextField("CLI default", text: binding(for: node, \.model))
+                            .textFieldStyle(.roundedBorder)
+                            .help("Leave empty to use whatever the CLI is configured to use.")
+                    }
+                } else {
+                    LabeledField(label: "Model") {
+                        Text("Not used — this is a shell you drive yourself")
+                            .font(.callout)
+                            .foregroundStyle(Theme.muted)
+                    }
                 }
                 LabeledField(label: "Folder") {
                     HStack(spacing: 6) {
@@ -157,6 +165,15 @@ struct InspectorView: View {
             }
 
             group("Instructions") {
+                if !node.acceptsAgentMessages {
+                    Text("A terminal starts as your login shell in that folder. Marmy sends it no "
+                        + "starting prompt, no role instructions, and no automatic updates — text "
+                        + "typed into a shell is a command. Its role and contacts still show in the "
+                        + "graph, and other agents are told it is a manual terminal.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 LabeledField(label: "Role prompt") {
                     Picker("", selection: binding(for: node, \.promptTemplateID)) {
                         Text("None").tag(UUID?.none)
@@ -165,6 +182,7 @@ struct InspectorView: View {
                         }
                     }
                     .labelsHidden()
+                    .disabled(!node.acceptsAgentMessages)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Extra instructions for this agent")

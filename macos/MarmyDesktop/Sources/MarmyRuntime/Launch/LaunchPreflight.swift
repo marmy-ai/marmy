@@ -153,15 +153,27 @@ public enum LaunchPreflight {
                 nodeFailed = true
             }
 
-            // CLI availability.
+            // CLI availability. A terminal node needs a shell instead.
             var executablePath = ""
-            do {
-                executablePath = try locator.locateOrThrow(node.cli.executableName)
-            } catch {
+            if node.cli.isAutonomousAgent {
+                do {
+                    executablePath = try locator.locateOrThrow(node.cli.executableName)
+                } catch {
+                    report.findings.append(PreflightFinding(
+                        kind: .cliMissing(name: node.cli.executableName),
+                        severity: .error,
+                        message: "\(label): \(error)",
+                        nodeID: node.id))
+                    nodeFailed = true
+                }
+            } else if let shell = LoginShell.resolve() {
+                executablePath = shell
+            } else {
                 report.findings.append(PreflightFinding(
-                    kind: .cliMissing(name: node.cli.executableName),
+                    kind: .cliMissing(name: "shell"),
                     severity: .error,
-                    message: "\(label): \(error)",
+                    message: "\(label): no usable login shell was found. Marmy looked at $SHELL and "
+                        + LoginShell.fallbacks.joined(separator: ", ") + ".",
                     nodeID: node.id))
                 nodeFailed = true
             }
@@ -178,12 +190,14 @@ public enum LaunchPreflight {
                 nodeFailed = true
             }
 
-            // Rendered prompt.
+            // Rendered prompt. A terminal is started empty.
             var prompt = ""
             do {
-                prompt = try BootstrapPrompt.render(
-                    for: node, in: topology, workspace: workspace,
-                    server: server, resolvedSessionNames: resolvedNames)
+                if node.acceptsAgentMessages {
+                    prompt = try BootstrapPrompt.render(
+                        for: node, in: topology, workspace: workspace,
+                        server: server, resolvedSessionNames: resolvedNames)
+                }
             } catch {
                 report.findings.append(PreflightFinding(
                     kind: .promptRenderFailed(detail: "\(error)"),
