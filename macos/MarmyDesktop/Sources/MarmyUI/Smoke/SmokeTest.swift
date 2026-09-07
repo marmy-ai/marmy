@@ -199,46 +199,42 @@ final class SmokeHarness: NSObject {
         await settle(seconds: 1.0)
         expect(terminalHasFocus, "the terminal keeps keyboard focus after Control-Tab")
 
-        // Drafts stay with the agent they were written for.
-        let secondWorker = WorkTarget.node(workers[1].id)
-        model.drafts.setText("second worker draft", for: secondWorker)
-        pressKey(KeyboardCoordinator.tabKeyCode, modifiers: [.control, .shift])
-        model.drafts.setText("first worker draft", for: .node(workers[0].id))
-        pressKey(KeyboardCoordinator.tabKeyCode, modifiers: .control)
-        expect(model.drafts.text(for: secondWorker) == "second worker draft",
-               "each agent keeps its own draft while selection moves")
-        pressKey(KeyboardCoordinator.upArrowKeyCode, modifiers: .command)
-        expect(model.selectedNodeID == manager.id, "Command-Up returns to the manager")
-
-        // A transcript that arrives after the user has moved on belongs to the
-        // agent it was spoken for, and to nobody else.
+        // Dictation belongs to the agent it was spoken to, even when the
+        // recogniser answers late.
         let engine = env.voice.engineForTesting as? ScriptedSpeechEngine
         env.select(node: workers[0].id)
-        env.voice.beginHold(on: .node(workers[0].id))
-        engine?.emit(.partial("check the build"))
+        await settle(seconds: 0.6)
+        env.micPressed()
+        engine?.emit(.volatile(text: "check the build", start: 0, duration: 2))
         let retiredHandler = engine?.captureHandler()
         env.select(node: workers[1].id)
-        engine?.emitFromRetiredRun(.final("check the build twice"), using: retiredHandler)
-        expect(model.drafts.text(for: .node(workers[1].id)) == "second worker draft",
+        engine?.emitFromRetiredRun(
+            .finalized(text: "check the build twice", start: 0, duration: 2), using: retiredHandler)
+        await settle(seconds: 0.5)
+        expect(env.dictation.item(for: .node(workers[1].id)) == nil,
                "a late transcript never reaches the newly selected agent")
-        expect(model.drafts.text(for: .node(workers[0].id)).contains("check the build"),
-               "what was dictated stays in the draft it was spoken for")
 
         env.syncTerminal()
         await settle(seconds: 1.0)
         await snapshot("work-worker")
 
-        // A real message, delivered through the attached client.
-        model.drafts.setText("smoke message ✅", for: .node(workers[1].id))
-        await env.sendDraft(from: .node(workers[1].id))
-        await settle(seconds: 0.8)
+        // Dictation lands in the agent's own prompt, without being sent.
+        env.select(node: workers[1].id)
+        env.syncTerminal()
+        await settle(seconds: 1.2)
+        env.micPressed()
+        engine?.emit(.finalized(text: "smoke dictation ✅", start: 0, duration: 2))
+        env.micReleased()
+        engine?.emit(.finished)
+        await settle(seconds: 1.0)
+
         if let paneID = env.currentPane?.identity.paneID,
            let contents = try? await tmux?.capturePane(paneID, lines: 500, joinWrapped: true) {
-            expect(contents.contains("smoke message ✅"), "the composer's message arrived in the agent's pane")
+            expect(contents.contains("smoke dictation ✅"), "what was dictated is in the agent's prompt")
         } else {
             fail("could not read the agent's pane back")
         }
-        expect(model.drafts.isEmpty(.node(workers[1].id)), "a delivered draft is cleared")
+        expect(env.dictation.item(for: .node(workers[1].id)) == nil, "and nothing is left waiting")
 
         // The graph.
         model.mode = .topology
@@ -269,7 +265,6 @@ final class SmokeHarness: NSObject {
                 env.currentPane === localPaneBefore && env.currentPane?.connection == .attached,
                 "re-selecting the same local session keeps its terminal attached")
 
-            model.drafts.setText("hello from the smoke test", for: model.selectedTarget!)
             await snapshot("local-session")
         } else {
             fail("the unassigned session was not listed")
@@ -591,6 +586,8 @@ final class SmokeHarness: NSObject {
 public final class ScriptedSpeechEngine: SpeechEngine {
     public var isAvailable = true
     public var supportsOnDevice = true
+    public var supportsLongForm = true
+    public var preparation: SpeechModelPreparation = .ready
     public var authorization: SpeechAuthorization = .authorized
     /// Which permission a refusal should be blamed on.
     public var microphoneDenied = true
@@ -609,6 +606,8 @@ public final class ScriptedSpeechEngine: SpeechEngine {
     public private(set) var stopCount = 0
     /// Set to hold the answer back until `deliverAuthorization` is called.
     public var deferAuthorization = false
+    /// Some engines report the end of a capture synchronously inside `stop()`.
+    public var finishesOnStop = false
 
     private var handler: (@MainActor (SpeechEvent) -> Void)?
     private var pendingAuthorization: (@MainActor (SpeechAuthorization) -> Void)?
@@ -638,9 +637,12 @@ public final class ScriptedSpeechEngine: SpeechEngine {
         self.handler = handler
     }
 
+    public func prepare() async throws { preparation = .ready }
+
     public func stop() {
         stopCount += 1
         isRunning = false
+        if finishesOnStop { handler?(.finished) }
     }
 
     public func cancel() {

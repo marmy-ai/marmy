@@ -20,7 +20,7 @@ struct WorkView: View {
                 }
                 terminalArea(for: target)
                 Divider()
-                ComposerView(env: env, target: target)
+                TerminalInputBar(env: env, target: target)
             } else {
                 emptyState
             }

@@ -48,7 +48,11 @@ public enum AgentCommand {
     public static func environmentRemovals(for node: AgentNode) -> [String] {
         switch node.cli {
         case .claude: return ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"]
-        case .codex, .terminal: return []
+        case .codex: return []
+        case .terminal:
+            // A shell someone may well open Claude in by hand. Inheriting these
+            // would make that Claude think it is running inside another one.
+            return ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"]
         }
     }
 }

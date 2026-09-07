@@ -105,6 +105,50 @@ struct BannerView: View {
     }
 }
 
+/// A file that arrived but never reached a prompt.
+///
+/// It is on disk either way, so the banner hands it over rather than
+/// apologising: the path can be copied, or shown in the Finder.
+struct RecoveredAttachmentBanner: View {
+    let path: String
+    let copy: () -> Void
+    let reveal: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "paperclip.badge.ellipsis")
+                .foregroundStyle(Theme.warning)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("That file was kept")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Theme.ink)
+                Text(path)
+                    .font(.callout.monospaced())
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: 8)
+            Button("Copy path", action: copy)
+            Button("Show in Finder", action: reveal)
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Theme.muted)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .background(Theme.warning.opacity(0.08))
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
 /// A centred message for a place with nothing in it yet.
 struct EmptyStateView<Actions: View>: View {
     let title: String

@@ -160,7 +160,11 @@ public final class KeyboardCoordinator {
     }
 
     /// Stops a capture for a reason other than the key coming up.
-    public func cancelHold() {
+    ///
+    /// `notifyRelease` is false when something else has already ended the
+    /// capture: telling the app the key came up would look like a deliberate
+    /// release, which means something quite different.
+    public func cancelHold(notifyRelease: Bool = true) {
         switch spaceState {
         case .idle:
             return
@@ -168,7 +172,7 @@ public final class KeyboardCoordinator {
             spaceState = .idle
         case .holding:
             spaceState = .idle
-            onHoldEnded()
+            if notifyRelease { onHoldEnded() }
         }
     }
 

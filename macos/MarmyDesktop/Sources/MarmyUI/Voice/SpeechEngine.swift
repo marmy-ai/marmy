@@ -7,6 +7,28 @@ public enum SpeechAuthorization: Equatable, Sendable {
     case denied
     case restricted
     case notDetermined
+
+    /// Dictation needs the microphone *and* speech recognition, so the answer is
+    /// whichever of the two says no first.
+    public static func stricter(_ a: SpeechAuthorization, _ b: SpeechAuthorization) -> SpeechAuthorization {
+        if a == .denied || b == .denied { return .denied }
+        if a == .restricted || b == .restricted { return .restricted }
+        if a == .notDetermined || b == .notDetermined { return .notDetermined }
+        return .authorized
+    }
+}
+
+/// Whether the on-device model this language needs is ready to use.
+public enum SpeechModelPreparation: Equatable, Sendable {
+    /// Still finding out what this Mac supports.
+    case checking
+    case ready
+    /// Supported, but the model still has to be fetched or installed.
+    case needsInstallation
+    case installing
+    case unavailable(String)
+
+    public var isReady: Bool { self == .ready }
 }
 
 public enum SpeechFailure: Equatable, Sendable {
@@ -14,6 +36,11 @@ public enum SpeechFailure: Equatable, Sendable {
     case noAudioInput
     case audioEngine(String)
     case recognition(String)
+    /// The recogniser stopped before the user did — a length limit, a lost
+    /// model, a dropped connection. Everything heard so far is kept.
+    case interrupted(String)
+    /// The on-device model for this language is not installed yet.
+    case modelUnavailable(String)
 
     public var message: String {
         switch self {
@@ -25,14 +52,39 @@ public enum SpeechFailure: Equatable, Sendable {
             return "The microphone could not start: \(detail)"
         case .recognition(let detail):
             return "Dictation stopped: \(detail)"
+        case .interrupted(let detail):
+            return "Dictation was interrupted: \(detail) What was heard is kept in the draft."
+        case .modelUnavailable(let detail):
+            return "The speech model is not ready: \(detail)"
+        }
+    }
+
+    /// True when the words heard so far are still good.
+    public var keepsTranscript: Bool {
+        switch self {
+        case .interrupted: return true
+        default: return false
         }
     }
 }
 
+/// What a recogniser reports.
+///
+/// `finalized` is audio the recogniser has committed to, anchored to where it
+/// began; `volatile` is its working guess at everything since. Keeping those
+/// apart is what lets a long dictation hold on to its opening sentence.
 public enum SpeechEvent: Equatable, Sendable {
-    case partial(String)
-    case final(String)
+    /// The current guess at a stretch of audio, with the stretch it covers.
+    case volatile(text: String, start: Double, duration: Double)
+    case finalized(text: String, start: Double, duration: Double)
+    /// The microphone is open. Until this arrives, nothing is being heard.
+    case listening
     case failed(SpeechFailure)
+    /// The recogniser finished of its own accord.
+    case finished
+    /// Something worth telling the user that does not end the dictation — the
+    /// short-utterance recogniser rolling over, for instance.
+    case notice(String)
 }
 
 /// Everything the voice controller needs from a speech recogniser.
@@ -45,6 +97,13 @@ public protocol SpeechEngine: AnyObject {
     var isAvailable: Bool { get }
     /// True when recognition can run on this Mac without sending audio to Apple.
     var supportsOnDevice: Bool { get }
+    /// True for an engine built for dictation that runs for minutes rather than
+    /// a single utterance.
+    var supportsLongForm: Bool { get }
+    /// Whether the model is installed and ready.
+    var preparation: SpeechModelPreparation { get }
+    /// Fetches the model if it is supported but not installed yet.
+    func prepare() async throws
     /// The stricter of the two permissions dictation needs.
     var authorization: SpeechAuthorization { get }
     /// Reported separately so a refusal can point at the right settings pane.
@@ -62,213 +121,70 @@ public protocol SpeechEngine: AnyObject {
 extension SpeechEngine {
     public var speechAuthorization: SpeechAuthorization { authorization }
     public var microphoneAuthorization: SpeechAuthorization { authorization }
+    public var supportsLongForm: Bool { false }
+    public var preparation: SpeechModelPreparation { .ready }
+    public func prepare() async throws {}
 }
 
-/// Apple's speech recognition driven by AVAudioEngine.
+extension SpeechAuthorization {
+    public init(_ status: SFSpeechRecognizerAuthorizationStatus) {
+        switch status {
+        case .authorized: self = .authorized
+        case .denied: self = .denied
+        case .restricted: self = .restricted
+        case .notDetermined: self = .notDetermined
+        @unknown default: self = .denied
+        }
+    }
+
+    public init(_ status: AVAuthorizationStatus) {
+        switch status {
+        case .authorized: self = .authorized
+        case .denied: self = .denied
+        case .restricted: self = .restricted
+        case .notDetermined: self = .notDetermined
+        @unknown default: self = .denied
+        }
+    }
+}
+
+/// Asking for the two permissions dictation needs, in order.
 ///
-/// Dictation needs two separate permissions — the microphone and speech
-/// recognition — and both are asked for only when the user actually holds to
-/// talk. Every recognition run carries a token, so a task that is retired can
-/// never tear down the audio of the one that replaced it.
-@MainActor
-public final class AppleSpeechEngine: SpeechEngine {
-    private let recognizer: SFSpeechRecognizer?
-    private let audioEngine = AVAudioEngine()
-    private var request: SFSpeechAudioBufferRecognitionRequest?
-    private var task: SFSpeechRecognitionTask?
-    private var isTapInstalled = false
-    /// Bumped by every start and every cancel, so late callbacks from a retired
-    /// run are ignored instead of stopping the current one.
-    private var token = 0
-
-    public init(locale: Locale = Locale.current) {
-        recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer()
-    }
-
-    public var isAvailable: Bool { recognizer?.isAvailable ?? false }
-
-    public var supportsOnDevice: Bool { recognizer?.supportsOnDeviceRecognition ?? false }
-
-    /// The stricter of the two permissions: dictation needs both.
-    public var authorization: SpeechAuthorization {
-        Self.combine(speechAuthorization, microphoneAuthorization)
-    }
-
-    public var speechAuthorization: SpeechAuthorization {
-        Self.map(SFSpeechRecognizer.authorizationStatus())
-    }
-
-    public var microphoneAuthorization: SpeechAuthorization {
-        Self.map(AVCaptureDevice.authorizationStatus(for: .audio))
-    }
-
-    public func requestAuthorization(_ completion: @escaping @MainActor (SpeechAuthorization) -> Void) {
-        // Asked only when the user holds Space or presses the microphone, never
-        // at launch. Both callbacks arrive on arbitrary queues.
-        let requestToken = token
-        SFSpeechRecognizer.requestAuthorization { [weak self] speechStatus in
+/// Both are requested only when the user actually holds to talk, and a request
+/// whose token has moved on — because the hold ended, or the engine was
+/// cancelled — is dropped rather than starting a recording nobody asked for.
+public enum SpeechPermissions {
+    @MainActor
+    public static func request(
+        currentToken: @escaping () -> Int,
+        completion: @escaping @MainActor (SpeechAuthorization) -> Void
+    ) {
+        let requestToken = currentToken()
+        SFSpeechRecognizer.requestAuthorization { speechStatus in
             Task { @MainActor in
-                guard let self else { return }
-                // A cancel while the sheet was up retires this request.
-                guard requestToken == self.token else { return }
-                let speech = Self.map(speechStatus)
+                guard requestToken == currentToken() else { return }
+                let speech = SpeechAuthorization(speechStatus)
                 guard speech == .authorized else {
                     completion(speech)
                     return
                 }
-                self.requestMicrophone(requestToken: requestToken, completion: completion)
-            }
-        }
-    }
-
-    private func requestMicrophone(
-        requestToken: Int,
-        completion: @escaping @MainActor (SpeechAuthorization) -> Void
-    ) {
-        let status = AVCaptureDevice.authorizationStatus(for: .audio)
-        switch status {
-        case .authorized:
-            completion(.authorized)
-        case .denied, .restricted:
-            completion(Self.map(status))
-        case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
-                Task { @MainActor in
-                    guard let self, requestToken == self.token else { return }
-                    completion(granted ? .authorized : .denied)
-                }
-            }
-        @unknown default:
-            completion(.denied)
-        }
-    }
-
-    public func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws {
-        // Whatever ran before is retired first, so its callbacks cannot touch
-        // this run's audio.
-        retireCurrentTask()
-        token += 1
-        let runToken = token
-
-        guard let recognizer, recognizer.isAvailable else {
-            handler(.failed(.recognizerUnavailable))
-            return
-        }
-
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        // Keeps audio on this Mac when the language pack allows it. When it does
-        // not, recognition goes to Apple's servers — the composer says which.
-        request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
-        self.request = request
-
-        let input = audioEngine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        guard format.channelCount > 0, format.sampleRate > 0 else {
-            cleanUp(runToken)
-            handler(.failed(.noAudioInput))
-            return
-        }
-
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak request] buffer, _ in
-            request?.append(buffer)
-        }
-        isTapInstalled = true
-
-        audioEngine.prepare()
-        do {
-            try audioEngine.start()
-        } catch {
-            cleanUp(runToken)
-            handler(.failed(.audioEngine(error.localizedDescription)))
-            return
-        }
-
-        task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            Task { @MainActor in
-                guard let self, runToken == self.token else { return }
-
-                if let result {
-                    let text = result.bestTranscription.formattedString
-                    if result.isFinal {
-                        self.cleanUp(runToken)
-                        handler(.final(text))
-                    } else {
-                        handler(.partial(text))
+                let microphone = AVCaptureDevice.authorizationStatus(for: .audio)
+                switch microphone {
+                case .authorized:
+                    completion(.authorized)
+                case .denied, .restricted:
+                    completion(SpeechAuthorization(microphone))
+                case .notDetermined:
+                    AVCaptureDevice.requestAccess(for: .audio) { granted in
+                        Task { @MainActor in
+                            guard requestToken == currentToken() else { return }
+                            completion(granted ? .authorized : .denied)
+                        }
                     }
-                }
-                // An error can arrive alongside a partial result; it still ends
-                // this run and still has to be reported.
-                if let error {
-                    let nsError = error as NSError
-                    let wasCancelled = nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 216
-                    self.cleanUp(runToken)
-                    if !wasCancelled {
-                        handler(.failed(.recognition(error.localizedDescription)))
-                    }
+                @unknown default:
+                    completion(.denied)
                 }
             }
-        }
-    }
-
-    public func stop() {
-        request?.endAudio()
-        stopAudioOnly()
-    }
-
-    public func cancel() {
-        retireCurrentTask()
-        token += 1
-    }
-
-    private func retireCurrentTask() {
-        task?.cancel()
-        request?.endAudio()
-        stopAudioOnly()
-        request = nil
-        task = nil
-    }
-
-    private func stopAudioOnly() {
-        if audioEngine.isRunning { audioEngine.stop() }
-        if isTapInstalled {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            isTapInstalled = false
-        }
-    }
-
-    /// Tears down only if this is still the current run.
-    private func cleanUp(_ runToken: Int) {
-        guard runToken == token else { return }
-        stopAudioOnly()
-        request = nil
-        task = nil
-    }
-
-    private static func combine(_ speech: SpeechAuthorization, _ microphone: SpeechAuthorization) -> SpeechAuthorization {
-        if speech == .denied || microphone == .denied { return .denied }
-        if speech == .restricted || microphone == .restricted { return .restricted }
-        if speech == .notDetermined || microphone == .notDetermined { return .notDetermined }
-        return .authorized
-    }
-
-    private static func map(_ status: SFSpeechRecognizerAuthorizationStatus) -> SpeechAuthorization {
-        switch status {
-        case .authorized: return .authorized
-        case .denied: return .denied
-        case .restricted: return .restricted
-        case .notDetermined: return .notDetermined
-        @unknown default: return .denied
-        }
-    }
-
-    private static func map(_ status: AVAuthorizationStatus) -> SpeechAuthorization {
-        switch status {
-        case .authorized: return .authorized
-        case .denied: return .denied
-        case .restricted: return .restricted
-        case .notDetermined: return .notDetermined
-        @unknown default: return .denied
         }
     }
 }

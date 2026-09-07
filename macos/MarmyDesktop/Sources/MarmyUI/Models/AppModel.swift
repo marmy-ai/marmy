@@ -41,8 +41,6 @@ public final class AppModel {
     public var expandedTopologyIDs: Set<UUID> = []
     public var showsContactConnections = true
 
-    public let drafts = DraftStore()
-
     // MARK: - Live state
 
     public private(set) var readout = RuntimeReadout(server: nil, sessions: [], panes: [], bindings: [])
@@ -394,9 +392,6 @@ public final class AppModel {
         if let inspected = inspectedNodeID, topology.contains(inspected) {
             inspectedNodeID = nil
         }
-        for node in topology.nodes {
-            drafts.forget(.node(node.id))
-        }
 
         if wasSelected {
             // Land on something real rather than an empty header.
@@ -452,7 +447,6 @@ public final class AppModel {
         if inspectedNodeID == nodeID { inspectedNodeID = nil }
         navigation[topology.id] = TopologyNavigator.normalized(
             navigation[topology.id] ?? NavigationState(), in: topology)
-        drafts.forget(.node(nodeID))
         if selectedTarget != selectionBefore { selectionDidChange() }
 
         var forgetFailure: String?
@@ -672,42 +666,6 @@ public final class AppModel {
                 detail: "Nothing was sent to it. Its role prompt applies to future launches only.")
         } catch {
             banner = .failure("Could not attach that session", "\(error)")
-        }
-    }
-
-    // MARK: - Sending
-
-    /// Sends the visible draft to the target it was written for.
-    ///
-    /// The target is captured before the work starts, so changing selection
-    /// mid-send can never redirect the message, and the draft is cleared only if
-    /// it still holds exactly what was sent.
-    @discardableResult
-    public func sendDraft(from target: WorkTarget, clientPID: Int32? = nil) async -> Bool {
-        // Captured before any awaiting: what is on screen may change while the
-        // send is in flight, and only this exact text may be cleared.
-        let draft = drafts.text(for: target)
-        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        guard requireRuntime() else { return false }
-        do {
-            switch target {
-            case .node(let nodeID):
-                try await runtime.send(draft, toNode: nodeID, fromClient: clientPID)
-            case .localSession(let key):
-                try await runtime.send(
-                    draft,
-                    toSessionID: key.sessionID,
-                    onServer: key.server,
-                    expectedPaneID: key.paneID.isEmpty ? nil : key.paneID,
-                    fromClient: clientPID)
-            }
-            // Anything typed while the message was on its way is kept.
-            drafts.clearIfUnchanged(draft, for: target)
-            return true
-        } catch {
-            // The draft stays exactly as it is so nothing is lost.
-            banner = .failure("Message not sent", "\(error)")
-            return false
         }
     }
 

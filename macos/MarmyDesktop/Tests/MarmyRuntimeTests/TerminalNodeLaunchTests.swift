@@ -26,7 +26,11 @@ final class TerminalNodeLaunchTests: XCTestCase {
         let arguments = AgentCommand.arguments(for: node, initialPrompt: "you are an agent")
 
         XCTAssertEqual(arguments, ["-l"], "no model flag, and no prompt handed to a shell")
-        XCTAssertTrue(AgentCommand.environmentRemovals(for: node).isEmpty)
+        // Someone may open Claude in this shell by hand; it must not think it is
+        // running inside another one.
+        XCTAssertEqual(
+            AgentCommand.environmentRemovals(for: node),
+            ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"])
     }
 
     func testPreflightUsesTheLoginShellAndPlansNoPrompt() throws {

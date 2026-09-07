@@ -19,6 +19,16 @@ public final class AppEnvironment {
     public let keyboard = KeyboardCoordinator()
     /// Marmy's own scrollback view, because a tmux client cannot scroll.
     public let history = TerminalHistoryController()
+    /// Where images pasted into a terminal are kept.
+    public var attachments = AttachmentStore.default()
+    /// A received file that could not be handed to a prompt. It is still on
+    /// disk, and its path can be copied.
+    public var recoveredAttachmentPath: String?
+    /// Where "Copy path" writes. A test can hand in its own so a run never
+    /// disturbs the user's clipboard.
+    @ObservationIgnored public var attachmentPasteboard: NSPasteboard = .general
+    /// Dictated words waiting to reach a prompt.
+    public let dictation = DictationDeliveryQueue()
     private let scrollMonitor = TerminalScrollMonitor()
 
     /// The terminal for whatever is selected, once it is attached.
@@ -36,16 +46,23 @@ public final class AppEnvironment {
     public var teamPendingDeletion: Topology?
     /// Briefly shown after keyboard navigation, then fades.
     public private(set) var locationHintToken = 0
-    /// Targets with a delivery in flight, so a button, a shortcut, and a menu
-    /// item cannot all send the same draft at once.
-    public private(set) var inFlightSends: Set<WorkTarget> = []
 
     @ObservationIgnored private var hintTask: Task<Void, Never>?
+    /// Where each capture was spoken, by capture id. A new hold never disturbs
+    /// an older capture's origin.
+    @ObservationIgnored private var dictationOrigins: [UUID: DictationOrigin] = [:]
+    @ObservationIgnored private var inFlightPastes: Set<UUID> = []
+
+    struct DictationOrigin {
+        var target: WorkTarget
+        var identity: TerminalIdentity
+        var clientPID: Int32?
+    }
     @ObservationIgnored private var focusObservers: [Any] = []
 
     public init(model: AppModel, speechEngine: any SpeechEngine) {
         self.model = model
-        self.voice = VoiceController(engine: speechEngine, drafts: model.drafts)
+        self.voice = VoiceController(engine: speechEngine)
         configureKeyboard()
         // Every route into a different agent ends up here: clicks, keyboard,
         // menus, and a session vanishing during a refresh.
@@ -54,10 +71,33 @@ public final class AppEnvironment {
         }
         history.attach(source: self)
         configureScrolling()
+        // What was spoken belongs to the capture it came from, and to the agent
+        // that capture was spoken to.
+        voice.onFinished = { [weak self] captureID, target, text, completion in
+            guard let self else { return }
+            // Looked up by the capture's own id: a newer hold cannot change
+            // where these words were spoken.
+            let origin = self.dictationOrigins.removeValue(forKey: captureID)
+            let identity = origin?.identity ?? self.unknownIdentity(for: target)
+
+            switch completion {
+            case .deliver:
+                self.dictation.hold(PendingDictation(
+                    id: captureID, target: target, text: text, identity: identity,
+                    clientPID: origin?.clientPID, state: .pasting, spokenAt: Date()))
+                Task { await self.deliverDictation(captureID) }
+            case .retain(let reason):
+                // Kept for the agent it was spoken to, and never pasted into
+                // whatever the user moved on to.
+                self.dictation.hold(PendingDictation(
+                    id: captureID, target: target, text: text, identity: identity,
+                    clientPID: origin?.clientPID, state: .failed(reason), spokenAt: Date()))
+            }
+        }
     }
 
     public convenience init(model: AppModel) {
-        self.init(model: model, speechEngine: AppleSpeechEngine())
+        self.init(model: model, speechEngine: SpeechEngineFactory.makeEngine())
     }
 
     // MARK: - Keyboard
@@ -79,8 +119,7 @@ public final class AppEnvironment {
             self?.navigate(direction)
         }
         keyboard.onHoldBegan = { [weak self] in
-            guard let self, let target = self.model.selectedTarget else { return }
-            self.voice.beginHold(on: target)
+            self?.beginDictation()
         }
         keyboard.onHoldEnded = { [weak self] in
             self?.voice.endHold()
@@ -170,8 +209,11 @@ public final class AppEnvironment {
     }
 
     public func stopCapture(reason: String?) {
-        keyboard.cancelHold()
+        // The controller first: `cancelHold` looks exactly like the user letting
+        // go, and a release means "put these words in the prompt". A context
+        // change means the opposite — keep them where they were spoken.
         voice.cancel(reason: reason)
+        keyboard.cancelHold(notifyRelease: false)
     }
 
     // MARK: - Navigation
@@ -300,10 +342,73 @@ public final class AppEnvironment {
         // The terminal underneath is changing, so any history of the old one is
         // no longer what the user is looking at.
         history.identityChanged(to: identity)
-        currentPane = terminals.pane(
+        let pane = terminals.pane(
             for: identity,
             sessionName: session.name,
             attachment: model.runtime.tmux.attachment(sessionID: identity.sessionID))
+        configureAttachments(on: pane, identity: identity, target: target)
+        currentPane = pane
+    }
+
+    /// Pasted and dropped files go into the prompt through the same door as
+    /// everything else Marmy types: the identity captured here, checked again at
+    /// the moment of writing, and one delivery at a time per pane.
+    private func configureAttachments(on pane: TerminalPane, identity: TerminalIdentity, target: WorkTarget) {
+        pane.view.attachments = attachments
+        pane.view.onAttachmentFailure = { [weak self] problem in
+            guard let self else { return }
+            if let path = problem.recoveredPath {
+                // The file exists and is worth keeping: the user can copy the
+                // path even though it did not reach the prompt.
+                self.recoveredAttachmentPath = path
+            }
+            self.model.banner = .failure("That attachment was not added", problem.reason)
+        }
+        // Weak, both ways: the pane owns the view, the view owns this closure.
+        // The identity and target are values captured here and never looked up
+        // again, so a late arrival goes where it was dropped or nowhere.
+        pane.view.onInsertText = { [weak self, weak pane] insertion in
+            guard let self else { return }
+            guard let pane else {
+                self.recordInsertFailure(
+                    insertion, reason: "That terminal is no longer open, so nothing was typed.")
+                return
+            }
+            Task {
+                do {
+                    try await self.insert(
+                        insertion.text, into: identity, target: target, clientPID: pane.clientPID)
+                } catch {
+                    self.recordInsertFailure(insertion, reason: "\(error)")
+                }
+            }
+        }
+    }
+
+    /// An insertion that never reached the prompt. The file itself is fine —
+    /// only the typing failed — so the path is kept rather than lost with it.
+    func recordInsertFailure(_ insertion: MarmyTerminalView.Insertion, reason: String) {
+        if let path = insertion.recoveredPath {
+            recoveredAttachmentPath = path
+        }
+        model.banner = .failure("That attachment was not added", reason)
+    }
+
+    /// Puts the kept file's path on the clipboard, for a prompt that never got it.
+    public func copyRecoveredAttachmentPath() {
+        guard let path = recoveredAttachmentPath else { return }
+        attachmentPasteboard.clearContents()
+        attachmentPasteboard.setString(path, forType: .string)
+    }
+
+    /// Shows the kept file in the Finder.
+    public func revealRecoveredAttachment() {
+        guard let path = recoveredAttachmentPath else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+
+    public func dismissRecoveredAttachment() {
+        recoveredAttachmentPath = nil
     }
 
     public func reconnectTerminal() {
@@ -312,10 +417,12 @@ public final class AppEnvironment {
               let session = model.attachedSession(for: target)
         else { return }
         history.returnToLive()
-        currentPane = terminals.reconnect(
+        let pane = terminals.reconnect(
             identity,
             sessionName: session.name,
             attachment: model.runtime.tmux.attachment(sessionID: identity.sessionID))
+        configureAttachments(on: pane, identity: identity, target: target)
+        currentPane = pane
     }
 
     /// Puts the keyboard into the selected terminal, once it is on screen and as
@@ -335,55 +442,141 @@ public final class AppEnvironment {
 
     // MARK: - Sending
 
-    /// Sends the draft that belongs to `origin`.
-    ///
-    /// The origin is passed in by whoever asked — a button, a shortcut, a menu —
-    /// so a selection change between the click and the delivery cannot send one
-    /// agent's words to another. The message is only ever handed to the terminal
-    /// client that is actually attached to that agent.
-    public func sendDraft(from origin: WorkTarget) async {
-        guard !inFlightSends.contains(origin) else { return }
-        // A transcript may still be replacing this text; sending now would send
-        // half a sentence.
-        guard !model.drafts.isDictating(origin) else { return }
-        guard let identity = terminalIdentity(for: origin),
-              let pane = terminals.existingPane(for: identity),
-              pane.connection == .attached,
-              pane.clientPID != 0
-        else {
-            model.banner = .failure(
-                "Message not sent",
-                "This agent's terminal is not connected, so Marmy cannot confirm where the message "
-                    + "would land. Reconnect it and try again — your draft is kept.")
-            return
-        }
-
-        inFlightSends.insert(origin)
-        defer { inFlightSends.remove(origin) }
-
-        let delivered = await model.sendDraft(from: origin, clientPID: pane.clientPID)
-        // Focus goes back to the terminal only if the user is still there and the
-        // draft really went; otherwise leave them where they are.
-        if delivered, model.selectedTarget == origin, model.drafts.isEmpty(origin) {
-            focusTerminal()
-        }
-    }
-
-    public func isSending(_ target: WorkTarget) -> Bool {
-        inFlightSends.contains(target)
-    }
-
     /// The microphone button: press and hold.
     public func micPressed() {
-        guard let target = model.selectedTarget else { return }
-        voice.beginHold(on: target)
+        beginDictation()
     }
 
     public func micReleased() {
         voice.endHold()
     }
-}
 
+    /// Starts dictating to the agent on screen, remembering exactly which
+    /// terminal that is. Everything spoken belongs to that one.
+    private func beginDictation() {
+        guard let target = model.selectedTarget else { return }
+        guard !voice.isCapturing, voice.status != .finishing else { return }
+        // Words already spoken and not yet dealt with must not be pushed aside
+        // by new ones.
+        guard !dictation.hasUnresolved(for: target) else {
+            model.banner = Banner(
+                kind: .warning,
+                title: "There is dictation waiting for this agent",
+                detail: "Put it in the prompt, copy it, or discard it first — then hold Space again.")
+            return
+        }
+        guard let identity = terminalIdentity(for: target), let pane = currentPane,
+              pane.identity == identity, pane.connection == .attached
+        else {
+            model.banner = .failure(
+                "Nothing to dictate to",
+                "This agent's terminal is not connected, so there is nowhere to put what you say. "
+                    + "Start or reconnect it first.")
+            return
+        }
+
+        voice.beginHold(on: target)
+        guard let captureID = voice.captureID else { return }
+        dictationOrigins[captureID] = DictationOrigin(
+            target: target, identity: identity, clientPID: pane.clientPID == 0 ? nil : pane.clientPID)
+    }
+
+    /// Puts a finished dictation into the prompt it was spoken for.
+    ///
+    /// Nothing is submitted: the words land where the user can read them, change
+    /// them, and press Enter themselves. If the terminal is not the one they
+    /// were spoken to any more, the text stays here rather than being typed into
+    /// something else.
+    public func deliverDictation(_ captureID: UUID) async {
+        guard let item = dictation.item(id: captureID) else { return }
+        guard !inFlightPastes.contains(captureID) else { return }
+        inFlightPastes.insert(captureID)
+        defer { inFlightPastes.remove(captureID) }
+
+        dictation.markPasting(captureID)
+
+        // The terminal must still be the one the words were spoken to, and the
+        // user must still be looking at it.
+        guard model.selectedTarget == item.target,
+              terminalIdentity(for: item.target) == item.identity,
+              let pane = currentPane, pane.identity == item.identity
+        else {
+            dictation.markFailed(
+                captureID,
+                reason: "This agent's terminal changed while you were speaking, so nothing was pasted.")
+            return
+        }
+
+        do {
+            try await insert(item.text, into: item.identity, target: item.target, clientPID: pane.clientPID)
+            dictation.discard(captureID)
+            focusTerminal()
+        } catch let error as RuntimeError {
+            switch error {
+            case .deliveryUncertain:
+                // It may already be in the prompt. Nobody should repeat a long
+                // dictation on a guess.
+                dictation.markUncertain(captureID, reason: "\(error)")
+            default:
+                dictation.markFailed(captureID, reason: "\(error)")
+            }
+        } catch {
+            dictation.markFailed(captureID, reason: "\(error)")
+        }
+    }
+
+    /// Puts text into one exact pane, through the runtime's checks and its
+    /// per-pane queue, so nothing else can land in the middle of it.
+    func insert(
+        _ text: String,
+        into identity: TerminalIdentity,
+        target: WorkTarget,
+        clientPID: Int32
+    ) async throws {
+        let expected = AgentRuntime.DeliveryTarget(
+            sessionID: identity.sessionID,
+            paneID: identity.paneID,
+            server: identity.server,
+            generation: UUID(uuidString: identity.generation))
+        switch target {
+        case .node(let nodeID):
+            try await model.runtime.paste(
+                text, toNode: nodeID, expecting: expected,
+                fromClient: clientPID == 0 ? nil : clientPID)
+        case .localSession:
+            try await model.runtime.paste(
+                text, toSessionID: identity.sessionID, expecting: expected,
+                fromClient: clientPID == 0 ? nil : clientPID)
+        }
+    }
+
+    /// Tries a held dictation again, at the user's word.
+    public func retryDictation(_ captureID: UUID) async {
+        guard var item = dictation.item(id: captureID) else { return }
+        guard !inFlightPastes.contains(captureID) else { return }
+        // The terminal may be a different one now; the words still belong to
+        // this agent, so retry against where it is today.
+        if let identity = terminalIdentity(for: item.target) {
+            item.identity = identity
+            item.clientPID = currentPane?.clientPID
+            dictation.hold(item)
+        }
+        await deliverDictation(captureID)
+    }
+
+    public func discardDictation(_ captureID: UUID) {
+        dictation.discard(captureID)
+    }
+
+    /// Used when there is no terminal to name — the words are still kept.
+    private func unknownIdentity(for target: WorkTarget) -> TerminalIdentity {
+        TerminalIdentity(
+            target: target,
+            server: model.readout.server ?? TmuxServerIdentity(pid: 0, socketPath: "", startTime: 0),
+            sessionID: "", paneID: "")
+    }
+
+}
 
 /// Scrollback comes from the same runtime that owns the bindings, so history is
 /// read from the pane this agent is actually attached to and nothing else.

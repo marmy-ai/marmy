@@ -19,69 +19,6 @@ final class AppModelTests: XCTestCase {
 
     // MARK: - Drafts and sending
 
-    func testADraftBelongsToTheAgentItWasWrittenFor() {
-        let model = bench.model
-        let first = WorkTarget.node(bench.workers[0].id)
-        let second = WorkTarget.node(bench.workers[1].id)
-
-        model.drafts.setText("for the implementer", for: first)
-        model.drafts.setText("for the verifier", for: second)
-
-        XCTAssertEqual(model.drafts.text(for: first), "for the implementer")
-        XCTAssertEqual(model.drafts.text(for: second), "for the verifier")
-    }
-
-    func testTextTypedWhileAMessageIsInFlightIsNotThrownAway() async throws {
-        try await bench.bindEverything()
-        let target = WorkTarget.node(bench.workers[0].id)
-        bench.model.drafts.setText("first message", for: target)
-        // The send takes a moment, which is when the user types the next thing.
-        bench.runner.delay = 0.15
-
-        let send = Task { await bench.model.sendDraft(from: target, clientPID: 41) }
-        try await Task.sleep(for: .milliseconds(60))
-        bench.model.drafts.setText("first message, and more", for: target)
-        _ = await send.value
-
-        XCTAssertEqual(bench.model.drafts.text(for: target), "first message, and more",
-                       "only the exact text that was sent may be cleared")
-    }
-
-    func testADeliveredDraftIsCleared() async throws {
-        try await bench.bindEverything()
-        let target = WorkTarget.node(bench.workers[0].id)
-        bench.model.drafts.setText("ship it", for: target)
-
-        await bench.model.sendDraft(from: target, clientPID: 41)
-        XCTAssertTrue(bench.model.drafts.isEmpty(target))
-    }
-
-    func testAFailedSendKeepsTheDraft() async throws {
-        try await bench.bindEverything()
-        let target = WorkTarget.node(bench.workers[0].id)
-        bench.model.drafts.setText("do not lose me", for: target)
-        bench.runner.stub("paste-buffer", CommandResult(exitCode: 1, standardError: "can't find pane: %1"))
-
-        let delivered = await bench.model.sendDraft(from: target, clientPID: 41)
-        XCTAssertFalse(delivered)
-        XCTAssertEqual(bench.model.drafts.text(for: target), "do not lose me")
-        XCTAssertNotNil(bench.model.banner)
-    }
-
-    func testSendingNeedsAnAttachedTerminal() async throws {
-        try await bench.bindEverything()
-        let target = WorkTarget.node(bench.workers[0].id)
-        bench.model.drafts.setText("hello", for: target)
-
-        // No terminal has been attached for this target, so the environment
-        // refuses rather than sending somewhere it cannot verify.
-        await bench.env.sendDraft(from: target)
-
-        XCTAssertEqual(bench.model.drafts.text(for: target), "hello")
-        XCTAssertTrue(bench.runner.calls(of: "load-buffer").isEmpty)
-        XCTAssertEqual(bench.model.banner?.kind, .failure)
-    }
-
     // MARK: - Navigation
 
     func testNavigationMovesWithinTheTeamAndRemembersWhereItWas() {
@@ -268,7 +205,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.selectedTopologyID, bench.topology.id)
     }
 
-    func testDeletingAnotherTeamLeavesYourSelectionAndDraftsAlone() async throws {
+    func testDeletingAnotherTeamLeavesYourSelectionAlone() async throws {
         let model = bench.model
         let other = Topology(name: "Other team", nodes: [AgentNode(
             sessionName: "other-lead", displayName: "Other lead", kind: .manager,
@@ -276,14 +213,11 @@ final class AppModelTests: XCTestCase {
         model.addTeam(other)
 
         model.select(node: bench.workers[1].id)
-        let draftTarget = WorkTarget.node(bench.workers[1].id)
-        model.drafts.setText("still mine", for: draftTarget)
 
         await bench.env.confirmDeletion(of: other.id)
 
         XCTAssertEqual(model.selectedTopologyID, bench.topology.id)
         XCTAssertEqual(model.selectedNodeID, bench.workers[1].id, "the agent you were on is untouched")
-        XCTAssertEqual(model.drafts.text(for: draftTarget), "still mine")
         XCTAssertEqual(model.topologies.map(\.id), [bench.topology.id])
     }
 

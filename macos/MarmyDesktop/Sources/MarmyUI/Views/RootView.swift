@@ -30,6 +30,13 @@ public struct RootView: View {
                 if let banner = model.banner {
                     BannerView(banner: banner) { model.banner = nil }
                 }
+                if let path = env.recoveredAttachmentPath {
+                    RecoveredAttachmentBanner(
+                        path: path,
+                        copy: { env.copyRecoveredAttachmentPath() },
+                        reveal: { env.revealRecoveredAttachment() },
+                        dismiss: { env.dismissRecoveredAttachment() })
+                }
                 if let failure = model.runtimeFailure {
                     BannerView(
                         banner: Banner(kind: .warning, title: "tmux could not be read", detail: failure)

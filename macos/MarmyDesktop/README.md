@@ -61,9 +61,10 @@ the exact v1.20.0 commit `5d14406844143538cd8f8851d2d8a67c1fe443e5`.
    prompt, that each folder exists, that each CLI is installed, and that no
    session name is already taken. If anything fails, *nothing* is started. Each
    agent gets its own tmux session and its rendered prompt as its first message.
-4. **Work** — the selected agent's terminal fills the window. Type in the
-   composer and press ⌘↩, or hold Space to dictate. Move between agents with the
-   keyboard; each keeps its own draft.
+4. **Work** — the selected agent's terminal fills the window. You type in the
+   terminal itself: there is no second box. Hold Space to dictate, and when you
+   let go the words are put into that agent's own prompt for you to read, change,
+   and send. Move between agents with the keyboard.
 
 **Terminal nodes.** Set an agent's CLI to **Terminal** and it starts your login
 shell in its folder instead of an agent: for scripts, build watches, or a harness
@@ -73,6 +74,13 @@ automatic updates. Text typed into a shell is a command, and nobody is reading i
 on the other end. Other agents are told it is a manual terminal and not to
 message it. You can still type in it yourself, and still send it a line from
 Marmy if you mean to.
+
+**Images.** Paste a screenshot (⌘V) or drag one in, and Marmy saves it under
+`pasted-images/` — readable only by you — and types its quoted path at the
+prompt, without Enter. Dragging a file that already exists uses it where it is.
+Files an app has only promised (a screenshot dragged straight out of Preview) are
+received first, then typed. Nothing is ever deleted from that folder: an agent may
+still be about to read it.
 
 **Scrolling back.** Scroll up in a terminal and Marmy opens that pane's real
 tmux scrollback in a read-only view: selectable, colours intact, held still while
@@ -85,8 +93,8 @@ before that can happen.)
 
 **Existing sessions.** Every tmux session on this Mac that is not part of a team
 is listed under *Local sessions*. Opening one just attaches a terminal: nothing
-is imported, renamed, restarted, or sent to it. It gets a draft and dictation
-like any agent. To make one part of a team, select an agent and use *Attach an
+is imported, renamed, restarted, or sent to it. You can dictate into it like any
+agent. To make one part of a team, select an agent and use *Attach an
 existing session…* — still without sending it anything.
 
 **Deleting.** *Delete team…* is in the team menu in the toolbar and in the
@@ -107,7 +115,7 @@ can all be closed at once, and selecting an agent never reopens one.
 | ⌘↓ | Go to the report you were in last, or the first one |
 | Hold Space | Dictate to the selected agent (while the terminal has focus) |
 | Tap Space | An ordinary space in the terminal |
-| ⌘↩ | Send the draft |
+| ⌘V | Paste — text goes to the terminal; an image is saved and its path typed |
 | ⌘R | Start the selected agent |
 | ⌘1 / ⌘2 | Work view / Topology view |
 | ⌘N | New team |
@@ -124,19 +132,46 @@ remembers which report you were in, so coming back returns you there.
 
 ## Dictation
 
-Hold Space (or press and hold the microphone button) to dictate into the draft of
-the agent you are looking at. Marmy asks for **Microphone** and **Speech
-Recognition** permission the first time you do that — never at launch. If either
-is refused, the composer says which one and links to the right settings pane.
+Hold Space (or press and hold the microphone button) to dictate to the agent you
+are looking at. What you say appears under the terminal as it is heard; when you
+let go it is **put into that agent's own prompt and left there** — Marmy never
+presses Return for you. You read it, change it if you like, and send it from the
+terminal. Marmy asks for microphone permission the first time you
+hold, never at launch, and says which permission is missing if one is refused.
 
-Recognition uses Apple's Speech framework. It stays on this Mac when the language
-model for your locale supports it; when it does not, macOS sends audio to Apple's
-servers, and the composer says *via Apple's servers* while that is happening.
+Marmy will not paste on its own if it cannot be sure the text is inert. tmux
+gives no way to ask whether the program in a pane treats a pasted line break as
+text or as Return, so anything with more than one line, or with control
+characters in it, is **kept and offered back** — retry, copy, or discard — rather
+than risking running it. Your own ⌘V in the terminal is untouched.
+
+Words are never lost. If you move to another agent mid-sentence, if the terminal
+reconnects, or if a paste cannot be confirmed, the transcript stays with the
+agent it was spoken to, with a reason and buttons to try again, copy it, or throw
+it away. When a paste's outcome is unknown, Marmy says so and asks you to look
+before it will try again.
+
+Recognition uses Apple's Speech framework. On macOS 26 Marmy uses the long-form
+engine (`SpeechAnalyzer`), which is built for dictation that runs for minutes: it
+commits stretches of speech as you talk and only revises its guess at the tail,
+so the opening sentence of a five-minute prompt is still there at the end. It
+runs on this Mac, from a language model kept locally; the first time you dictate,
+Marmy says it is getting that ready rather than failing quietly.
+
+Older systems use the short-utterance recogniser (`SFSpeechRecognizer`), which
+stops on its own after about a minute. Marmy does **not** start another one and
+carry on: a new recogniser would miss whatever was said across the changeover,
+and there is no way to say how much. It stops, keeps every word already heard,
+and tells you the dictation was interrupted so you can carry on where it left
+off. Nothing is ever silently truncated. That recogniser may also send audio to
+Apple's servers when on-device recognition is not available for your language —
+the long-form engine on macOS 26 does not.
 
 A recording belongs to the agent it started on. Letting go, switching agent or
 mode, opening a sheet, losing focus, or deleting that agent all end it, and a
-result that arrives late can only ever land in the draft it was spoken for.
-Dictation never sends anything by itself — you still press ⌘↩.
+result that arrives late can only ever reach the agent it was spoken to.
+Dictation never sends anything by itself: letting go puts the words in that
+agent's own prompt, and you send them from the terminal with Return.
 
 ## Templates
 
@@ -195,7 +230,7 @@ swift run -c release MarmyDesktop --ui-smoke-test /tmp/marmy-ui
 This runs the real views over an isolated workspace and its own private tmux
 server, starts three fixture agents (a shell script that echoes its arguments and
 then runs `cat` — no agent CLI, no model call), exercises selection, keyboard
-navigation, drafts, dictation with scripted speech events, a real message
+navigation, dictation with scripted speech events, a real message
 delivery, and reconnecting, then writes PNGs and `smoke-report.txt` and exits
 non-zero if anything failed. It never touches your tmux server, your saved
 workspace, the microphone, or screen-recording and accessibility permissions.

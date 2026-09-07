@@ -10,6 +10,8 @@ public enum RuntimeError: Error, CustomStringConvertible, Equatable {
     case agentExitedImmediately(sessionName: String, detail: String)
     case paneNotVisible(sessionName: String)
     case readOnly(detail: String)
+    case unsafeToInsert(reason: String)
+    case deliveryUncertain(detail: String)
     case terminalNotAttached
     case terminalShowingSomethingElse(expected: String, actual: String)
     case emptyMessage
@@ -34,6 +36,11 @@ public enum RuntimeError: Error, CustomStringConvertible, Equatable {
                 + "Switch back to it in tmux, then send again; nothing was sent."
         case .readOnly(let detail):
             return "Marmy is not controlling tmux right now, so nothing was started, attached, or sent. \(detail)"
+        case .unsafeToInsert(let reason):
+            return reason
+        case .deliveryUncertain(let detail):
+            return "Marmy could not confirm what reached the agent: \(detail) "
+                + "Look at the terminal before trying again — the text may already be there."
         case .terminalNotAttached:
             return "This terminal is no longer attached to tmux. Reconnect it, then send again; "
                 + "nothing was sent."
@@ -89,6 +96,8 @@ public actor AgentRuntime {
 
     private var ledger: RuntimeLedger
     private var launching: Set<UUID> = []
+    /// Deliveries currently touching a pane, so they take turns.
+    private var paneDeliveries: [String: Task<Void, Never>] = [:]
     /// True when the ledger could not be read. Reading tmux still works, so the
     /// user can see what is running; nothing may be changed or written.
     private let readOnlyReason: String?
@@ -394,9 +403,126 @@ public actor AgentRuntime {
     /// that ended — or a different one that took its name — gets an error rather
     /// than someone else's terminal receiving the text. The message travels
     /// through a private tmux buffer, never through a command line.
+    /// The exact live thing a delivery is for, as it was when the user acted.
+    public struct DeliveryTarget: Sendable, Equatable {
+        public var sessionID: String
+        public var paneID: String
+        public var server: TmuxServerIdentity
+        /// The launch this pane belongs to, for a team member.
+        public var generation: UUID?
+
+        public init(
+            sessionID: String,
+            paneID: String,
+            server: TmuxServerIdentity,
+            generation: UUID? = nil
+        ) {
+            self.sessionID = sessionID
+            self.paneID = paneID
+            self.server = server
+            self.generation = generation
+        }
+    }
+
+    /// How far a delivery goes.
+    public enum Delivery: Sendable, Equatable {
+        /// Put the text in the agent's prompt and press Enter for them.
+        case submit
+        /// Put the text in the prompt and leave it there, for the user to read,
+        /// edit, and send themselves.
+        case insert
+    }
+
+    /// Puts text into an agent's prompt without pressing Enter.
+    ///
+    /// Used for dictation: the words go where the user can see and change them,
+    /// and sending remains their decision. Everything else — the identity
+    /// checks, the private buffer — is exactly as it is for a message.
+    public func paste(
+        _ text: String,
+        toNode nodeID: UUID,
+        expecting expected: DeliveryTarget,
+        fromClient clientPID: Int32? = nil
+    ) async throws {
+        // Marmy is typing this, not the user: it has to be inert.
+        if let refusal = InsertSafety.refusal(for: text) {
+            throw RuntimeError.unsafeToInsert(reason: refusal.description)
+        }
+        try await withPane(expected.paneID) {
+            try await self.verify(expected, nodeID: nodeID, clientPID: clientPID)
+            try await self.deliver(text, to: expected.paneID, delivery: .insert)
+        }
+    }
+
+    public func paste(
+        _ text: String,
+        toSessionID sessionID: String,
+        expecting expected: DeliveryTarget,
+        fromClient clientPID: Int32? = nil
+    ) async throws {
+        if let refusal = InsertSafety.refusal(for: text) {
+            throw RuntimeError.unsafeToInsert(reason: refusal.description)
+        }
+        try await withPane(expected.paneID) {
+            try await self.verify(expected, nodeID: nil, clientPID: clientPID)
+            try await self.deliver(text, to: expected.paneID, delivery: .insert)
+        }
+    }
+
+    /// Checks, as late as possible, that the pane about to be written to is
+    /// still the one the user was looking at.
+    private func verify(_ expected: DeliveryTarget, nodeID: UUID?, clientPID: Int32?) async throws {
+        try requireWritable()
+        let server = try await tmux.serverIdentity()
+        guard server == expected.server else {
+            throw RuntimeError.identityMismatch(detail: "tmux has restarted since then.")
+        }
+        if let nodeID {
+            guard let binding = ledger.binding(nodeID: nodeID) else {
+                throw RuntimeError.notBound(nodeID: nodeID)
+            }
+            guard binding.sessionID == expected.sessionID, binding.paneID == expected.paneID else {
+                throw RuntimeError.identityMismatch(detail: "This agent is attached somewhere else now.")
+            }
+            if let generation = expected.generation, binding.generation != generation {
+                throw RuntimeError.identityMismatch(detail: "This agent has been started again since then.")
+            }
+        }
+        let panes = try await tmux.listPanes()
+        guard let pane = panes.first(where: { $0.id == expected.paneID }) else {
+            throw RuntimeError.identityMismatch(detail: "Pane \(expected.paneID) is gone.")
+        }
+        guard pane.sessionID == expected.sessionID else {
+            throw RuntimeError.identityMismatch(detail: "Pane \(expected.paneID) belongs to \(pane.sessionName) now.")
+        }
+        guard pane.isActive, pane.isWindowActive else {
+            throw RuntimeError.paneNotVisible(sessionName: pane.sessionName)
+        }
+        try await requireClientIsShowing(
+            sessionID: expected.sessionID, paneID: expected.paneID,
+            sessionName: pane.sessionName, clientPID: clientPID)
+    }
+
+    /// One delivery at a time per pane, so dictation, an image path and a team
+    /// update cannot interleave halfway through each other.
+    private func withPane<T>(_ paneID: String, _ work: () async throws -> T) async throws -> T {
+        while let inFlight = paneDeliveries[paneID] {
+            _ = await inFlight.result
+        }
+        let gate = Task<Void, Never> { }
+        paneDeliveries[paneID] = gate
+        defer { paneDeliveries[paneID] = nil }
+        return try await work()
+    }
+
     /// `fromClient` is the PID of the embedded terminal's tmux client, when the
     /// message is being sent from a terminal the user is looking at.
-    public func send(_ text: String, toNode nodeID: UUID, fromClient clientPID: Int32? = nil) async throws {
+    public func send(
+        _ text: String,
+        toNode nodeID: UUID,
+        fromClient clientPID: Int32? = nil,
+        delivery: Delivery = .submit
+    ) async throws {
         try requireWritable()
         guard !text.isEmpty else { throw RuntimeError.emptyMessage }
         guard let binding = ledger.binding(nodeID: nodeID) else {
@@ -415,7 +541,7 @@ public actor AgentRuntime {
         try await requireClientIsShowing(
             sessionID: binding.sessionID, paneID: binding.paneID,
             sessionName: binding.sessionName, clientPID: clientPID)
-        try await deliver(text, to: binding.paneID)
+        try await deliver(text, to: binding.paneID, delivery: delivery)
     }
 
     /// Sends to a live session the user opened directly, without adding it to a
@@ -429,7 +555,8 @@ public actor AgentRuntime {
         toSessionID sessionID: String,
         onServer expectedServer: TmuxServerIdentity? = nil,
         expectedPaneID: String? = nil,
-        fromClient clientPID: Int32? = nil
+        fromClient clientPID: Int32? = nil,
+        delivery: Delivery = .submit
     ) async throws {
         try requireWritable()
         guard !text.isEmpty else { throw RuntimeError.emptyMessage }
@@ -456,7 +583,7 @@ public actor AgentRuntime {
         }
         try await requireClientIsShowing(
             sessionID: sessionID, paneID: pane.id, sessionName: session.name, clientPID: clientPID)
-        try await deliver(text, to: pane.id)
+        try await deliver(text, to: pane.id, delivery: delivery)
     }
 
     /// Confirms the embedded terminal is still looking at this session and pane.
@@ -498,18 +625,29 @@ public actor AgentRuntime {
         }
     }
 
-    /// The message travels as a private buffer, so the text is never parsed as a
-    /// command by tmux or by a shell.
-    private func deliver(_ text: String, to paneID: String) async throws {
+    /// The text travels as a private buffer, so it is never parsed as a command
+    /// by tmux or by a shell. Enter is a separate step, and only for a submit.
+    private func deliver(_ text: String, to paneID: String, delivery: Delivery) async throws {
         let bufferName = "marmy-\(makeID().uuidString.lowercased())"
+        // Loading the buffer changes nothing in the pane, so a failure here is
+        // safe to retry.
         try await tmux.loadBuffer(name: bufferName, text: text)
         do {
-            // paste-buffer -d removes the buffer itself on success.
+            // paste-buffer -d removes the buffer itself on success. The paste
+            // inserts at the cursor: whatever the user had typed stays.
             try await tmux.pasteBuffer(name: bufferName, target: paneID)
-            try await tmux.sendEnter(target: paneID)
         } catch {
             try? await tmux.deleteBuffer(name: bufferName)
-            throw error
+            // The paste may have gone in before this failed; nobody should
+            // repeat a long prompt on a guess.
+            throw RuntimeError.deliveryUncertain(detail: "\(error)")
+        }
+        if delivery == .submit {
+            do {
+                try await tmux.sendEnter(target: paneID)
+            } catch {
+                throw RuntimeError.deliveryUncertain(detail: "\(error)")
+            }
         }
     }
 
