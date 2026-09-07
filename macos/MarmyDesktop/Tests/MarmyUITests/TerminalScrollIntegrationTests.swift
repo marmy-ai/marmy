@@ -126,10 +126,19 @@ final class TerminalScrollIntegrationTests: XCTestCase {
         (try? Data(contentsOf: URL(fileURLWithPath: recordingPath))) ?? Data()
     }
 
-    private func wheelEvent(lines: Int32) throws -> NSEvent {
+    private func wheelEvent(lines: Int32, over view: NSView? = nil) throws -> NSEvent {
         let cgEvent = try XCTUnwrap(CGEvent(
             scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
             wheel1: lines, wheel2: 0, wheel3: 0))
+        guard let view else { return try XCTUnwrap(NSEvent(cgEvent: cgEvent)) }
+        // Somewhere inside the pane: the cell under the pointer is part of what
+        // a mouse report says.
+        let point = view.convert(NSPoint(x: 80, y: 100), to: nil)
+        cgEvent.location = point
+        let first = try XCTUnwrap(NSEvent(cgEvent: cgEvent))
+        if abs(first.locationInWindow.y - point.y) > 0.5 {
+            cgEvent.location.y += first.locationInWindow.y - point.y
+        }
         return try XCTUnwrap(NSEvent(cgEvent: cgEvent))
     }
 
@@ -174,6 +183,90 @@ final class TerminalScrollIntegrationTests: XCTestCase {
 
         XCTAssertEqual(receivedBytes.count, before, "not one byte reaches the agent")
         XCTAssertEqual(reported.count, 5, "every gesture went to Marmy instead")
+    }
+
+    // MARK: - Which way a gesture goes
+
+    func testAMouseAwareProgramGetsTheWheelItself() throws {
+        // A full-screen program that asks for the mouse — Claude does — scrolls
+        // its own transcript. Its tmux scrollback is empty, so sending this to
+        // copy mode would scroll nothing. The program has to ask for real: the
+        // escape has to come out of the pane, or tmux drops the event.
+        let fixture = root.appendingPathComponent("mouse.py")
+        let mouseInput = root.appendingPathComponent("mouse-received.bin")
+        try """
+        import os, sys, tty
+        tty.setraw(0)
+        os.write(1, b'\\x1b[?1049h\\x1b[?1000h\\x1b[?1006h')
+        os.write(1, b'\\x1b[HFULL SCREEN TRANSCRIPT')
+        out = open(\(escaped(mouseInput.path)), "wb", buffering=0)
+        while True:
+            data = os.read(0, 4096)
+            if not data:
+                break
+            out.write(data)
+        """.write(to: fixture, atomically: true, encoding: .utf8)
+
+        let python = try XCTUnwrap(ExecutableLocator().locate("python3"))
+        let started = try awaitValue { try await self.tmux.newSession(
+            name: "mouse-aware", directory: self.root.path,
+            executable: python, arguments: [fixture.path]) }
+        let identity = TerminalIdentity(
+            target: .node(UUID()),
+            server: try awaitValue { try await self.tmux.serverIdentity()! },
+            sessionID: started.sessionID,
+            paneID: started.paneID)
+        let controller = TerminalController()
+        let mousePane = controller.pane(
+            for: identity, sessionName: started.sessionName,
+            attachment: tmux.attachment(sessionID: started.sessionID))
+        window.contentView?.addSubview(mousePane.view)
+        mousePane.view.frame = window.contentView?.bounds ?? .zero
+        defer { controller.release(mousePane) }
+        settle(seconds: 2.0)
+
+        // The mode has to have arrived through the pane, not been poked in.
+        XCTAssertNotEqual(mousePane.view.getTerminal().mouseMode, .off,
+                          "the fixture asked for the mouse and tmux passed it on")
+        let before = (try? Data(contentsOf: mouseInput))?.count ?? 0
+
+        var reported: [Int] = []
+        let monitor = TerminalScrollMonitor()
+        monitor.terminalView = { mousePane.view }
+        monitor.hitTest = { _, _ in mousePane.view }
+        monitor.onScrollLines = { reported.append($0) }
+
+        XCTAssertNil(monitor.handle(try wheelEvent(lines: 3, over: mousePane.view)))
+        settle(seconds: 1.5)
+
+        XCTAssertTrue(reported.isEmpty, "tmux is not asked to scroll for it")
+        let after = (try? Data(contentsOf: mouseInput))?.count ?? 0
+        XCTAssertGreaterThan(after, before,
+                             "the program was sent the wheel, as its own terminal would")
+        XCTAssertEqual(
+            try awaitValue { try await self.tmux.paneMode(started.paneID) }, "",
+            "and it never went into copy mode")
+    }
+
+    func testAProgramThatIsNotWatchingTheMouseGoesThroughTmux() throws {
+        // A shell, or Codex: nothing is tracking the mouse, so the gesture is
+        // tmux's to act on, and not one byte reaches the program.
+        settle(seconds: 0.6)
+        let pane = try XCTUnwrap(self.pane)
+        XCTAssertEqual(pane.view.getTerminal().mouseMode, .off)
+        let before = receivedBytes
+
+        var reported: [Int] = []
+        let monitor = TerminalScrollMonitor()
+        monitor.terminalView = { pane.view }
+        monitor.hitTest = { _, _ in pane.view }
+        monitor.onScrollLines = { reported.append($0) }
+
+        XCTAssertNil(monitor.handle(try wheelEvent(lines: 3)))
+        settle(seconds: 0.6)
+
+        XCTAssertFalse(reported.isEmpty, "tmux scrolls it")
+        XCTAssertEqual(receivedBytes, before, "and the agent is sent nothing")
     }
 
     // MARK: - Scrolling the terminal itself

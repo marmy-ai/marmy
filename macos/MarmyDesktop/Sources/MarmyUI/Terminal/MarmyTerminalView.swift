@@ -338,8 +338,26 @@ public final class TerminalScrollMonitor {
             return event
         }
 
-        // Taken. Whether it also moves the history is a separate question.
-        guard shouldReportScroll(), let lines = lines(for: event, in: terminal) else { return nil }
+        guard shouldReportScroll() else { return nil }
+
+        // Some agents draw their own full-screen interface and ask for the
+        // mouse; Claude does. For those the wheel belongs to the program, not to
+        // tmux's scrollback — which for a full-screen pane is empty anyway. Hand
+        // the event straight to SwiftTerm, which encodes it and writes it to the
+        // connection already open: no process, and the agent scrolls its own
+        // transcript. The mouse-mode check is what makes this safe, because it
+        // is exactly the condition under which SwiftTerm reports rather than
+        // falling back to arrow keys.
+        if let view = terminal as? MarmyTerminalView,
+           view.allowMouseReporting,
+           !event.modifierFlags.contains(.shift),
+           view.getTerminal().mouseMode != .off {
+            view.scrollWheel(with: event)
+            return nil
+        }
+
+        // Everything else: tmux's own scrollback, through the runtime.
+        guard let lines = lines(for: event, in: terminal) else { return nil }
         onScrollLines(lines)
         return nil
     }
