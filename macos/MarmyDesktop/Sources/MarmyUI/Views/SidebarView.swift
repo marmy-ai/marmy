@@ -22,7 +22,7 @@ struct SidebarView: View {
                 }
                 ForEach(model.topologies) { topology in
                     teamRow(topology)
-                    if model.selectedTopologyID == topology.id {
+                    if model.isExpanded(topology.id) {
                         ForEach(Self.flatten(topology), id: \.node.id) { entry in
                             nodeRow(entry.node, depth: entry.depth)
                         }
@@ -79,11 +79,23 @@ struct SidebarView: View {
     private func teamRow(_ topology: Topology) -> some View {
         let running = topology.nodes.filter { model.state(of: $0.id).isRunning }.count
         let isSelected = model.selectedTopologyID == topology.id && model.selectedLocalSession == nil
+        let isExpanded = model.isExpanded(topology.id)
 
         return HStack(spacing: 6) {
-            Image(systemName: isSelected ? "chevron.down" : "chevron.right")
-                .font(.caption2)
-                .foregroundStyle(Theme.muted)
+            // Opening and closing a team is separate from selecting it: every
+            // team can be closed at once, and picking an agent never reopens one.
+            Button {
+                model.toggleExpansion(topology.id)
+            } label: {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.muted)
+                    .frame(width: 12, height: 12)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "Collapse \(topology.name)" : "Expand \(topology.name)")
+
             Text(topology.name)
                 .fontWeight(isSelected ? .medium : .regular)
                 .lineLimit(1)
@@ -98,6 +110,16 @@ struct SidebarView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { env.selectTopology(topology.id) }
+        .contextMenu {
+            Button("Open in Topology view") {
+                env.selectTopology(topology.id)
+                model.mode = .topology
+            }
+            Divider()
+            Button("Delete team…", role: .destructive) {
+                env.requestDeletion(of: topology)
+            }
+        }
     }
 
     private func nodeRow(_ node: AgentNode, depth: Int) -> some View {

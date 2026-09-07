@@ -265,7 +265,7 @@ struct ShortcutsView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let rows: [(String, String)] = [
-        ("⌃⇥", "Next agent at this level"),
+        ("⌃⇥", "Next agent at this level — top-level agents cycle across every team"),
         ("⌃⇧⇥", "Previous agent at this level"),
         ("⌘↑", "Go to the manager"),
         ("⌘↓", "Go to the last report you were in"),
@@ -292,6 +292,9 @@ struct ShortcutsView: View {
             }
             Text("Hierarchy shortcuts work in the work view, including while the terminal has focus. "
                 + "They stay out of the way while you are typing in a field.")
+            Text("An agent with no manager is a top-level agent: its peers are the top-level agents of "
+                + "every team, so ⌃⇥ moves between the orchestrators you are running. An agent that "
+                + "reports to someone cycles only among that manager's reports.")
                 .font(.caption)
                 .foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)

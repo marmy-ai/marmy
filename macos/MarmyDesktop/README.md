@@ -52,7 +52,8 @@ the exact v1.20.0 commit `5d14406844143538cd8f8851d2d8a67c1fe443e5`.
 
 1. **New team** — pick a starter shape (a lead and one worker, a lead and two
    workers, or a single manager), a folder, and a CLI.
-2. **Topology** — lay the team out: drag nodes, drag a node's bottom handle onto
+2. **Topology** — lay the team out (new agents are named Worker 1, Worker 2,
+   Manager 1 … until you rename them): drag nodes, drag a node's bottom handle onto
    a manager to report to them, and use the inspector on the right for names,
    role, CLI, model, folder, manager, permitted contacts, role prompt, and extra
    instructions. Loops are refused with the reason.
@@ -70,14 +71,20 @@ is imported, renamed, restarted, or sent to it. It gets a draft and dictation
 like any agent. To make one part of a team, select an agent and use *Attach an
 existing session…* — still without sending it anything.
 
-**Deleting.** Removing a node or a team removes Marmy's organisation only. Any
-session that was running keeps running and reappears under *Local sessions*.
+**Deleting.** *Delete team…* is in the team menu in the toolbar and in the
+sidebar's context menu, and always asks first — the confirmation names the team
+and lists the tmux sessions that will keep running. Removing a node or a team
+removes Marmy's organisation only. Any session that was running keeps running and
+reappears under *Local sessions*.
+
+**Sidebar.** Each team opens and closes independently with its own chevron; they
+can all be closed at once, and selecting an agent never reopens one.
 
 ## Keyboard
 
 | Key | Does |
 | --- | --- |
-| ⌃⇥ / ⌃⇧⇥ | Next / previous agent at the same level (root managers are peers) |
+| ⌃⇥ / ⌃⇧⇥ | Next / previous agent at the same level (top-level agents cycle across every team) |
 | ⌘↑ | Go to the manager |
 | ⌘↓ | Go to the report you were in last, or the first one |
 | Hold Space | Dictate to the selected agent (while the terminal has focus) |
@@ -90,6 +97,12 @@ session that was running keeps running and reappears under *Local sessions*.
 Hierarchy keys work in the work view, including while the terminal has focus.
 They stay out of the way while you are typing in a field: ⌘↑/⌘↓ keep their normal
 text-editing meaning there.
+
+**Two layers.** An agent with no manager is a top-level agent, and its peers are
+the top-level agents of *every* team — so ⌃⇥ moves between the orchestrators you
+are running, wrapping around. An agent that reports to someone cycles only among
+that manager's reports, so you stay inside the team you are working in. Each team
+remembers which report you were in, so coming back returns you there.
 
 ## Dictation
 

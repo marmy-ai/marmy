@@ -36,6 +36,9 @@ public final class AppModel {
     public private(set) var navigation: [UUID: NavigationState] = [:]
     /// Node being edited in the topology inspector.
     public var inspectedNodeID: UUID?
+    /// Which teams are open in the sidebar. Every team can be closed at once,
+    /// and selecting an agent never forces a team back open.
+    public var expandedTopologyIDs: Set<UUID> = []
     public var showsContactConnections = true
 
     public let drafts = DraftStore()
@@ -71,6 +74,8 @@ public final class AppModel {
         selectedTopologyID = workspace.topologies.first?.id
         if let id = selectedTopologyID, let first = workspace.topology(id)?.nodes.first {
             navigation[id] = NavigationState(selectedNodeID: first.id)
+            // One team open to begin with; after that it is the user's business.
+            expandedTopologyIDs = [id]
         }
     }
 
@@ -98,6 +103,18 @@ public final class AppModel {
         if let key = selectedLocalSession { return .localSession(key) }
         if let nodeID = selectedNodeID { return .node(nodeID) }
         return nil
+    }
+
+    public func isExpanded(_ topologyID: UUID) -> Bool {
+        expandedTopologyIDs.contains(topologyID)
+    }
+
+    public func toggleExpansion(_ topologyID: UUID) {
+        if expandedTopologyIDs.contains(topologyID) {
+            expandedTopologyIDs.remove(topologyID)
+        } else {
+            expandedTopologyIDs.insert(topologyID)
+        }
     }
 
     public func selectTopology(_ topologyID: UUID) {
@@ -129,12 +146,51 @@ public final class AppModel {
             sessionID: session.id, server: server, paneID: pane?.id ?? "")
     }
 
-    /// Keyboard navigation. Selection stays inside the current team, and the
-    /// report you last looked at is remembered per manager.
+    /// Where the selection is, as a team plus an agent.
+    public var selectedLocation: AgentLocation? {
+        guard let topologyID = selectedTopologyID, let nodeID = selectedNodeID else { return nil }
+        return AgentLocation(topologyID: topologyID, nodeID: nodeID)
+    }
+
+    /// Keyboard navigation.
+    ///
+    /// At the root layer this crosses teams — the orchestrators you are running
+    /// are peers of each other. Under a manager it stays among that manager's
+    /// reports. Each team keeps its own memory of where you were.
     public func move(_ move: NavigationMove) {
-        guard let topology = selectedTopology else { return }
         selectedLocalSession = nil
-        apply(move, in: topology)
+        let from = selectedLocation
+        let remembered = from.flatMap { navigation[$0.topologyID]?.lastVisitedChild } ?? [:]
+
+        guard let destination = WorkspaceNavigator.destination(
+            for: move, from: from, in: workspace.topologies, rememberedChildren: remembered)
+        else { return }
+        guard destination != from else { return }
+
+        select(location: destination, recordingParentOf: from, for: move)
+    }
+
+    /// Applies a destination, keeping the per-team memory current.
+    private func select(location: AgentLocation, recordingParentOf previous: AgentLocation?, for move: NavigationMove) {
+        guard let topology = workspace.topology(location.topologyID) else { return }
+
+        var state = navigation[location.topologyID] ?? NavigationState()
+        state.selectedNodeID = location.nodeID
+        // Moving up remembers the report you came from.
+        if move == .parent, let previous, previous.topologyID == location.topologyID {
+            state.lastVisitedChild[location.nodeID] = previous.nodeID
+        }
+        if let node = topology.node(location.nodeID), let parentID = node.parentID {
+            state.lastVisitedChild[parentID] = location.nodeID
+        }
+        navigation[location.topologyID] = TopologyNavigator.normalized(state, in: topology)
+
+        if selectedTopologyID != location.topologyID {
+            selectedTopologyID = location.topologyID
+        } else {
+            selectionDidChange()
+        }
+        if mode == .topology { inspectedNodeID = location.nodeID }
     }
 
     func selectionDidChange() {
@@ -155,9 +211,21 @@ public final class AppModel {
         }
     }
 
-    public func peers(of nodeID: UUID) -> [AgentNode] {
-        guard let topology = selectedTopology else { return [] }
-        return TopologyNavigator.peers(of: nodeID, in: topology)
+    /// The agents at the selected one's layer: siblings under its manager, or
+    /// every root across every team.
+    public func peerLocations(of nodeID: UUID) -> [AgentLocation] {
+        guard let topologyID = selectedTopologyID else { return [] }
+        return WorkspaceNavigator.peers(
+            of: AgentLocation(topologyID: topologyID, nodeID: nodeID),
+            in: workspace.topologies)
+    }
+
+    public func node(at location: AgentLocation) -> AgentNode? {
+        workspace.topology(location.topologyID)?.node(location.nodeID)
+    }
+
+    public func teamName(of location: AgentLocation) -> String {
+        workspace.topology(location.topologyID)?.name ?? ""
     }
 
     // MARK: - Live state
@@ -258,6 +326,16 @@ public final class AppModel {
 
     @discardableResult
     public func save() -> Bool {
+        persist(workspace)
+    }
+
+    /// Writes a candidate workspace without adopting it.
+    ///
+    /// Destructive edits use this first: if the write fails, the workspace in
+    /// front of the user is still the one on disk, and nothing else — bindings
+    /// included — has been touched.
+    @discardableResult
+    private func persist(_ candidate: Workspace) -> Bool {
         guard loadFailure == nil else {
             banner = .failure(
                 "Not saved",
@@ -266,7 +344,7 @@ public final class AppModel {
             return false
         }
         do {
-            try store.save(workspace)
+            try store.save(candidate)
             return true
         } catch {
             banner = .failure("Could not save", "\(error)")
@@ -292,7 +370,49 @@ public final class AppModel {
     /// Removes a team's organisation only. Sessions keep running and reappear
     /// under local sessions.
     public func deleteSelectedTopology() async {
-        guard let topology = selectedTopology else { return }
+        guard let id = selectedTopologyID else { return }
+        await deleteTopology(id)
+    }
+
+    /// Removes one team, whichever is selected.
+    ///
+    /// The workspace is written before anything else changes: a failed save
+    /// leaves the team, its bindings, and the selection exactly as they were.
+    /// Deleting a team you are not looking at leaves your selection and drafts
+    /// alone.
+    public func deleteTopology(_ id: UUID) async {
+        guard let topology = workspace.topology(id) else { return }
+        let wasSelected = (selectedTopologyID == id)
+
+        var candidate = workspace
+        candidate.removeTopology(id)
+        guard persist(candidate) else { return }
+        workspace = candidate
+
+        navigation.removeValue(forKey: id)
+        expandedTopologyIDs.remove(id)
+        if let inspected = inspectedNodeID, topology.contains(inspected) {
+            inspectedNodeID = nil
+        }
+        for node in topology.nodes {
+            drafts.forget(.node(node.id))
+        }
+
+        if wasSelected {
+            // Land on something real rather than an empty header.
+            let next = workspace.topologies.first
+            if let next, navigation[next.id]?.selectedNodeID == nil,
+               let first = next.roots.first ?? next.nodes.first {
+                // The selection moves; how the sidebar is arranged is the user's
+                // business, so a collapsed team stays collapsed.
+                navigation[next.id] = NavigationState(selectedNodeID: first.id)
+            }
+            // The didSet fires the one selection notification this needs.
+            selectedTopologyID = next?.id
+        }
+
+        // Only now that the removal is on disk: forgetting a binding for a team
+        // that is still saved would strand it.
         var forgetFailures: [String] = []
         for node in topology.nodes {
             do {
@@ -301,20 +421,12 @@ public final class AppModel {
                 forgetFailures.append("\(node.displayName): \(error)")
             }
         }
-        workspace.removeTopology(topology.id)
-        navigation.removeValue(forKey: topology.id)
-        selectedTopologyID = workspace.topologies.first?.id
-        let saved = save()
         await refresh()
 
-        guard saved, forgetFailures.isEmpty else {
-            // save() has already explained a write failure; do not claim success
-            // over the top of it.
-            if saved {
-                banner = .failure(
-                    "Removed, but some records were left behind",
-                    forgetFailures.joined(separator: "\n"))
-            }
+        guard forgetFailures.isEmpty else {
+            banner = .failure(
+                "Removed, but some records were left behind",
+                forgetFailures.joined(separator: "\n"))
             return
         }
         banner = Banner(
@@ -328,27 +440,33 @@ public final class AppModel {
         guard var topology = selectedTopology, let node = topology.node(nodeID) else { return }
         let selectionBefore = selectedTarget
         let wasRunning = readout.state(of: nodeID).isRunning
+
+        // Planned, written, and only then applied — so a failed save leaves the
+        // agent and its binding exactly as they were.
+        topology.remove(nodeID)
+        var candidate = workspace
+        candidate.upsert(topology)
+        guard persist(candidate) else { return }
+        workspace = candidate
+
+        if inspectedNodeID == nodeID { inspectedNodeID = nil }
+        navigation[topology.id] = TopologyNavigator.normalized(
+            navigation[topology.id] ?? NavigationState(), in: topology)
+        drafts.forget(.node(nodeID))
+        if selectedTarget != selectionBefore { selectionDidChange() }
+
         var forgetFailure: String?
         do {
             _ = try await runtime.forget(nodeID: nodeID)
         } catch {
             forgetFailure = "\(error)"
         }
-        topology.remove(nodeID)
-        workspace.upsert(topology)
-        if inspectedNodeID == nodeID { inspectedNodeID = nil }
-        navigation[topology.id] = TopologyNavigator.normalized(
-            navigation[topology.id] ?? NavigationState(), in: topology)
-        drafts.forget(.node(nodeID))
-        if selectedTarget != selectionBefore { selectionDidChange() }
-        let saved = save()
         await refresh()
 
         if let forgetFailure {
             banner = .failure("Removed, but its record could not be updated", forgetFailure)
             return
         }
-        guard saved else { return }
         banner = Banner(
             kind: .info,
             title: "Removed \(node.displayName)",
@@ -360,13 +478,15 @@ public final class AppModel {
     @discardableResult
     public func addNode(kind: AgentKind, parentID: UUID?) -> AgentNode? {
         guard var topology = selectedTopology else { return nil }
-        let base = kind == .manager ? "lead" : "build"
-        var allocator = SessionNameAllocator(existingNames: allClaimedSessionNames)
+        // Worker 1, Worker 2, Manager 1 — a name you can tell apart in the
+        // sidebar, with a session name to match.
+        let displayName = DefaultAgentNaming.nextDisplayName(for: kind, in: topology)
         let directory = topology.nodes.first?.workingDirectory
             ?? FileManager.default.homeDirectoryForCurrentUser.path
         var node = AgentNode(
-            sessionName: allocator.allocate(base),
-            displayName: kind == .manager ? "New manager" : "New worker",
+            sessionName: DefaultAgentNaming.sessionName(
+                for: displayName, avoiding: allClaimedSessionNames),
+            displayName: displayName,
             kind: kind,
             cli: topology.nodes.first?.cli ?? .claude,
             workingDirectory: directory,

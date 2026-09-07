@@ -109,6 +109,231 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(changes, 3, "re-selecting the same agent is not a change")
     }
 
+    func testCyclingAtTheRootLayerCrossesTeams() throws {
+        let model = bench.model
+        // A second team, so there are two orchestrators to move between.
+        let other = Topology(name: "Other team", nodes: [AgentNode(
+            sessionName: "other-lead", displayName: "Other lead", kind: .manager,
+            workingDirectory: bench.root.path)])
+        model.addTeam(other)
+        model.select(node: bench.manager.id)
+
+        model.move(.nextPeer)
+        XCTAssertEqual(model.selectedNodeID, other.nodes[0].id, "root managers of every team are peers")
+        XCTAssertEqual(model.selectedTopologyID, other.id, "the selected team follows")
+
+        model.move(.nextPeer)
+        XCTAssertEqual(model.selectedNodeID, bench.manager.id, "and it wraps")
+    }
+
+    func testReportsStayInsideTheirOwnTeamWhenCycling() {
+        let model = bench.model
+        let other = Topology(name: "Other team", nodes: [AgentNode(
+            sessionName: "other-lead", displayName: "Other lead", kind: .manager,
+            workingDirectory: bench.root.path)])
+        model.addTeam(other)
+
+        model.select(node: bench.workers[0].id)
+        model.move(.nextPeer)
+        XCTAssertEqual(model.selectedNodeID, bench.workers[1].id)
+        model.move(.nextPeer)
+        XCTAssertEqual(model.selectedNodeID, bench.workers[0].id, "workers cycle among their siblings only")
+        XCTAssertEqual(model.selectedTopologyID, bench.topology.id)
+    }
+
+    func testEachTeamRemembersWhereYouWere() {
+        let model = bench.model
+        let otherManagerID = UUID()
+        let other = Topology(name: "Other team", nodes: [
+            AgentNode(
+                id: otherManagerID, sessionName: "other-lead", displayName: "Other lead",
+                kind: .manager, workingDirectory: bench.root.path),
+            AgentNode(
+                sessionName: "other-worker", displayName: "Other worker", kind: .worker,
+                workingDirectory: bench.root.path, parentID: otherManagerID),
+        ])
+        model.addTeam(other)
+
+        // Go into a report in the first team, then across to the other team.
+        model.select(node: bench.workers[1].id)
+        model.move(.parent)
+        model.move(.nextPeer)
+        XCTAssertEqual(model.selectedTopologyID, other.id)
+
+        // Coming back lands on the manager, and down returns to that report.
+        model.move(.previousPeer)
+        XCTAssertEqual(model.selectedNodeID, bench.manager.id)
+        model.move(.child)
+        XCTAssertEqual(model.selectedNodeID, bench.workers[1].id)
+    }
+
+    // MARK: - Sidebar
+
+    func testTeamsCanAllBeCollapsedAndSelectionDoesNotReopenThem() {
+        let model = bench.model
+        XCTAssertTrue(model.isExpanded(bench.topology.id), "the first team starts open")
+
+        model.toggleExpansion(bench.topology.id)
+        XCTAssertFalse(model.isExpanded(bench.topology.id))
+
+        model.select(node: bench.workers[0].id)
+        XCTAssertFalse(model.isExpanded(bench.topology.id), "selecting an agent does not force a team open")
+
+        model.toggleExpansion(bench.topology.id)
+        XCTAssertTrue(model.isExpanded(bench.topology.id))
+    }
+
+    // MARK: - Naming
+
+    func testNewAgentsGetDistinctReadableNames() throws {
+        let model = bench.model
+        let first = try XCTUnwrap(model.addNode(kind: .worker, parentID: bench.manager.id))
+        let second = try XCTUnwrap(model.addNode(kind: .worker, parentID: bench.manager.id))
+        let manager = try XCTUnwrap(model.addNode(kind: .manager, parentID: nil))
+
+        XCTAssertEqual(first.displayName, "Worker 1")
+        XCTAssertEqual(second.displayName, "Worker 2")
+        XCTAssertEqual(manager.displayName, "Manager 1")
+        XCTAssertEqual(Set([first.sessionName, second.sessionName, manager.sessionName]).count, 3)
+        XCTAssertEqual(first.sessionName, "worker-1")
+    }
+
+    func testNewAgentNamesAvoidWhatIsAlreadyRunning() throws {
+        let model = bench.model
+        var topology = try XCTUnwrap(model.selectedTopology)
+        topology.nodes[1].displayName = "Worker 1"
+        model.update(topology)
+
+        let added = try XCTUnwrap(model.addNode(kind: .worker, parentID: bench.manager.id))
+        XCTAssertEqual(added.displayName, "Worker 2")
+    }
+
+    // MARK: - Deleting a team
+
+    func testDeletingATeamRepairsTheSelectionAndLeavesSessionsAlone() async throws {
+        try await bench.bindEverything()
+        let model = bench.model
+        let other = Topology(name: "Other team", nodes: [AgentNode(
+            sessionName: "other-lead", displayName: "Other lead", kind: .manager,
+            workingDirectory: bench.root.path)])
+        model.addTeam(other)
+        model.selectTopology(bench.topology.id)
+
+        bench.env.requestDeletion(of: bench.topology)
+        XCTAssertNotNil(bench.env.teamPendingDeletion, "deleting asks first")
+        await bench.env.confirmDeletion(of: bench.topology.id)
+
+        XCTAssertEqual(model.topologies.map(\.id), [other.id])
+        XCTAssertEqual(model.selectedTopologyID, other.id, "the selection moves to what is left")
+        XCTAssertTrue(bench.runner.calls(of: "kill-session").isEmpty, "sessions keep running")
+    }
+
+    func testDeletingATeamEndsDictationFirst() async throws {
+        let model = bench.model
+        model.select(node: bench.workers[0].id)
+        bench.env.voice.beginHold(on: .node(bench.workers[0].id))
+        XCTAssertTrue(bench.env.voice.isCapturing)
+
+        bench.env.requestDeletion(of: bench.topology)
+        XCTAssertFalse(bench.env.voice.isCapturing, "asking the question already stops recording")
+        await bench.env.confirmDeletion(of: bench.topology.id)
+
+        XCTAssertFalse(bench.env.voice.isCapturing)
+        XCTAssertNil(bench.env.voice.target)
+    }
+
+    func testTheDialogClosingBeforeTheActionRunsStillDeletesTheRightTeam() async throws {
+        let model = bench.model
+        let other = Topology(name: "Other team", nodes: [AgentNode(
+            sessionName: "other-lead", displayName: "Other lead", kind: .manager,
+            workingDirectory: bench.root.path)])
+        model.addTeam(other)
+        model.selectTopology(bench.topology.id)
+
+        bench.env.requestDeletion(of: bench.topology)
+        // SwiftUI clears the presentation binding before the action's task runs.
+        bench.env.teamPendingDeletion = nil
+        await bench.env.confirmDeletion(of: bench.topology.id)
+
+        XCTAssertEqual(model.topologies.map(\.id), [other.id])
+    }
+
+    func testCancellingDeletesNothing() async throws {
+        let model = bench.model
+        bench.env.requestDeletion(of: bench.topology)
+        bench.env.cancelDeletion()
+
+        XCTAssertNil(bench.env.teamPendingDeletion)
+        XCTAssertEqual(model.topologies.count, 1)
+        XCTAssertEqual(model.selectedTopologyID, bench.topology.id)
+    }
+
+    func testDeletingAnotherTeamLeavesYourSelectionAndDraftsAlone() async throws {
+        let model = bench.model
+        let other = Topology(name: "Other team", nodes: [AgentNode(
+            sessionName: "other-lead", displayName: "Other lead", kind: .manager,
+            workingDirectory: bench.root.path)])
+        model.addTeam(other)
+
+        model.select(node: bench.workers[1].id)
+        let draftTarget = WorkTarget.node(bench.workers[1].id)
+        model.drafts.setText("still mine", for: draftTarget)
+
+        await bench.env.confirmDeletion(of: other.id)
+
+        XCTAssertEqual(model.selectedTopologyID, bench.topology.id)
+        XCTAssertEqual(model.selectedNodeID, bench.workers[1].id, "the agent you were on is untouched")
+        XCTAssertEqual(model.drafts.text(for: draftTarget), "still mine")
+        XCTAssertEqual(model.topologies.map(\.id), [bench.topology.id])
+    }
+
+    func testDeletingTheSelectedTeamLandsOnARealAgent() async throws {
+        let model = bench.model
+        let otherManagerID = UUID()
+        let other = Topology(name: "Other team", nodes: [
+            AgentNode(
+                id: otherManagerID, sessionName: "other-lead", displayName: "Other lead",
+                kind: .manager, workingDirectory: bench.root.path),
+            AgentNode(
+                sessionName: "other-worker", displayName: "Other worker", kind: .worker,
+                workingDirectory: bench.root.path, parentID: otherManagerID),
+        ])
+        model.addTeam(other)
+        model.selectTopology(bench.topology.id)
+        model.inspectedNodeID = bench.workers[0].id
+        // Everything closed: deleting must not reopen anything.
+        model.expandedTopologyIDs = []
+
+        await bench.env.confirmDeletion(of: bench.topology.id)
+
+        XCTAssertEqual(model.selectedTopologyID, other.id)
+        XCTAssertEqual(model.selectedNodeID, otherManagerID, "the header shows a real agent")
+        XCTAssertNil(model.inspectedNodeID, "the inspector lets go of the deleted agent")
+        XCTAssertFalse(model.isExpanded(other.id), "a collapsed sidebar stays collapsed")
+        XCTAssertFalse(model.isExpanded(bench.topology.id))
+    }
+
+    func testAFailedSaveLeavesTheTeamAndItsBindingsAlone() async throws {
+        try await bench.bindEverything()
+        let model = bench.model
+        let workspaceDirectory = bench.root.appendingPathComponent("workspace")
+        // Make the write fail without touching what is already on disk.
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o500], ofItemAtPath: workspaceDirectory.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: workspaceDirectory.path)
+        }
+
+        await bench.env.confirmDeletion(of: bench.topology.id)
+
+        XCTAssertEqual(model.topologies.count, 1, "the team is still here")
+        XCTAssertEqual(model.selectedTopologyID, bench.topology.id)
+        XCTAssertEqual(model.banner?.kind, .failure)
+        let binding = await model.runtime.binding(for: bench.manager.id)
+        XCTAssertNotNil(binding, "its bindings were not thrown away for a save that never happened")
+    }
+
     // MARK: - Editing rules
 
     func testAManagerWithReportsCannotQuietlyBecomeAWorker() {

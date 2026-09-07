@@ -52,7 +52,40 @@ public struct RootView: View {
         .sheet(isPresented: $env.showsSaveTemplateSheet) { SaveTemplateSheet(env: env) }
         .sheet(isPresented: $env.showsAttachSheet) { AttachSessionSheet(env: env) }
         .sheet(isPresented: $env.showsShortcuts) { ShortcutsView() }
+        .confirmationDialog(
+            env.teamPendingDeletion.map { "Delete “\($0.name)”?" } ?? "Delete this team?",
+            isPresented: Binding(
+                get: { env.teamPendingDeletion != nil },
+                set: { if !$0 { env.teamPendingDeletion = nil } }),
+            titleVisibility: .visible
+        ) {
+            // The team is captured here, while the dialog is on screen. By the
+            // time the action's task runs, the presentation binding is already
+            // cleared.
+            let pending = env.teamPendingDeletion
+            // Cancel is the default: this is not a button to press by accident.
+            Button("Cancel", role: .cancel) { env.cancelDeletion() }
+            Button("Delete team", role: .destructive) {
+                if let pending {
+                    Task { await env.confirmDeletion(of: pending.id) }
+                }
+            }
+        } message: {
+            Text(deletionMessage)
+        }
         .task { await model.refresh() }
+    }
+
+    private var deletionMessage: String {
+        guard let topology = env.teamPendingDeletion else { return "" }
+        let running = topology.nodes.filter { model.state(of: $0.id).isRunning }
+        let base = "This removes the team and its layout from Marmy. Nothing is stopped: "
+        if running.isEmpty {
+            return base + "no agent in it is running right now."
+        }
+        let names = running.map(\.tmuxAddress).sorted().joined(separator: ", ")
+        return base + "the tmux session\(running.count == 1 ? "" : "s") \(names) keep"
+            + "\(running.count == 1 ? "s" : "") running and will be listed under Local sessions."
     }
 
     @ToolbarContentBuilder
@@ -65,8 +98,8 @@ public struct RootView: View {
                     }
                     Divider()
                     Button("New team…") { env.showsNewTeamSheet = true }
-                    Button("Remove this team…", role: .destructive) {
-                        Task { await model.deleteSelectedTopology() }
+                    Button("Delete team…", role: .destructive) {
+                        env.requestDeletion(of: topology)
                     }
                 } label: {
                     Label(topology.name, systemImage: "person.2")

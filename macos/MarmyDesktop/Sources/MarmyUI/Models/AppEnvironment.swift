@@ -29,6 +29,8 @@ public final class AppEnvironment {
     public var showsSaveTemplateSheet = false
     /// Bumped by the Fit button; the canvas watches it.
     public var fitCanvasToken = 0
+    /// A team the user has asked to delete, waiting on the confirmation.
+    public var teamPendingDeletion: Topology?
     /// Briefly shown after keyboard navigation, then fades.
     public private(set) var locationHintToken = 0
     /// Targets with a delivery in flight, so a button, a shortcut, and a menu
@@ -62,7 +64,11 @@ public final class AppEnvironment {
                 isWorkMode: self.model.mode == .work,
                 terminalHasFocus: self.terminalHasFocus,
                 isEditingText: self.isEditingText,
-                isModalPresented: self.isModalPresented || NSApp.keyWindow?.attachedSheet != nil)
+                // A confirmation dialog is not an attached sheet, but it is
+                // just as modal: no shortcut may act on the agent behind it.
+                isModalPresented: self.isModalPresented
+                    || self.teamPendingDeletion != nil
+                    || NSApp.keyWindow?.attachedSheet != nil)
         }
         keyboard.onNavigate = { [weak self] direction in
             self?.navigate(direction)
@@ -175,6 +181,32 @@ public final class AppEnvironment {
         // you are talking to.
         stopCapture(reason: nil)
         currentPane = nil
+    }
+
+    /// Asks for confirmation before removing a team.
+    ///
+    /// Recording stops as the question goes up: the agent being dictated to may
+    /// be one of the ones about to disappear, and a confirmation is a modal
+    /// moment either way.
+    public func requestDeletion(of topology: Topology) {
+        stopCapture(reason: nil)
+        teamPendingDeletion = topology
+    }
+
+    /// Removes the team the user confirmed.
+    ///
+    /// The id comes from the button that was pressed, not from
+    /// `teamPendingDeletion`: SwiftUI clears the presentation binding before the
+    /// action's task runs, and reading it here would delete nothing.
+    public func confirmDeletion(of topologyID: UUID) async {
+        teamPendingDeletion = nil
+        stopCapture(reason: nil)
+        await model.deleteTopology(topologyID)
+    }
+
+    /// Cancelling changes nothing at all.
+    public func cancelDeletion() {
+        teamPendingDeletion = nil
     }
 
     public func showLocationHint() {

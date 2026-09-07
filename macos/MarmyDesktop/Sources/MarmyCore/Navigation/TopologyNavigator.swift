@@ -69,8 +69,12 @@ public enum TopologyNavigator {
         }
     }
 
-    /// The peers of the selection: everyone sharing its manager, in topology
-    /// order. Root managers are peers of each other.
+    /// Peers *within one team*: everyone sharing the node's manager, in topology
+    /// order, with roots treated as peers of each other.
+    ///
+    /// This is the single-team view, used where a team is the whole subject —
+    /// the graph. App-wide keyboard navigation uses `WorkspaceNavigator`, where
+    /// roots are peers across every team.
     public static func peers(of nodeID: UUID, in topology: Topology) -> [AgentNode] {
         guard let node = topology.node(nodeID) else { return [] }
         return topology.children(of: node.parentID)

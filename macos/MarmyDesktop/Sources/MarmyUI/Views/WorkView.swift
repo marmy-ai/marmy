@@ -235,8 +235,10 @@ struct WorkView: View {
     }
 }
 
-/// The agents at the same level, so moving sideways is visible.
+/// The agents at the selected one's level, so moving sideways is visible.
 ///
+/// At the top level those are the top-level agents of every team, labelled with
+/// the team they belong to; under a manager they are that manager's reports.
 /// One row, always: with a dozen peers it scrolls sideways rather than squeezing
 /// names into columns of letters and eating the terminal's height.
 struct PeerStrip: View {
@@ -244,10 +246,13 @@ struct PeerStrip: View {
     let topology: Topology
     let selected: UUID
 
+    private var model: AppModel { env.model }
+
     var body: some View {
-        let peers = TopologyNavigator.peers(of: selected, in: topology)
+        let peers = model.peerLocations(of: selected)
         let parent = topology.node(selected)?.parentID.flatMap { topology.node($0) }
         let reports = topology.children(of: selected)
+        let isRootLayer = topology.node(selected)?.parentID == nil
 
         HStack(spacing: 8) {
             if let parent {
@@ -269,9 +274,9 @@ struct PeerStrip: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(peers) { peer in
-                            peerChip(peer)
-                                .id(peer.id)
+                        ForEach(peers, id: \.self) { peer in
+                            peerChip(peer, showsTeam: isRootLayer && peer.topologyID != topology.id)
+                                .id(peer.nodeID)
                         }
                     }
                     .padding(.vertical, 1)
@@ -306,14 +311,27 @@ struct PeerStrip: View {
         .frame(height: 40)
     }
 
-    private func peerChip(_ peer: AgentNode) -> some View {
-        Button {
-            env.select(node: peer.id)
+    private func peerChip(_ location: AgentLocation, showsTeam: Bool) -> some View {
+        let peer = model.node(at: location)
+        let teamName = model.teamName(of: location)
+
+        return Button {
+            env.select(node: location.nodeID)
             env.showLocationHint()
         } label: {
             HStack(spacing: 6) {
-                KindDot(kind: peer.kind, size: 7)
-                Text(peer.displayName)
+                if let peer { KindDot(kind: peer.kind, size: 7) }
+                if showsTeam {
+                    // Root-layer peers come from every team, so say which.
+                    Text(teamName)
+                        .font(.callout)
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                    Text("·")
+                        .font(.callout)
+                        .foregroundStyle(Theme.muted)
+                }
+                Text(peer?.displayName ?? "Unknown")
                     .font(.callout)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -322,14 +340,17 @@ struct PeerStrip: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(peer.id == selected ? peer.kind.tint.opacity(0.14) : Color.clear))
+                    .fill(location.nodeID == selected ? (peer?.kind.tint ?? Theme.line).opacity(0.14) : Color.clear))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(peer.id == selected ? peer.kind.tint.opacity(0.5) : Theme.line, lineWidth: 1))
+                    .stroke(
+                        location.nodeID == selected ? (peer?.kind.tint ?? Theme.line).opacity(0.5) : Theme.line,
+                        lineWidth: 1))
         }
         .buttonStyle(.plain)
         .foregroundStyle(Theme.ink)
         .fixedSize()
+        .help("\(teamName) · \(peer?.kind.displayName ?? "") \(peer?.displayName ?? "")")
     }
 }
 
