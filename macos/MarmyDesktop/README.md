@@ -65,6 +65,15 @@ the exact v1.20.0 commit `5d14406844143538cd8f8851d2d8a67c1fe443e5`.
    composer and press ⌘↩, or hold Space to dictate. Move between agents with the
    keyboard; each keeps its own draft.
 
+**Scrolling back.** Scroll up in a terminal and Marmy opens that pane's real
+tmux scrollback in a read-only view: selectable, colours intact, held still while
+you read it. Escape or *Jump to live* returns. Nothing is sent to the agent to do
+this — no keys, no tmux copy mode — and other terminals attached to the same
+session see nothing change. (A tmux client draws on the alternate screen, which
+has no scrollback of its own; left alone, a wheel gesture there is turned into
+arrow keys and walks the agent's prompt history instead. Marmy takes the wheel
+before that can happen.)
+
 **Existing sessions.** Every tmux session on this Mac that is not part of a team
 is listed under *Local sessions*. Opening one just attaches a terminal: nothing
 is imported, renamed, restarted, or sent to it. It gets a draft and dictation

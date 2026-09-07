@@ -513,6 +513,114 @@ public actor AgentRuntime {
         }
     }
 
+    /// Scrollback read straight out of tmux, for the app's own history view.
+    ///
+    /// Reading is always allowed, including in read-only mode: nothing is sent,
+    /// no mode is entered, and no other client is disturbed. The pane is checked
+    /// against the binding first, so history is never read from whatever else
+    /// might be using that id now.
+    public func history(forNode nodeID: UUID, maxLines: Int = 5000) async throws -> PaneHistory {
+        guard let binding = ledger.binding(nodeID: nodeID) else {
+            throw RuntimeError.notBound(nodeID: nodeID)
+        }
+        let server = try await tmux.serverIdentity()
+        let panes = try await tmux.listPanes()
+        let sessions = try await tmux.listSessions()
+        let state = LiveIdentity.state(for: binding, server: server, panes: panes, sessions: sessions)
+        guard case .running = state else {
+            if case .missing(let reason) = state { throw RuntimeError.identityMismatch(detail: reason) }
+            throw RuntimeError.identityMismatch(detail: "The pane is not available.")
+        }
+        return try await history(paneID: binding.paneID, maxLines: maxLines)
+    }
+
+    /// Scrollback for one exact pane, checked the way a send is checked.
+    ///
+    /// The caller passes the identity that was on screen: the server, the
+    /// session, the pane, the launch generation for a team member, and the
+    /// embedded client showing it. If any of that has moved on — relaunched,
+    /// reconnected, switched to another session inside tmux — the read is
+    /// refused rather than returning somebody else's transcript.
+    public func history(
+        paneID: String,
+        sessionID: String,
+        onServer expectedServer: TmuxServerIdentity,
+        nodeID: UUID? = nil,
+        generation: UUID? = nil,
+        clientPID: Int32? = nil,
+        maxLines: Int = 5000
+    ) async throws -> PaneHistory {
+        let current = try await tmux.serverIdentity()
+        guard current == expectedServer else {
+            throw RuntimeError.identityMismatch(detail: "tmux has restarted since this was opened.")
+        }
+        if let nodeID {
+            guard let binding = ledger.binding(nodeID: nodeID) else {
+                throw RuntimeError.notBound(nodeID: nodeID)
+            }
+            guard binding.sessionID == sessionID, binding.paneID == paneID else {
+                throw RuntimeError.identityMismatch(detail: "This agent is attached somewhere else now.")
+            }
+            if let generation, binding.generation != generation {
+                throw RuntimeError.identityMismatch(detail: "This agent has been started again since then.")
+            }
+        }
+
+        let panes = try await tmux.listPanes()
+        guard let pane = panes.first(where: { $0.id == paneID }) else {
+            throw RuntimeError.identityMismatch(detail: "Pane \(paneID) is gone.")
+        }
+        guard pane.sessionID == sessionID else {
+            throw RuntimeError.identityMismatch(detail: "Pane \(paneID) belongs to \(pane.sessionName) now.")
+        }
+        guard pane.isActive, pane.isWindowActive else {
+            throw RuntimeError.paneNotVisible(sessionName: pane.sessionName)
+        }
+        try await requireClientIsShowing(
+            sessionID: sessionID, paneID: paneID, sessionName: pane.sessionName, clientPID: clientPID)
+
+        return try await history(paneID: paneID, maxLines: maxLines)
+    }
+
+    /// Scrollback for a session the user opened directly.
+    public func history(
+        forSessionID sessionID: String,
+        onServer expectedServer: TmuxServerIdentity? = nil,
+        maxLines: Int = 5000
+    ) async throws -> PaneHistory {
+        if let expectedServer {
+            let current = try await tmux.serverIdentity()
+            guard current == expectedServer else {
+                throw RuntimeError.identityMismatch(
+                    detail: "tmux has restarted since this session was opened.")
+            }
+        }
+        let panes = try await tmux.listPanes()
+        guard let pane = panes.first(where: { $0.sessionID == sessionID && $0.isActive && $0.isWindowActive })
+        else {
+            throw RuntimeError.identityMismatch(detail: "Session \(sessionID) is no longer showing a pane.")
+        }
+        return try await history(paneID: pane.id, maxLines: maxLines)
+    }
+
+    private func history(paneID: String, maxLines: Int) async throws -> PaneHistory {
+        let available = try await tmux.paneHistorySize(paneID)
+        let limit = max(0, maxLines)
+        let requestedScrollback = min(max(available, 0), limit)
+        let text = try await tmux.capturePane(
+            paneID, lines: requestedScrollback, joinWrapped: false, includingEscapes: true)
+        // What came back is scrollback plus the screen itself, so the honest
+        // number is the rows in hand — not what was asked for.
+        let capturedLines = text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count
+        return PaneHistory(
+            paneID: paneID,
+            text: text,
+            scrollbackLines: available,
+            capturedLines: capturedLines,
+            omittedScrollbackLines: max(0, available - requestedScrollback),
+            capturedAt: now())
+    }
+
     /// One round trip describing everything live, so the UI can work out the
     /// state of every team without a request per team.
     public func readout() async throws -> RuntimeReadout {
@@ -543,6 +651,39 @@ public actor AgentRuntime {
         }
         return result
     }
+}
+
+/// A pane's scrollback as it was at one moment.
+public struct PaneHistory: Sendable, Equatable {
+    public var paneID: String
+    /// Raw output including colour escapes; rendered, never executed.
+    public var text: String
+    /// How many lines tmux is keeping for this pane.
+    public var scrollbackLines: Int
+    /// Rows actually in this snapshot: scrollback plus the visible screen.
+    public var capturedLines: Int
+    /// Scrollback older than this snapshot reaches.
+    public var omittedScrollbackLines: Int
+    public var capturedAt: Date
+
+    public init(
+        paneID: String,
+        text: String,
+        scrollbackLines: Int,
+        capturedLines: Int,
+        omittedScrollbackLines: Int = 0,
+        capturedAt: Date
+    ) {
+        self.paneID = paneID
+        self.text = text
+        self.scrollbackLines = scrollbackLines
+        self.capturedLines = capturedLines
+        self.omittedScrollbackLines = omittedScrollbackLines
+        self.capturedAt = capturedAt
+    }
+
+    /// True when tmux is holding history this snapshot does not reach.
+    public var isTruncated: Bool { omittedScrollbackLines > 0 }
 }
 
 /// A snapshot of everything live on the tmux server plus what Marmy has bound.

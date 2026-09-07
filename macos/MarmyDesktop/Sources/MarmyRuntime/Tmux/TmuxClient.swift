@@ -124,14 +124,29 @@ public struct TmuxClient: Sendable {
     public func capturePane(
         _ paneID: String,
         lines: Int? = nil,
-        joinWrapped: Bool = false
+        joinWrapped: Bool = false,
+        includingEscapes: Bool = false
     ) async throws -> String {
         var arguments = ["capture-pane", "-p", "-t", paneID]
         if joinWrapped { arguments.append("-J") }
+        // `-e` keeps the colours; the text is only ever shown, never executed.
+        if includingEscapes { arguments.append("-e") }
         if let lines { arguments += ["-S", "-\(lines)"] }
         let result = try await run(arguments)
         try Self.requireSuccess(result, command: "capture-pane")
         return result.standardOutput
+    }
+
+    /// How many lines of scrollback a pane is holding.
+    public func paneHistorySize(_ paneID: String) async throws -> Int {
+        let command = "display-message"
+        let result = try await run([
+            command, "-p", "-t", paneID, TmuxFormat.lengthPrefixed(["history_size"]),
+        ])
+        if Self.isNoServer(result) { return 0 }
+        try Self.requireSuccess(result, command: command)
+        let fields = try TmuxFormat.parseRecord(result.standardOutputData, fieldCount: 1, command: command)
+        return try TmuxFormat.integer(fields[0], command: command)
     }
 
     // MARK: - Starting

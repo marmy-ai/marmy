@@ -17,6 +17,9 @@ public final class AppEnvironment {
     public let terminals = TerminalController()
     public let voice: VoiceController
     public let keyboard = KeyboardCoordinator()
+    /// Marmy's own scrollback view, because a tmux client cannot scroll.
+    public let history = TerminalHistoryController()
+    private let scrollMonitor = TerminalScrollMonitor()
 
     /// The terminal for whatever is selected, once it is attached.
     public private(set) var currentPane: TerminalPane?
@@ -49,6 +52,8 @@ public final class AppEnvironment {
         model.onSelectionChanged = { [weak self] in
             self?.selectionChanged()
         }
+        history.attach(source: self)
+        configureScrolling()
     }
 
     public convenience init(model: AppModel) {
@@ -80,10 +85,41 @@ public final class AppEnvironment {
         keyboard.onHoldEnded = { [weak self] in
             self?.voice.endHold()
         }
+        keyboard.onEscape = { [weak self] in
+            guard let self, self.history.isShowingHistory else { return false }
+            self.history.returnToLive()
+            self.focusTerminal()
+            return true
+        }
         keyboard.onSpaceTap = { [weak self] in
             // A tap is an ordinary space and belongs to the terminal.
             guard let view = self?.currentPane?.view else { return }
             view.send(source: view, data: ArraySlice([UInt8(ascii: " ")]))
+        }
+    }
+
+    /// The wheel over the terminal opens Marmy's history instead of being
+    /// forwarded, which is what used to type arrow keys into the agent.
+    private func configureScrolling() {
+        scrollMonitor.terminalView = { [weak self] in self?.currentPane?.view }
+        // The event is always taken from the terminal; this only decides whether
+        // it also moves the history view.
+        scrollMonitor.shouldReportScroll = { [weak self] in
+            guard let self else { return false }
+            return self.history.mode == .live && !self.isModalPresented && self.teamPendingDeletion == nil
+        }
+        scrollMonitor.onScrollLines = { [weak self] lines in
+            guard let self,
+                  let target = self.model.selectedTarget,
+                  let identity = self.terminalIdentity(for: target),
+                  let pane = self.currentPane,
+                  pane.identity == identity
+            else { return }
+            let clientPID = pane.clientPID == 0 ? nil : pane.clientPID
+            Task {
+                await self.history.scrolled(
+                    lines: lines, on: target, identity: identity, clientPID: clientPID)
+            }
         }
     }
 
@@ -101,6 +137,7 @@ public final class AppEnvironment {
 
     public func startMonitoring() {
         keyboard.install()
+        scrollMonitor.install()
         model.startRefreshing()
         let center = NotificationCenter.default
         focusObservers.append(center.addObserver(
@@ -123,6 +160,8 @@ public final class AppEnvironment {
     public func shutDown() {
         stopCapture(reason: nil)
         keyboard.uninstall()
+        scrollMonitor.uninstall()
+        history.returnToLive()
         model.stopRefreshing()
         // Ends our tmux clients only. Every agent keeps running.
         terminals.releaseAll()
@@ -180,6 +219,8 @@ public final class AppEnvironment {
         // capture. Dictation only makes sense while you are looking at the agent
         // you are talking to.
         stopCapture(reason: nil)
+        // History belongs to one agent; looking at someone else closes it.
+        history.selectionChanged(to: model.selectedTarget)
         currentPane = nil
     }
 
@@ -256,6 +297,9 @@ public final class AppEnvironment {
             return
         }
         if let pane = currentPane, pane.key == identity.key { return }
+        // The terminal underneath is changing, so any history of the old one is
+        // no longer what the user is looking at.
+        history.identityChanged(to: identity)
         currentPane = terminals.pane(
             for: identity,
             sessionName: session.name,
@@ -267,6 +311,7 @@ public final class AppEnvironment {
               let identity = terminalIdentity(for: target),
               let session = model.attachedSession(for: target)
         else { return }
+        history.returnToLive()
         currentPane = terminals.reconnect(
             identity,
             sessionName: session.name,
@@ -336,5 +381,32 @@ public final class AppEnvironment {
 
     public func micReleased() {
         voice.endHold()
+    }
+}
+
+
+/// Scrollback comes from the same runtime that owns the bindings, so history is
+/// read from the pane this agent is actually attached to and nothing else.
+extension AppEnvironment: PaneHistorySource {
+    public func history(for request: HistoryRequest) async throws -> PaneHistory {
+        let identity = request.identity
+        switch request.target {
+        case .node(let nodeID):
+            return try await model.runtime.history(
+                paneID: identity.paneID,
+                sessionID: identity.sessionID,
+                onServer: identity.server,
+                nodeID: nodeID,
+                generation: UUID(uuidString: identity.generation),
+                clientPID: request.clientPID,
+                maxLines: request.maxLines)
+        case .localSession(let key):
+            return try await model.runtime.history(
+                paneID: identity.paneID,
+                sessionID: key.sessionID,
+                onServer: key.server,
+                clientPID: request.clientPID,
+                maxLines: request.maxLines)
+        }
     }
 }

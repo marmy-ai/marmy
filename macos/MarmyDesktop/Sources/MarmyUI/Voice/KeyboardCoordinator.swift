@@ -37,6 +37,7 @@ public final class KeyboardCoordinator {
     }
 
     public static let spaceKeyCode: UInt16 = 49
+    public static let escapeKeyCode: UInt16 = 53
     public static let tabKeyCode: UInt16 = 48
     public static let upArrowKeyCode: UInt16 = 126
     public static let downArrowKeyCode: UInt16 = 125
@@ -50,6 +51,9 @@ public final class KeyboardCoordinator {
     public var onHoldEnded: () -> Void = {}
     /// A short tap: the terminal should receive a plain space.
     public var onSpaceTap: () -> Void = {}
+    /// Escape. Returns true when it was used — closing the history view — and
+    /// false to let it through to the terminal, where agents use it too.
+    public var onEscape: () -> Bool = { false }
     /// Swapped out in tests so hold timing is deterministic.
     public var schedule: (TimeInterval, @escaping () -> Void) -> Void = { delay, body in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body)
@@ -86,6 +90,11 @@ public final class KeyboardCoordinator {
         guard !context.isModalPresented else { return false }
 
         let relevant = modifiers.intersection([.command, .control, .option, .shift])
+
+        if code == Self.escapeKeyCode, relevant.isEmpty, !context.isEditingText {
+            if onEscape() { return true }
+            return false
+        }
 
         // Fast typing rolls one key over the next: Space down, B down, Space up.
         // The waiting space has to reach the terminal before the B does, or the

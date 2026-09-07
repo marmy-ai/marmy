@@ -61,7 +61,7 @@ public final class TerminalPane {
     /// PID of the tmux client process, which is what `list-clients` reports.
     public private(set) var clientPID: pid_t = 0
 
-    @ObservationIgnored public let view: LocalProcessTerminalView
+    @ObservationIgnored public let view: MarmyTerminalView
     @ObservationIgnored private let attachment: TmuxAttachment
     @ObservationIgnored private var delegateBox: ProcessDelegate?
 
@@ -70,7 +70,7 @@ public final class TerminalPane {
         self.sessionID = identity.sessionID
         self.sessionName = sessionName
         self.attachment = attachment
-        self.view = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 520))
+        self.view = MarmyTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 520))
         // The view is its own terminalDelegate; only processDelegate is ours.
         let box = ProcessDelegate(owner: self)
         self.delegateBox = box
