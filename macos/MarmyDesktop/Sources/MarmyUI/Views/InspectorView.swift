@@ -59,22 +59,16 @@ struct InspectorView: View {
 
             group("Identity") {
                 LabeledField(label: "Name") {
-                    TextField("Display name", text: binding(for: node, \.displayName))
+                    TextField("Name", text: Binding(
+                        get: {
+                            model.selectedTopology?.node(node.id)?.displayName ?? node.displayName
+                        },
+                        set: { model.rename(node.id, to: $0) }))
                         .textFieldStyle(.roundedBorder)
+                        .help("The name you see, and the name of the tmux session a future start "
+                            + "will ask for.")
                 }
-                LabeledField(label: "Session") {
-                    TextField("tmux session", text: binding(for: node, \.sessionName))
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(isLive)
-                        .help(isLive
-                            ? "The session name is fixed while this agent is running."
-                            : "Letters, digits, hyphen and underscore.")
-                }
-                if let problem = TmuxName.problem(with: node.sessionName) {
-                    Text(problem.message)
-                        .font(.caption)
-                        .foregroundStyle(Theme.danger)
-                }
+                connection(for: node)
                 LabeledField(label: "Kind") {
                     Picker("", selection: Binding(
                         get: { model.selectedTopology?.node(node.id)?.kind ?? node.kind },
@@ -174,52 +168,30 @@ struct InspectorView: View {
                         .foregroundStyle(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                LabeledField(label: "Role prompt") {
-                    HStack(spacing: 6) {
-                        Picker("", selection: binding(for: node, \.promptTemplateID)) {
-                            Text("None").tag(UUID?.none)
-                            ForEach(model.workspace.promptTemplates.filter { $0.applicability.matches(node.kind) }) { template in
-                                Text(template.name).tag(UUID?.some(template.id))
-                            }
-                        }
-                        .labelsHidden()
-                        .disabled(!node.acceptsAgentMessages)
-                        Button("Edit…") {
-                            env.templateToEdit = node.promptTemplateID
-                            env.showsTemplates = true
-                        }
-                        .disabled(node.promptTemplateID == nil || !node.acceptsAgentMessages)
-                        .help("Opens this role prompt for editing. Changes apply the next time an "
-                            + "agent using it is started.")
-                    }
-                }
-                if let template = model.workspace.promptTemplates.first(where: {
-                    $0.id == node.promptTemplateID
-                }), !template.summary.isEmpty {
-                    Text(template.summary)
-                        .font(.caption)
-                        .foregroundStyle(Theme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                rolePrompt(for: node)
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Extra instructions for this agent")
                         .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                    Text("Added to the role prompt above, for this agent only.")
+                        .font(.caption2)
                         .foregroundStyle(Theme.muted)
                     TextEditor(text: binding(for: node, \.notes))
                         .font(.callout)
                         .frame(height: 64)
                         .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.line, lineWidth: 1))
+                        .disabled(!node.acceptsAgentMessages)
                 }
-                Button(showsPrompt
-                    ? "Hide starting prompt preview"
-                    : "Preview the starting prompt") {
+                Button(showsPrompt ? "Hide starting prompt" : "Preview starting prompt") {
                     showsPrompt.toggle()
                 }
                 .buttonStyle(.link)
                 .font(.callout)
                 .disabled(!node.acceptsAgentMessages)
                 if showsPrompt {
-                    Text("Preview — what a future launch would send. Nothing here has been sent.")
+                    Text("Preview — the starting prompt as it would be resolved for the next "
+                        + "start. Nothing here has been sent.")
                         .font(.caption)
                         .foregroundStyle(Theme.warning)
                     promptPreview(for: node)
@@ -246,6 +218,129 @@ struct InspectorView: View {
                 Label("Remove from team", systemImage: "trash")
             }
             .help("Removes the agent from this team. A running session keeps running and moves to Local sessions.")
+        }
+    }
+
+    /// Where this agent actually is, and what its name would ask for next time.
+    ///
+    /// A name is a plan, not a command: Marmy never renames a tmux session, so a
+    /// running agent keeps the one it is in. When the two differ, that is said
+    /// rather than left to be discovered at the next start.
+    @ViewBuilder
+    private func connection(for node: AgentNode) -> some View {
+        let planned = node.sessionName
+        VStack(alignment: .leading, spacing: 2) {
+            switch model.state(of: node.id) {
+            case .running(_, let sessionName, _):
+                handle("Connected to tmux:", sessionName, tint: Theme.worker)
+                if sessionName != planned {
+                    handle("Next start:", planned, tint: Theme.muted)
+                }
+            default:
+                handle("tmux name:", planned, tint: Theme.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A label and a session name you can select and copy.
+    private func handle(_ label: String, _ name: String, tint: Color) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .foregroundStyle(Theme.muted)
+            Text(name)
+                .foregroundStyle(tint)
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .font(.caption)
+    }
+
+    /// The role prompt, its scope, and the two ways of changing it.
+    ///
+    /// The distinction the buttons draw is the one that matters: editing the
+    /// role prompt changes it for every agent using it, and customising it gives
+    /// this one agent a copy of its own. Both are said out loud rather than left
+    /// to be discovered, and neither reaches an agent that is already running —
+    /// a role prompt is read when an agent is started.
+    @ViewBuilder
+    private func rolePrompt(for node: AgentNode) -> some View {
+        let template = node.promptTemplateID.flatMap { model.workspace.promptTemplate($0) }
+        let users = node.promptTemplateID.map { model.agentsUsing(promptTemplate: $0) } ?? []
+        let isEditable = node.acceptsAgentMessages
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Role prompt")
+                .font(.caption)
+                .foregroundStyle(Theme.muted)
+            Picker("", selection: binding(for: node, \.promptTemplateID)) {
+                Text("None").tag(UUID?.none)
+                ForEach(model.workspace.promptTemplates.filter {
+                    $0.applicability.matches(node.kind)
+                }) { template in
+                    Text(template.name).tag(UUID?.some(template.id))
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+            .disabled(!isEditable)
+
+            if let template {
+                if !template.summary.isEmpty {
+                    Text(template.summary)
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(scope(users: users))
+                    .font(.caption)
+                    .foregroundStyle(users.count > 1 ? Theme.warning : Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button("Edit role prompt…") {
+                    env.templateToEdit = template.id
+                    env.showsTemplates = true
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .disabled(!isEditable)
+                .help("Changes this reusable role prompt for every agent using it. Applies on "
+                    + "next start.")
+
+                Button("Customize for this agent…") {
+                    guard let copy = model.customizePromptTemplate(for: node.id) else { return }
+                    env.templateToEdit = copy.id
+                    env.showsTemplates = true
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .disabled(!isEditable)
+                .help("Copies this role prompt for \(node.displayName) alone and opens the copy. "
+                    + "Everyone else keeps this one.")
+            } else {
+                Text("No role prompt: this agent starts with no role instructions.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Choose or create a role…") {
+                    env.templateToEdit = nil
+                    env.showsTemplates = true
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .disabled(!isEditable)
+                .help("Opens the role prompts. Pick one above once it exists.")
+            }
+        }
+    }
+
+    /// Who else an edit would reach, in one line.
+    private func scope(users: [AgentNode]) -> String {
+        let others = users.count - 1
+        switch others {
+        case ..<1: return "Used by this agent only. Applies on next start."
+        case 1: return "Shared with 1 other agent — Edit changes theirs too, Customize copies it "
+            + "for this one. Applies on next start."
+        default: return "Shared with \(others) other agents — Edit changes theirs too, Customize "
+            + "copies it for this one. Applies on next start."
         }
     }
 

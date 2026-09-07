@@ -76,40 +76,48 @@ struct SidebarView: View {
         return result
     }
 
+    /// A team's header: the whole row, the way a file explorer behaves.
+    ///
+    /// One button over the chevron, the name, the count and the empty space
+    /// beside them, so a click anywhere along it opens or closes the team
+    /// exactly once. The chevron is drawn, not pressed — a button inside a
+    /// button would toggle twice.
     private func teamRow(_ topology: Topology) -> some View {
         let running = topology.nodes.filter { model.state(of: $0.id).isRunning }.count
         let isSelected = model.selectedTopologyID == topology.id && model.selectedLocalSession == nil
         let isExpanded = model.isExpanded(topology.id)
 
-        return HStack(spacing: 6) {
-            // Opening and closing a team is separate from selecting it: every
-            // team can be closed at once, and picking an agent never reopens one.
-            Button {
-                model.toggleExpansion(topology.id)
-            } label: {
+        return Button {
+            // Selecting a team that is already selected would put its terminal
+            // through a reconnect for nothing.
+            if !isSelected { env.selectTopology(topology.id) }
+            model.toggleExpansion(topology.id)
+        } label: {
+            HStack(spacing: 6) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(Theme.muted)
-                    .frame(width: 12, height: 12)
-                    .contentShape(Rectangle())
+                    .frame(width: 12)
+                Text(topology.name)
+                    .fontWeight(isSelected ? .medium : .regular)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if running > 0 {
+                    Text("\(running)/\(topology.nodes.count)")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.muted)
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isExpanded ? "Collapse \(topology.name)" : "Expand \(topology.name)")
-
-            Text(topology.name)
-                .fontWeight(isSelected ? .medium : .regular)
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            if running > 0 {
-                Text("\(running)/\(topology.nodes.count)")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.muted)
-                    .help("\(running) of \(topology.nodes.count) agents running")
-            }
+            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .contentShape(Rectangle())
-        .onTapGesture { env.selectTopology(topology.id) }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isExpanded ? "Collapse \(topology.name)" : "Expand \(topology.name)")
+        .help(running > 0
+            ? "\(running) of \(topology.nodes.count) agents running"
+            : "No agents running in this team")
         .contextMenu {
             Button("Open in Topology view") {
                 env.selectTopology(topology.id)

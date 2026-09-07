@@ -54,7 +54,7 @@ the exact v1.20.0 commit `5d14406844143538cd8f8851d2d8a67c1fe443e5`.
    workers, or a single manager), a folder, and a CLI.
 2. **Topology** — lay the team out (new agents are named Worker 1, Worker 2,
    Manager 1 … until you rename them): drag nodes, drag a node's bottom handle onto
-   a manager to report to them, and use the inspector on the right for names,
+   a manager to report to them, and use the inspector on the right for the name,
    role, CLI, model, folder, manager, permitted contacts, role prompt, and extra
    instructions. Loops are refused with the reason.
 3. **Launch team** — Marmy checks the whole team first: the graph, every rendered
@@ -103,8 +103,20 @@ and lists the tmux sessions that will keep running. Removing a node or a team
 removes Marmy's organisation only. Any session that was running keeps running and
 reappears under *Local sessions*.
 
-**Sidebar.** Each team opens and closes independently with its own chevron; they
-can all be closed at once, and selecting an agent never reopens one.
+**Sidebar.** Clicking anywhere along a team's row — chevron, name, or the space
+beside them — selects it and opens or closes it, the way a file explorer behaves.
+Each team opens and closes independently, they can all be closed at once, and
+selecting an agent never reopens one.
+
+**Naming.** An agent has one name. It is the label you see, and the tmux session
+name a future start asks for is derived from it: lower-cased, reduced to letters,
+digits, hyphen and underscore, and moved out of the way of every name another
+agent plans to use or the server already has (`verify`, then `verify-2`). The
+inspector shows the real connection under the name — *Connected to tmux: …* for
+a session that is running, *tmux name: …* for one that is not, and both when a
+running session's name differs from what the next start would ask for. Renaming
+never renames a tmux session or moves a binding: a running agent keeps the
+session it is in, and other agents are still told its real address.
 
 ## Keyboard
 
@@ -178,14 +190,20 @@ agent's own prompt, and you send them from the terminal with Return.
 *Templates* holds two things:
 
 - **Role prompts** — the instructions an agent starts with. Edit them, duplicate
-  them, or reset a shipped one. The editor lists every variable, reports syntax
-  errors with a line number, and previews the result against a real agent.
+  them, or reset a shipped one. The editor says which prompt you are editing and
+  which agents use it, lists every variable, reports syntax errors with a line
+  number, and previews the result against a real agent.
 - **Team shapes** — save the current team's structure and stamp out new teams
   from it later. A new team always gets fresh identities and unused session
   names; it never reuses the ones already running.
 
-Editing a role prompt changes what *future* launches say. It is never injected
-into an agent that is already running.
+A role prompt is reusable, so the inspector offers both ways of changing one.
+**Edit role prompt** opens the shared prompt itself: every agent using it is
+affected, and the inspector says how many that is. **Customize for this agent**
+copies it, assigns the copy to that agent alone, and opens the copy — its real
+role text, not a paragraph appended to a shared one — leaving everyone else on
+the original. Either way the change applies at the next start: it is never
+injected into an agent that is already running.
 
 ### Template variables
 

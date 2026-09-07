@@ -215,8 +215,41 @@ struct PromptTemplateEditor: View {
         model.workspace.promptTemplate(template.id) ?? template
     }
 
+    /// Every agent, in every team, whose starting prompt this text becomes.
+    private var users: [AgentNode] {
+        model.agentsUsing(promptTemplate: template.id)
+    }
+
+    /// Who an edit here reaches, said without having to hover anything.
+    private var scope: String {
+        let names = users.map(\.displayName).sorted()
+        let applies = " Changes apply the next time an agent using it is started; nothing is sent "
+            + "to an agent that is already running."
+        switch names.count {
+        case 0: return "No agent uses this role prompt yet." + applies
+        case 1: return "Used by \(names[0]) only." + applies
+        case 2...4: return "Shared by \(names.joined(separator: ", "))." + applies
+        default:
+            return "Shared by \(names.count) agents, including \(names.prefix(3).joined(separator: ", "))."
+                + applies
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Editing \(current.name)")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Theme.ink)
+                Text(scope)
+                    .font(.caption)
+                    .foregroundStyle(users.count > 1 ? Theme.warning : Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+
             HStack(spacing: 10) {
                 TextField("Name", text: field(\.name))
                     .textFieldStyle(.roundedBorder)

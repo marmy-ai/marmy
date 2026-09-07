@@ -507,6 +507,62 @@ public final class AppModel {
         return node
     }
 
+    /// Renames an agent.
+    ///
+    /// One name. What you type is the label, and the tmux session name a future
+    /// start will ask for is derived from it — sanitised, and moved out of the
+    /// way of every name another agent plans to use or the live server already
+    /// has.
+    ///
+    /// Nothing that is running is touched: no session is renamed, no binding
+    /// moves, and an agent that is up keeps the session it is actually in. The
+    /// new name is what the *next* start will ask for.
+    public func rename(_ nodeID: UUID, to newName: String) {
+        guard var topology = workspace.topologies.first(where: { $0.contains(nodeID) }),
+              var node = topology.node(nodeID)
+        else { return }
+        node.displayName = newName
+
+        let trimmed = newName.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+            node.sessionName = DefaultAgentNaming.sessionName(
+                for: trimmed, avoiding: sessionNamesClaimedByOthers(than: node))
+        }
+        topology.upsert(node)
+        update(topology)
+    }
+
+    /// Every session name this node may not take.
+    ///
+    /// Two exclusions, both narrow. Its own planned name, so retyping the same
+    /// thing does not walk the number up on every keystroke. And the live
+    /// session it is actually bound to — identified by the binding, not by a
+    /// name that happens to match — so an agent may keep asking for the session
+    /// it is already in. Another team's identical plan, or an unmanaged session
+    /// that happens to share the name, still forces a suffix.
+    func sessionNamesClaimedByOthers(than node: AgentNode) -> Set<String> {
+        var names: Set<String> = []
+        // What every other saved agent plans to use, and any session one of them
+        // is attached to.
+        for topology in workspace.topologies {
+            for other in topology.nodes where other.id != node.id {
+                names.insert(other.sessionName)
+                if let attached = other.attachedSessionName { names.insert(attached) }
+            }
+        }
+        // Everything alive on the server, except the session this agent is
+        // actually bound to — established from the binding, not from a name that
+        // happens to match. An unmanaged session with the same name still counts.
+        var ownLiveSession: String?
+        if case .running(_, let sessionName, _) = state(of: node.id) {
+            ownLiveSession = sessionName
+        }
+        for session in readout.sessions where session.name != ownLiveSession {
+            names.insert(session.name)
+        }
+        return names
+    }
+
     public var allClaimedSessionNames: Set<String> {
         var names = workspace.claimedSessionNames
         names.formUnion(readout.sessions.map(\.name))
@@ -698,6 +754,59 @@ public final class AppModel {
     public func upsert(promptTemplate template: PromptTemplate) {
         workspace.upsert(template)
         save()
+    }
+
+    /// How many agents across every team use a role prompt.
+    ///
+    /// What makes a template "shared" is not a flag on it: it is how many agents
+    /// would change if you edited it.
+    public func agentsUsing(promptTemplate id: UUID) -> [AgentNode] {
+        workspace.topologies.flatMap { topology in
+            topology.nodes.filter { $0.promptTemplateID == id }
+        }
+    }
+
+    /// Gives one agent a role prompt of its own, copied from the one it uses.
+    ///
+    /// The copy is the agent's real role text — the thing that gets rendered
+    /// into its starting prompt — not an extra paragraph bolted onto a shared
+    /// one. Everyone else keeps the original, untouched.
+    ///
+    /// Written before it is believed: the copy and the agent's new assignment go
+    /// to disk together, and only then does the app adopt them. A failed write
+    /// leaves both the library and this agent exactly as they were.
+    ///
+    /// Returns the new template, or `nil` if there was nothing to copy or the
+    /// write failed.
+    @discardableResult
+    public func customizePromptTemplate(for nodeID: UUID) -> PromptTemplate? {
+        guard var topology = workspace.topologies.first(where: { $0.contains(nodeID) }),
+              var node = topology.node(nodeID),
+              let sourceID = node.promptTemplateID,
+              let source = workspace.promptTemplate(sourceID)
+        else { return nil }
+
+        let copy = source.duplicated(name: uniqueTemplateName("\(node.displayName)'s role prompt"))
+        node.promptTemplateID = copy.id
+        topology.upsert(node)
+
+        var candidate = workspace
+        candidate.upsert(copy)
+        candidate.upsert(topology)
+        guard persist(candidate) else { return nil }
+
+        workspace = candidate
+        onTopologyChanged?(topology.id)
+        return copy
+    }
+
+    /// A name no other role prompt has, so the list stays readable.
+    func uniqueTemplateName(_ wanted: String) -> String {
+        let taken = Set(workspace.promptTemplates.map(\.name))
+        guard taken.contains(wanted) else { return wanted }
+        var index = 2
+        while taken.contains("\(wanted) \(index)") { index += 1 }
+        return "\(wanted) \(index)"
     }
 
     public func deletePromptTemplate(_ id: UUID) {
